@@ -1630,8 +1630,12 @@ html,body{height:auto!important;min-height:100%!important;overflow:visible!impor
             &lt;label style=&quot;font-size:12px;font-weight:800;color:#64748b;margin-left:6px&quot;&gt;작업 종료&lt;/label&gt;
             &lt;input id=&quot;dayEndTime&quot; class=&quot;goal-input&quot; type=&quot;time&quot; value=&quot;00:00&quot;&gt;
 
-            &lt;label style=&quot;font-size:12px;font-weight:800;color:#64748b;margin-left:6px&quot;&gt;목표 글자수&lt;/label&gt;
+            &lt;label style=&quot;font-size:12px;font-weight:800;color:#64748b;margin-left:6px&quot;&gt;전체 목표&lt;/label&gt;
             &lt;input id=&quot;dayGoal&quot; class=&quot;goal-input&quot; inputmode=&quot;numeric&quot; value=&quot;10000&quot;&gt;
+            &lt;span style=&quot;font-size:12px;color:#94a3b8&quot;&gt;자&lt;/span&gt;
+
+            &lt;label style=&quot;font-size:12px;font-weight:800;color:#64748b;margin-left:6px&quot;&gt;선택 작품 목표&lt;/label&gt;
+            &lt;input id=&quot;dayProjectGoal&quot; class=&quot;goal-input&quot; inputmode=&quot;numeric&quot; value=&quot;0&quot; readonly title=&quot;작업 계획에서 자동 동기화됩니다&quot;&gt;
             &lt;span style=&quot;font-size:12px;color:#94a3b8&quot;&gt;자&lt;/span&gt;
 
             &lt;label style=&quot;font-size:12px;font-weight:800;color:#64748b;margin-left:6px&quot;&gt;시작 글자수&lt;/label&gt;
@@ -1651,6 +1655,7 @@ html,body{height:auto!important;min-height:100%!important;overflow:visible!impor
             &lt;div class=&quot;kicker&quot;&gt;Goal&lt;/div&gt;
             &lt;div class=&quot;big&quot;&gt;&lt;span id=&quot;dayGoalStat&quot;&gt;0%&lt;/span&gt; &lt;span style=&quot;font-size:12px;color:var(--muted);font-weight:800&quot;&gt;· 남은 &lt;span id=&quot;remainingWords&quot;&gt;0자&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
             &lt;div class=&quot;progress&quot;&gt;&lt;div id=&quot;dayProgress&quot;&gt;&lt;/div&gt;&lt;/div&gt;
+            &lt;div id=&quot;dayProjectProgressText&quot; class=&quot;sub&quot;&gt;작품을 선택하면 작품별 목표가 표시됩니다&lt;/div&gt;
           &lt;/div&gt;
           &lt;div class=&quot;card&quot;&gt;&lt;div class=&quot;kicker&quot;&gt;30min Pace&lt;/div&gt;&lt;div id=&quot;requiredPer30&quot; class=&quot;big&quot;&gt;0자&lt;/div&gt;&lt;div class=&quot;sub&quot;&gt;현재 기준 30분당 필요 글자수&lt;/div&gt;&lt;/div&gt;
         &lt;/div&gt;
@@ -1886,6 +1891,38 @@ function dateLabel(k){
   const start=fromKey(k);
   return start.toLocaleDateString(&#x27;ko-KR&#x27;,{year:&#x27;numeric&#x27;,month:&#x27;long&#x27;,day:&#x27;numeric&#x27;,weekday:&#x27;short&#x27;});
 }
+function normalizeProjectTitle(v=''){
+  return String(v).replace(/^\[(교정|초단)\]\s*/,'').trim();
+}
+function projectForId(projectId){
+  return (state.royaltyProjects||[]).find(p=&gt;p.id===projectId) || null;
+}
+function plannedGoalForProject(d,projectId){
+  const project=projectForId(projectId);
+  if(!project || !Array.isArray(d.planGoals)) return 0;
+  const names=[project.title,project.displayTitle].map(normalizeProjectTitle).filter(Boolean);
+  return d.planGoals.reduce((sum,g)=&gt;names.includes(normalizeProjectTitle(g.workTitle)) ? sum+num(g.goal) : sum,0);
+}
+function writtenForProject(d,projectId){
+  return Object.values(d.slots||{}).reduce((sum,slot)=&gt;{
+    if(slot.projectId!==projectId || (slot.activity||'집필')!=='집필') return sum;
+    return sum+getSlotWords(slot);
+  },0);
+}
+function updateSelectedProjectGoal(d){
+  const projectId=d.activeProjectId||d.defaultProjectId||'';
+  const project=projectForId(projectId);
+  const goal=plannedGoalForProject(d,projectId);
+  const actual=writtenForProject(d,projectId);
+  const input=document.getElementById('dayProjectGoal');
+  if(input) input.value=goal?fmt(goal):'0';
+  const text=document.getElementById('dayProjectProgressText');
+  if(text){
+    if(project &amp;&amp; goal) text.textContent=`${project.displayTitle||project.title} · ${fmt(actual)} / ${fmt(goal)}자`;
+    else if(project) text.textContent=`${project.displayTitle||project.title} · 등록된 집필 계획 없음`;
+    else text.textContent='작품을 선택하면 작품별 목표가 표시됩니다';
+  }
+}
 function currentPage(name){
   document.querySelectorAll(&#x27;.page&#x27;).forEach(p=&gt;p.classList.toggle(&#x27;active&#x27;,p.id===name));
   document.querySelectorAll(&#x27;.nav button&#x27;).forEach(b=&gt;b.classList.toggle(&#x27;active&#x27;,b.dataset.page===name));
@@ -1915,6 +1952,7 @@ function renderDay(){
   }
   document.getElementById(&#x27;dayDateDisplay&#x27;).textContent=dateLabel(selectedDate);
   document.getElementById(&#x27;dayGoal&#x27;).value=fmt(d.goal||10000);
+  updateSelectedProjectGoal(d);
   document.getElementById(&#x27;dayInitialWords&#x27;).value=d.initialWords?fmt(d.initialWords):&#x27;&#x27;;
   document.getElementById(&#x27;dayStartTime&#x27;).value=d.startTime||&#x27;15:00&#x27;;
   document.getElementById(&#x27;dayEndTime&#x27;).value=d.endTime||&#x27;00:00&#x27;;
@@ -1994,6 +2032,8 @@ function renderDay(){
       const i=sel.dataset.slot;
       if(!d.slots[i]) d.slots[i]={};
       d.slots[i].projectId=sel.value||&#x27;&#x27;;
+      d.activeProjectId=d.slots[i].projectId;
+      updateSelectedProjectGoal(d);
       saveState();
     });
   });
@@ -2109,6 +2149,7 @@ function updateDaySummary(){
   const remain=Math.max(0,(Number(d.goal)||10000)-s.total);
   const remEl=document.getElementById(&#x27;remainingWords&#x27;);
   if(remEl) remEl.textContent=fmt(remain)+&#x27;자&#x27;;
+  updateSelectedProjectGoal(d);
 
   const [sh,sm]=String(d.startTime||&#x27;15:00&#x27;).split(&#x27;:&#x27;).map(Number);
   const [eh,em]=String(d.endTime||&#x27;00:00&#x27;).split(&#x27;:&#x27;).map(Number);
@@ -2150,6 +2191,7 @@ function updateDaySummary(){
 document.getElementById(&#x27;dayDefaultProject&#x27;).addEventListener(&#x27;change&#x27;,e=&gt;{
   const d=dayData(selectedDate);
   d.defaultProjectId=e.target.value||&#x27;&#x27;;
+  d.activeProjectId=d.defaultProjectId;
   state.lastProjectId=d.defaultProjectId;
   Object.values(d.slots||{}).forEach(slot=&gt;{
     if(slot.projectId===undefined || slot.projectId===null || slot.projectId===&#x27;&#x27;) slot.projectId=d.defaultProjectId;
@@ -2705,6 +2747,7 @@ window.addEventListener(&#x27;message&#x27;,e=&gt;{
     );
     if(target){
       d.defaultProjectId=target.id;
+      d.activeProjectId=target.id;
       state.lastProjectId=target.id;
       Object.values(d.slots||{}).forEach(slot=&gt;{ if(!slot.projectId) slot.projectId=target.id; });
     }
@@ -4904,6 +4947,7 @@ function syncPlanGoalToDetailedRecord(dateStr){
           );
           if(target){
             d.defaultProjectId=target.id;
+            d.activeProjectId=target.id;
             dayState.lastProjectId=target.id;
             Object.values(d.slots||{}).forEach(slot=>{ if(!slot.projectId) slot.projectId=target.id; });
           }
@@ -4945,7 +4989,7 @@ function saveSchedule() {
 function duplicateSchedule(scheduleId, dateStr) {
     if (!schedules[dateStr]) return;
     const original = schedules[dateStr].find(s => s.id === scheduleId);
-    if (original) { schedules[dateStr].push({ ...original, id: Date.now().toString() + Math.random().toString(36).substr(2, 5) }); save(); renderScheduleCalendar(); }
+    if (original) { schedules[dateStr].push({ ...original, id: Date.now().toString() + Math.random().toString(36).substr(2, 5) }); save(); syncPlanGoalToDetailedRecord(dateStr); renderScheduleCalendar(); }
 }
 function openEditScheduleModal(scheduleId, dateStr) {
     const item = schedules[dateStr]?.find(s => s.id === scheduleId); if(!item) return;
@@ -4958,7 +5002,7 @@ function closeEditScheduleModal() { document.getElementById('scheduleEditModal')
 function updateSchedule() {
     const dateStr = document.getElementById('editScheduleDate').value, id = document.getElementById('editScheduleId').value;
     const item = schedules[dateStr]?.find(s => s.id === id);
-    if(item) { item.goal = parseInt(document.getElementById('editScheduleGoal').value); save(); renderScheduleCalendar(); if(typeof renderPlanCalendar==='function') renderPlanCalendar(); }
+    if(item) { item.goal = parseInt(document.getElementById('editScheduleGoal').value); save(); syncPlanGoalToDetailedRecord(dateStr); renderScheduleCalendar(); if(typeof renderPlanCalendar==='function') renderPlanCalendar(); }
     closeEditScheduleModal();
 }
 function deleteSchedule() { deleteScheduleDirectly(document.getElementById('editScheduleId').value, document.getElementById('editScheduleDate').value); closeEditScheduleModal(); }
@@ -4966,7 +5010,7 @@ function deleteScheduleDirectly(id, dateStr) {
     if(schedules[dateStr]) {
         schedules[dateStr] = schedules[dateStr].filter(s => s.id !== id);
         if(schedules[dateStr].length === 0) delete schedules[dateStr];
-        save(); renderScheduleCalendar(); if(typeof renderPlanCalendar==='function') renderPlanCalendar();
+        save(); syncPlanGoalToDetailedRecord(dateStr); renderScheduleCalendar(); if(typeof renderPlanCalendar==='function') renderPlanCalendar();
     }
 }
 
@@ -5535,7 +5579,11 @@ function handleDrop(e) {
         if (itemIdx > -1) {
             const item = schedules[originDate].splice(itemIdx, 1)[0];
             if(!schedules[originDate].length) delete schedules[originDate];
-            (schedules[targetDate] = schedules[targetDate] || []).push(item); save(); renderScheduleCalendar();
+            (schedules[targetDate] = schedules[targetDate] || []).push(item);
+            save();
+            syncPlanGoalToDetailedRecord(originDate);
+            syncPlanGoalToDetailedRecord(targetDate);
+            renderScheduleCalendar();
         }
     } catch (err) { console.error(err); }
 }
@@ -6069,7 +6117,10 @@ function resetMenuIcon() {
     if (menuIcons[key]) showConfirm("이 메뉴의 아이콘을 기본값으로 되돌리시겠습니까?", () => { delete menuIcons[key]; save(); renderSidebarIcons(); updateIconPreview(); }); else showModal("이미 기본 아이콘입니다.");
 }
 
-ensureWorkKeys(); syncWorksToSettlement(); initPickr('#4d7c77'); renderUnifiedHome(); renderManageList(); renderSidebarIcons(); updateIconPreview();
+ensureWorkKeys();
+syncWorksToSettlement();
+Object.keys(schedules||{}).forEach(syncPlanGoalToDetailedRecord);
+initPickr('#4d7c77'); renderUnifiedHome(); renderManageList(); renderSidebarIcons(); updateIconPreview();
 if(state.currentTheme) setTheme(state.currentTheme);
 </script>
 
