@@ -5131,7 +5131,7 @@ function getWritingTargets(){
   works.forEach((w,index)=>{
     if(w.isHidden) return;
     if(!isLaunchedWork(w)) targets.push({...w,index,displayTitle:getDisplayTitle(w.title),targetKind:'main'});
-    if(w.hasExtra && Number(w.extraGoal)>0 && !isLaunchedWork({launchDate:w.extraLaunchDate})) targets.push({...w,index,title:extraWorkTitle(w),displayTitle:`${getDisplayTitle(w.title)} · 외전`,goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',launchDate:w.extraLaunchDate||'',targetKind:'extra'});
+    if(w.hasExtra && Number(w.extraGoal)>0) targets.push({...w,index,title:extraWorkTitle(w),displayTitle:`${getDisplayTitle(w.title)} · 외전`,goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',launchDate:w.extraLaunchDate||'',targetKind:'extra'});
   });
   return targets;
 }
@@ -6014,6 +6014,7 @@ document.getElementById("saveWorkBtn").onclick = () => {
         document.getElementById("formTitle").textContent = "🆕 새 작품 등록"; document.getElementById("saveWorkBtn").textContent = "저장하기";
     }
     save(); syncWorksToSettlement(); renderManageList(); renderDashboard();
+    if(typeof window.sendProjectsToDay==='function') window.sendProjectsToDay();
     document.getElementById("workTitle").value = ""; document.getElementById("workPublisher").value = ""; document.getElementById("workGoal").value = ""; document.getElementById("workDeadline").value = "";
     document.getElementById("workLaunchDate").value = "";  document.getElementById("workRoyaltyRate").value = "70";
     document.getElementById("workHasExtra").checked = false; document.getElementById("workExtraGoal").value = ""; document.getElementById("workExtraLaunchDate").value = ""; toggleExtraWorkFields();
@@ -6179,11 +6180,12 @@ if(state.currentTheme) setTheme(state.currentTheme);
       (s.works||[]).forEach((w,i)=>{
         const clean=(w.title||'').replace(/^\[(교정|초단)\]\s*/, '');
         payload.push({id:'royalty_'+i,title:w.title||'',displayTitle:clean,type:w.type||'',goal:Number(w.goal)||0,deadline:w.deadline||'',selectable:!w.isHidden&&!launched(w.launchDate)});
-        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',selectable:!w.isHidden&&!launched(w.extraLaunchDate)});
+        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',selectable:!w.isHidden});
       });
     }catch(e){}
     frame.contentWindow.postMessage({type:'ROYALTY_PROJECTS',projects:payload},'*');
   }
+  window.sendProjectsToDay=sendProjectsToDay;
   window.addEventListener('message',e=>{
     if(e.data && e.data.type==='DAY_READY_FOR_PROJECTS') sendProjectsToDay();
   });
