@@ -1564,6 +1564,7 @@ td.time{font-weight:800;color:#475569;white-space:nowrap}
   border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:8px;
   padding:5px 6px;font-size:10px;font-weight:800;text-align:center;text-align-last:center;
 }
+.project-select,.goal-input{transition:border-color .2s,box-shadow .2s,background-color .2s}
 @media(min-width:900px){
   #day th:nth-child(1),#day td:nth-child(1){width:22%!important}
   #day th:nth-child(2),#day td:nth-child(2){width:18%!important}
@@ -1903,6 +1904,13 @@ function normalizeProjectTitle(v=''){
 function projectForId(projectId){
   return (state.royaltyProjects||[]).find(p=&gt;p.id===projectId) || null;
 }
+function applyProjectColor(el,projectId){
+  if(!el) return;
+  const project=projectForId(projectId), color=project?.color||&#x27;#cbd5e1&#x27;;
+  el.style.borderColor=color;
+  el.style.boxShadow=project ? `inset 4px 0 0 ${color}` : &#x27;none&#x27;;
+  el.style.backgroundColor=project ? `${color}14` : &#x27;#fff&#x27;;
+}
 function plannedGoalForProject(d,projectId){
   const project=projectForId(projectId);
   if(!project || !Array.isArray(d.planGoals)) return 0;
@@ -1924,6 +1932,9 @@ function updateSelectedProjectGoal(d){
   if(input) input.value=goal?fmt(goal):'0';
   const text=document.getElementById('dayProjectProgressText');
   if(text){
+    text.style.color=project?.color||&#x27;#64748b&#x27;;
+    text.style.borderLeft=project ? `4px solid ${project.color||&#x27;#64748b&#x27;}` : &#x27;0&#x27;;
+    text.style.paddingLeft=project ? &#x27;8px&#x27; : &#x27;0&#x27;;
     if(project &amp;&amp; goal) text.textContent=`${project.displayTitle||project.title} · ${fmt(actual)} / ${fmt(goal)}자`;
     else if(project) text.textContent=`${project.displayTitle||project.title} · 등록된 집필 계획 없음`;
     else text.textContent='작품을 선택하면 작품별 목표가 표시됩니다';
@@ -1955,6 +1966,7 @@ function renderDay(){
   if(defaultProject){
     defaultProject.innerHTML=&#x27;&lt;option value=&quot;&quot;&gt;작품 미지정&lt;/option&gt;&#x27;+projectOptions;
     defaultProject.value=d.defaultProjectId||&#x27;&#x27;;
+    applyProjectColor(defaultProject,d.defaultProjectId||&#x27;&#x27;);
   }
   document.getElementById(&#x27;dayDateDisplay&#x27;).textContent=dateLabel(selectedDate);
   document.getElementById(&#x27;dayGoal&#x27;).value=fmt(d.goal||10000);
@@ -2034,11 +2046,13 @@ function renderDay(){
   });
   tbody.innerHTML=rows;
   tbody.querySelectorAll(&#x27;.project-select&#x27;).forEach(sel=&gt;{
+    applyProjectColor(sel,sel.value||&#x27;&#x27;);
     sel.addEventListener(&#x27;change&#x27;,()=&gt;{
       const i=sel.dataset.slot;
       if(!d.slots[i]) d.slots[i]={};
       d.slots[i].projectId=sel.value||&#x27;&#x27;;
       d.activeProjectId=d.slots[i].projectId;
+      applyProjectColor(sel,d.slots[i].projectId);
       updateSelectedProjectGoal(d);
       saveState();
     });
@@ -5248,6 +5262,8 @@ function renderDashboard() {
     const createCard = (w, i, grid) => {
         const rawTotal = getWorkTotal(w.title), total = isLaunchedWork(w) ? Math.max(rawTotal, Number(w.goal)||0) : rawTotal, cid = `chart_${w.title.replace(/\s+/g, '_')}_${i}`;
         const card = document.createElement("div"); card.className = "work-card" + (w.isHidden ? " hidden-work" : "");
+        card.style.borderTop=`5px solid ${w.color||'#718096'}`;
+        card.style.boxShadow=`0 8px 24px ${hexToRgba(w.color||'#718096',0.13)}`;
         card.oncontextmenu = (e) => { e.preventDefault(); openContextMenu(e, w, total); };
         
         let infoHtml = `<span style="color:#a0aec0; font-size:0.75rem;">마감일 미설정</span>`;
@@ -5256,7 +5272,7 @@ function renderDashboard() {
             infoHtml = diff > 0 ? `<span style="color:#B76E79; font-weight:800;">D-${diff}</span> <span style="color:#cbd5e0; margin:0 4px;">|</span> <span style="color:#4a5568; font-weight:700;">일일 ${Math.ceil(Math.max(w.goal - total, 0) / diff).toLocaleString()}자</span>` : 
                       (diff === 0 ? `<span style="color:#B76E79; font-weight:800;">D-Day</span> <span style="color:#cbd5e0; margin:0 4px;">|</span> <span style="color:#4a5568; font-weight:700;">오늘 마감</span>` : `<span style="color:#4d7c77; font-weight:800;">완결</span>`);
         }
-        card.innerHTML = `<div class="title">${getDisplayTitle(w.title)}</div>${w.publisher ? `<div style="font-size:0.8rem; color:#718096; font-weight:400; margin-bottom:5px;">[${w.publisher}]</div>` : ''}<div style="position:relative; width:100px; height:110px; margin:0 auto 10px; padding-bottom: 5px;"><canvas id="${cid}"></canvas><div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-weight:800; font-size:0.8rem;">${Math.min((total / (w.goal||1))*100,100).toFixed(0)}%</div></div><div style="font-size:0.8rem; font-weight:700; color:#718096; margin-bottom:8px;">${total.toLocaleString()} / ${w.goal.toLocaleString()}</div><div style="background:#f9fafb; border-radius:8px; padding:8px 4px; font-size:0.75rem;">${infoHtml}</div>`;
+        card.innerHTML = `<div class="title" style="color:${w.color||'#334155'}"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${w.color||'#718096'};margin-right:6px"></span>${getDisplayTitle(w.title)}</div>${w.publisher ? `<div style="font-size:0.8rem; color:#718096; font-weight:400; margin-bottom:5px;">[${w.publisher}]</div>` : ''}<div style="position:relative; width:100px; height:110px; margin:0 auto 10px; padding-bottom: 5px;"><canvas id="${cid}"></canvas><div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-weight:800; font-size:0.8rem;">${Math.min((total / (w.goal||1))*100,100).toFixed(0)}%</div></div><div style="font-size:0.8rem; font-weight:700; color:#718096; margin-bottom:8px;">${total.toLocaleString()} / ${w.goal.toLocaleString()}</div><div style="background:${getLightColor(w.color||'#718096')}; border-radius:8px; padding:8px 4px; font-size:0.75rem;">${infoHtml}</div>`;
         grid.appendChild(card); createDoughnut(cid, total, w.goal, w.color, true);
     };
 
@@ -5420,7 +5436,7 @@ function renderCalendar() {
         if(title==='selectedWork'||title==='works') return;
         const wd=getDayWorkData(ds,title);
         const n=wd?.hours?Object.values(wd.hours).reduce((a,h)=>a+(Number(h?.diff)||0),0):0;
-        if(n>0) names.push(`${title} ${n.toLocaleString()}자`);
+        if(n>0) names.push({title,n,color:workColorByTitle(title)});
       });
 
       const cell=document.createElement('div');
@@ -5428,7 +5444,7 @@ function renderCalendar() {
       cell.innerHTML=`<div class="monthly-day-num">${d}</div>
         <div class="monthly-day-words">${total.toLocaleString()}자</div>
         <div class="monthly-day-meta">목표 ${goal.toLocaleString()}자</div>
-        ${names.length?`<div class="monthly-projects">${names.map(escPlan).join(' · ')}</div>`:''}
+        ${names.length?`<div class="monthly-projects">${names.map(x=>`<span style="display:inline-block;margin:2px 3px 0 0;padding:2px 5px;border-radius:5px;border-left:3px solid ${x.color};background:${getLightColor(x.color)}">${escPlan(getDisplayTitle(x.title))} ${x.n.toLocaleString()}자</span>`).join('')}</div>`:''}
         <span class="monthly-badge ${total?(achieved?'ok':'no'):'idle'}">${total?(achieved?'달성':`부족 ${Math.max(0,goal-total).toLocaleString()}자`):'기록 없음'}</span>`;
       cell.onclick=()=>{
         viewDate=new Date(ds+'T12:00:00');
@@ -5492,7 +5508,7 @@ function renderScheduleCalendar() {
         ['dragover', 'drop', 'dragenter', 'dragleave'].forEach(evt => cell.addEventListener(evt, window['handle' + (evt === 'drop' ? 'Drop' : (evt === 'dragover' ? 'DragOver' : (evt === 'dragenter' ? 'DragEnter' : 'DragLeave')))]));
         
         if(schedules[ds]) schedules[ds].forEach(s => {
-            const w = works.find(k => k.title === s.workTitle), color = w ? w.color : '#4d7c77', status = statusMap[s.id] || { filled: 0, displayGoal: 0 };
+            const w = works.find(k => k.title === s.workTitle || extraWorkTitle(k)===s.workTitle), color = w ? w.color : '#4d7c77', status = statusMap[s.id] || { filled: 0, displayGoal: 0 };
             const block = document.createElement("div"); 
             let cls = "schedule-block", txt = `(${status.displayGoal.toLocaleString()} / ${(w?.goal||0).toLocaleString()})`;
             block.style.borderLeftColor = color;
@@ -5554,7 +5570,7 @@ function renderTaskCalendar() {
         ['dragover', 'drop', 'dragenter', 'dragleave'].forEach(evt => cell.addEventListener(evt, window['handle' + (evt === 'drop' ? 'TaskDrop' : (evt === 'dragover' ? 'DragOver' : (evt === 'dragenter' ? 'DragEnter' : 'DragLeave')))]));
 
         if(tasks[ds]) tasks[ds].forEach(t => {
-            const w = works.find(k => k.title === t.workTitle), color = w ? w.color : '#f2a4b6', item = document.createElement("div");
+            const w = works.find(k => k.title === t.workTitle || extraWorkTitle(k)===t.workTitle), color = w ? w.color : '#f2a4b6', item = document.createElement("div");
             item.className = "task-item"; item.draggable = true; item.style.borderLeftColor = color; item.style.backgroundColor = getLightColor(color);
             item.innerHTML = `<div style="pointer-events:none;"><span class="task-cat" style="color:${getCategoryColor(t.category)};">[${t.category}]</span><span class="task-title">${getDisplayTitle(t.workTitle)}</span></div>${t.memo ? `<span class="task-memo">${t.memo}</span>` : ''}<button class="task-delete-btn" onclick="event.stopPropagation(); tasks['${ds}']=tasks['${ds}'].filter(x=>x.id!=='${t.id}'); if(!tasks['${ds}'].length) delete tasks['${ds}']; save(); renderTaskCalendar();">🗑️</button>`;
             item.onclick = (e) => { e.stopPropagation(); openTaskModal(ds, t.id); };
@@ -5644,6 +5660,7 @@ function renderManageList() {
         typeWorks.forEach(w=>{
             const div=document.createElement("div"); div.className="manage-item-box"+(w.isHidden?" hidden":"");
             const accent=getGenreAccent(label);
+            div.style.borderLeft=`5px solid ${w.color||accent}`;
             const extraInfo=w.hasExtra ? `<div class="extra-work-info">📎 외전 ${Number(w.extraGoal||0).toLocaleString()}자 · ${w.extraLaunchDate?`런칭 ${w.extraLaunchDate}`:'런칭일 미정'}</div>` : '';
             div.innerHTML=`<div><div><span style="font-size:0.75rem;background:${accent};color:#fff;padding:2px 6px;border-radius:4px;margin-right:6px;">${label}</span><span style="font-weight:700;font-size:0.9rem;">${getDisplayTitle(w.title)}</span>${w.launchDate ? `<span style="font-size:.66rem;color:#4d7c77;margin-left:7px;font-weight:800;">런칭 ${w.launchDate}</span>` : `<span style="font-size:.66rem;color:#a0aec0;margin-left:7px;">런칭 미정 · 정산 미등록</span>`}${w.isHidden ? '<span style="font-size:0.7rem;color:#e53e3e;margin-left:5px;font-weight:700;">(숨김)</span>' : ''}</div>${extraInfo}</div><div style="display:flex;justify-content:flex-end;gap:6px;"><button onclick="toggleHide(${w.originalIndex})" class="manage-btn" style="color:${w.isHidden?'#4d7c77':'#a0aec0'}">${w.isHidden?"보이기":"숨기기"}</button><button onclick="editWork(${w.originalIndex})" class="manage-btn">수정</button><button onclick="deleteWork(${w.originalIndex})" class="manage-btn del" style="color:#e53e3e;">삭제</button></div>`;
             list.appendChild(div);
@@ -5768,7 +5785,7 @@ function renderUnifiedHome(){
           const pct=Math.min(100,Math.round(rawTotal/goal*100));
           const sw=settlementByKey.get(w.workKey) || master.find(x=>normalizeRoyaltyTitle(x.title)===normalizeRoyaltyTitle(w.title));
           const homeGenre=w.royaltyGenre||sw?.genre||'미분류';
-          const genreAccent=getGenreAccent(homeGenre);
+          const genreAccent=w.color||getGenreAccent(homeGenre);
           let royalty=0, avg=0, vols=1;
           if(sw){
             Object.values(monthly).forEach(obj=>royalty+=Number((obj||{})[sw.id])||0);
@@ -6013,7 +6030,7 @@ document.getElementById("saveWorkBtn").onclick = () => {
         works[idx] = workData; showModal("수정되었습니다."); document.getElementById("editIdx").value = "-1";
         document.getElementById("formTitle").textContent = "🆕 새 작품 등록"; document.getElementById("saveWorkBtn").textContent = "저장하기";
     }
-    save(); syncWorksToSettlement(); renderManageList(); renderDashboard();
+    save(); syncWorksToSettlement(); renderManageList(); renderDashboard(); renderUnifiedHome();
     if(typeof window.sendProjectsToDay==='function') window.sendProjectsToDay();
     document.getElementById("workTitle").value = ""; document.getElementById("workPublisher").value = ""; document.getElementById("workGoal").value = ""; document.getElementById("workDeadline").value = "";
     document.getElementById("workLaunchDate").value = "";  document.getElementById("workRoyaltyRate").value = "70";
@@ -6179,8 +6196,8 @@ if(state.currentTheme) setTheme(state.currentTheme);
       const launched=date=>!!date && String(date)<=todayKey;
       (s.works||[]).forEach((w,i)=>{
         const clean=(w.title||'').replace(/^\[(교정|초단)\]\s*/, '');
-        payload.push({id:'royalty_'+i,title:w.title||'',displayTitle:clean,type:w.type||'',goal:Number(w.goal)||0,deadline:w.deadline||'',selectable:!w.isHidden&&!launched(w.launchDate)});
-        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',selectable:!w.isHidden});
+        payload.push({id:'royalty_'+i,title:w.title||'',displayTitle:clean,type:w.type||'',goal:Number(w.goal)||0,deadline:w.deadline||'',color:w.color||'#718096',selectable:!w.isHidden&&!launched(w.launchDate)});
+        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',color:w.color||'#718096',selectable:!w.isHidden});
       });
     }catch(e){}
     frame.contentWindow.postMessage({type:'ROYALTY_PROJECTS',projects:payload},'*');
@@ -6267,6 +6284,7 @@ function renderPlanCalendar(){
       if(w.deadline===ds){
         const item=document.createElement('div');
         item.className='plan-item work-milestone deadline';
+        item.style.setProperty('--item-color',w.color||'#c98998');
         item.innerHTML=`<div class="plan-line"><span class="plan-title">📌 ${escPlan(title)}</span><b>마감일</b></div><div class="plan-meta">작품 설정 연동</div>`;
         item.onclick=e=>e.stopPropagation();
         el.appendChild(item);
@@ -6274,6 +6292,7 @@ function renderPlanCalendar(){
       if(w.launchDate===ds){
         const item=document.createElement('div');
         item.className='plan-item work-milestone launch';
+        item.style.setProperty('--item-color',w.color||'#7fa99d');
         item.innerHTML=`<div class="plan-line"><span class="plan-title">🚀 ${escPlan(title)}</span><b>런칭일</b></div><div class="plan-meta">작품 설정 연동</div>`;
         item.onclick=e=>e.stopPropagation();
         el.appendChild(item);
@@ -6281,6 +6300,7 @@ function renderPlanCalendar(){
       if(w.hasExtra && w.extraLaunchDate===ds){
         const item=document.createElement('div');
         item.className='plan-item work-milestone launch';
+        item.style.setProperty('--item-color',w.color||'#7fa99d');
         item.innerHTML=`<div class="plan-line"><span class="plan-title">📎 ${escPlan(title)} · 외전</span><b>외전 런칭일</b></div><div class="plan-meta">작품 설정 연동 · ${Number(w.extraGoal||0).toLocaleString()}자</div>`;
         item.onclick=e=>e.stopPropagation();
         el.appendChild(item);
