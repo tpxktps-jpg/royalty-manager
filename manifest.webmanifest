@@ -1,0 +1,11 @@
+{
+  "name": "작품 관리",
+  "short_name": "작품 관리",
+  "description": "집필, 작업 계획, 정산을 한곳에서 관리합니다.",
+  "lang": "ko-KR",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#4d7c77",
+  "orientation": "any"
+}
