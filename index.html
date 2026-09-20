@@ -139,8 +139,14 @@ input[type=number] { -moz-appearance: textfield; }
 #manageList { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; max-height: 700px; overflow-y: auto; padding-right: 5px; align-content: start; }
 .manage-list-section { grid-column: 1 / -1; font-size: 0.95rem; font-weight: 800; color: #4a5568; background: transparent; padding: 15px 5px 8px 5px; border-bottom: 2px solid #edf2f7; margin-top: 10px; margin-bottom: 5px; }
 .manage-list-section:first-child { margin-top: 0; }
-.manage-item-box { display: flex; flex-direction: column; justify-content: space-between; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #eee; height: 80px; }
+.manage-item-box { display: flex; flex-direction: column; justify-content: space-between; gap:10px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #eee; min-height: 80px; }
 .manage-item-box.hidden { opacity: 0.6; }
+.extra-work-toggle{display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid #dce7e5;border-radius:9px;background:#f5faf9;font-weight:800;color:#355f5a;cursor:pointer}
+.extra-work-toggle input{width:17px;height:17px;accent-color:#4d7c77}
+.extra-work-fields{display:none;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;padding:12px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0}
+.extra-work-fields.open{display:grid}
+.extra-work-info{margin-top:8px;padding:8px 10px;border-left:3px solid #8bb8b2;border-radius:4px;background:#edf7f5;color:#476b67;font-size:.72rem;font-weight:700}
+@media(max-width:560px){.extra-work-fields{grid-template-columns:1fr}}
 .manage-btn { background: #f7fafc; border: 1px solid #edf2f7; color: #718096; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; transition: 0.2s; }
 .manage-btn:hover { background: #edf2f7; color: #4a5568; }
 .manage-btn.del:hover { background: #fff5f5; color: #e53e3e; border-color: #feb2b2; }
@@ -1944,7 +1950,7 @@ function renderDay(){
     const exists=(state.royaltyProjects||[]).some(p=&gt;p.id===state.lastProjectId);
     if(exists) d.defaultProjectId=state.lastProjectId;
   }
-  const projectOptions=(state.royaltyProjects||[]).map(p=&gt;`&lt;option value=&quot;${p.id}&quot;&gt;${escapeProjectHtml(p.displayTitle||p.title)}&lt;/option&gt;`).join(&#x27;&#x27;);
+  const projectOptions=(state.royaltyProjects||[]).filter(p=&gt;p.selectable!==false || p.id===d.defaultProjectId).map(p=&gt;`&lt;option value=&quot;${p.id}&quot; ${p.selectable===false?&#x27;disabled&#x27;:&#x27;&#x27;}&gt;${escapeProjectHtml(p.displayTitle||p.title)}${p.selectable===false?&#x27; · 런칭 완료&#x27;:&#x27;&#x27;}&lt;/option&gt;`).join(&#x27;&#x27;);
   const defaultProject=document.getElementById(&#x27;dayDefaultProject&#x27;);
   if(defaultProject){
     defaultProject.innerHTML=&#x27;&lt;option value=&quot;&quot;&gt;작품 미지정&lt;/option&gt;&#x27;+projectOptions;
@@ -2010,7 +2016,7 @@ function renderDay(){
       &lt;td&gt;
         &lt;select class=&quot;project-select&quot; data-row=&quot;${rowIndex}&quot; data-slot=&quot;${i}&quot;&gt;
           &lt;option value=&quot;&quot;&gt;미지정&lt;/option&gt;
-          ${(state.royaltyProjects||[]).map(p=&gt;`&lt;option value=&quot;${p.id}&quot; ${slot.projectId===p.id?&#x27;selected&#x27;:&#x27;&#x27;}&gt;${escapeProjectHtml(p.displayTitle||p.title)}&lt;/option&gt;`).join(&#x27;&#x27;)}
+          ${(state.royaltyProjects||[]).filter(p=&gt;p.selectable!==false || p.id===slot.projectId).map(p=&gt;`&lt;option value=&quot;${p.id}&quot; ${slot.projectId===p.id?&#x27;selected&#x27;:&#x27;&#x27;} ${p.selectable===false?&#x27;disabled&#x27;:&#x27;&#x27;}&gt;${escapeProjectHtml(p.displayTitle||p.title)}${p.selectable===false?&#x27; · 런칭 완료&#x27;:&#x27;&#x27;}&lt;/option&gt;`).join(&#x27;&#x27;)}
         &lt;/select&gt;
       &lt;/td&gt;
       &lt;td&gt;
@@ -4602,6 +4608,13 @@ document.querySelectorAll(&#x27;[data-settle-tab]&#x27;).forEach(function(btn){
                         <input type="date" id="workLaunchDate" style="width:100%; border-radius:6px; border:1px solid #ddd;">
                     </div>
                     <div style="margin-bottom:15px;">
+                        <label class="extra-work-toggle"><input type="checkbox" id="workHasExtra"> 외전 있음</label>
+                        <div id="extraWorkFields" class="extra-work-fields">
+                            <div><label style="display:block;margin-bottom:5px;font-size:.78rem;font-weight:800;">외전 목표 글자수</label><input type="number" id="workExtraGoal" min="1" inputmode="numeric" placeholder="예: 20000" style="width:100%;border-radius:6px;border:1px solid #ddd;"></div>
+                            <div><label style="display:block;margin-bottom:5px;font-size:.78rem;font-weight:800;">외전 런칭일</label><input type="date" id="workExtraLaunchDate" style="width:100%;border-radius:6px;border:1px solid #ddd;"></div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:15px;">
                       <div>
                         <label style="display:block;margin-bottom:5px;">정산 비율 (%)</label>
                         <select id="workRoyaltyRate" style="width:100%;border-radius:6px;border:1px solid #ddd;">
@@ -4961,7 +4974,7 @@ function syncPlanGoalToDetailedRecord(dateStr){
 }
 
 function openScheduleModal(dateStr) {
-    let activeWorks = works.filter(w => !w.isHidden);
+    let activeWorks = getWritingTargets();
     if(activeWorks.length === 0) { showModal("먼저 작품을 등록해주세요."); return; }
     const typeOrder = { 'long': 1, 'short': 2, 'correction': 3 };
     activeWorks.sort((a, b) => {
@@ -4973,7 +4986,7 @@ function openScheduleModal(dateStr) {
     document.getElementById('scheduleDateInput').value = dateStr;
     const d = new Date(dateStr);
     document.getElementById('scheduleDateDisplay').textContent = `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 집필 목표 추가`;
-    document.getElementById('scheduleWorkSelect').innerHTML = activeWorks.map(w => `<option value="${w.title}">${w.title}</option>`).join("");
+    document.getElementById('scheduleWorkSelect').innerHTML = activeWorks.map(w => `<option value="${w.title}">${w.displayTitle||w.title}</option>`).join("");
     document.getElementById('scheduleGoalInput').value = "5000"; document.getElementById('scheduleFromNow').checked = false;
     modal.classList.add('open');
 }
@@ -5015,7 +5028,7 @@ function deleteScheduleDirectly(id, dateStr) {
 }
 
 function openTaskModal(dateStr, taskId = null) {
-    const activeWorks = works.filter(w => !w.isHidden);
+    const activeWorks = getWritingTargets();
     if(activeWorks.length === 0) { showModal("먼저 작품을 등록해주세요."); return; }
     
     // 작품 정렬 로직 추가: 장편 > 초단 > 교정 순, 마감일 임박 순
@@ -5029,7 +5042,7 @@ function openTaskModal(dateStr, taskId = null) {
     const d = new Date(dateStr);
     document.getElementById('taskDateDisplay').textContent = `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 일정`;
     document.getElementById('taskDateInput').value = dateStr;
-    document.getElementById('taskWorkSelect').innerHTML = activeWorks.map(w => `<option value="${w.title}">${w.title}</option>`).join("");
+    document.getElementById('taskWorkSelect').innerHTML = activeWorks.map(w => `<option value="${w.title}">${w.displayTitle||w.title}</option>`).join("");
     document.getElementById('taskCategorySelect').value = "완고 입고";
     document.getElementById('taskMemoInput').value = ""; document.getElementById('taskIdInput').value = "";
     document.getElementById('taskDeleteBtn').style.display = 'none';
@@ -5111,6 +5124,16 @@ function isLaunchedWork(w){
   if(p.length!==3 || p.some(v=>!Number.isFinite(v))) return false;
   const launch=new Date(p[0],p[1]-1,p[2]), now=new Date();
   return launch<=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+}
+function extraWorkTitle(w){ return `[외전] ${w?.title||''}`; }
+function getWritingTargets(){
+  const targets=[];
+  works.forEach((w,index)=>{
+    if(w.isHidden) return;
+    if(!isLaunchedWork(w)) targets.push({...w,index,displayTitle:getDisplayTitle(w.title),targetKind:'main'});
+    if(w.hasExtra && Number(w.extraGoal)>0 && !isLaunchedWork({launchDate:w.extraLaunchDate})) targets.push({...w,index,title:extraWorkTitle(w),displayTitle:`${getDisplayTitle(w.title)} · 외전`,goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',launchDate:w.extraLaunchDate||'',targetKind:'extra'});
+  });
+  return targets;
 }
 
 function getWorkTotal(title) {
@@ -5621,7 +5644,8 @@ function renderManageList() {
         typeWorks.forEach(w=>{
             const div=document.createElement("div"); div.className="manage-item-box"+(w.isHidden?" hidden":"");
             const accent=getGenreAccent(label);
-            div.innerHTML=`<div><span style="font-size:0.75rem;background:${accent};color:#fff;padding:2px 6px;border-radius:4px;margin-right:6px;">${label}</span><span style="font-weight:700;font-size:0.9rem;">${getDisplayTitle(w.title)}</span>${w.launchDate ? `<span style="font-size:.66rem;color:#4d7c77;margin-left:7px;font-weight:800;">런칭 ${w.launchDate}</span>` : `<span style="font-size:.66rem;color:#a0aec0;margin-left:7px;">런칭 미정 · 정산 미등록</span>`}${w.isHidden ? '<span style="font-size:0.7rem;color:#e53e3e;margin-left:5px;font-weight:700;">(숨김)</span>' : ''}</div><div style="display:flex;justify-content:flex-end;gap:6px;"><button onclick="toggleHide(${w.originalIndex})" class="manage-btn" style="color:${w.isHidden?'#4d7c77':'#a0aec0'}">${w.isHidden?"보이기":"숨기기"}</button><button onclick="editWork(${w.originalIndex})" class="manage-btn">수정</button><button onclick="deleteWork(${w.originalIndex})" class="manage-btn del" style="color:#e53e3e;">삭제</button></div>`;
+            const extraInfo=w.hasExtra ? `<div class="extra-work-info">📎 외전 ${Number(w.extraGoal||0).toLocaleString()}자 · ${w.extraLaunchDate?`런칭 ${w.extraLaunchDate}`:'런칭일 미정'}</div>` : '';
+            div.innerHTML=`<div><div><span style="font-size:0.75rem;background:${accent};color:#fff;padding:2px 6px;border-radius:4px;margin-right:6px;">${label}</span><span style="font-weight:700;font-size:0.9rem;">${getDisplayTitle(w.title)}</span>${w.launchDate ? `<span style="font-size:.66rem;color:#4d7c77;margin-left:7px;font-weight:800;">런칭 ${w.launchDate}</span>` : `<span style="font-size:.66rem;color:#a0aec0;margin-left:7px;">런칭 미정 · 정산 미등록</span>`}${w.isHidden ? '<span style="font-size:0.7rem;color:#e53e3e;margin-left:5px;font-weight:700;">(숨김)</span>' : ''}</div>${extraInfo}</div><div style="display:flex;justify-content:flex-end;gap:6px;"><button onclick="toggleHide(${w.originalIndex})" class="manage-btn" style="color:${w.isHidden?'#4d7c77':'#a0aec0'}">${w.isHidden?"보이기":"숨기기"}</button><button onclick="editWork(${w.originalIndex})" class="manage-btn">수정</button><button onclick="deleteWork(${w.originalIndex})" class="manage-btn del" style="color:#e53e3e;">삭제</button></div>`;
             list.appendChild(div);
         });
     });
@@ -5634,6 +5658,10 @@ window.editWork = (i) => {
     document.getElementById("workDeadline").value = w.deadline || "";
     document.getElementById("workType").value = w.workGenre || w.royaltyGenre || (w.type==="short" ? "현로 초단" : w.type==="correction" ? "교정" : "현로 장편");
     document.getElementById("workLaunchDate").value = w.launchDate || "";
+    document.getElementById("workHasExtra").checked = !!w.hasExtra;
+    document.getElementById("workExtraGoal").value = w.extraGoal || "";
+    document.getElementById("workExtraLaunchDate").value = w.extraLaunchDate || "";
+    toggleExtraWorkFields();
     
     document.getElementById("workRoyaltyRate").value = w.royaltyRate || 70;
     document.getElementById("saveWorkBtn").textContent = "수정 완료"; if(pickr) { pickr.setColor(w.color); currentPickrColor = w.color; }
@@ -5961,20 +5989,26 @@ function ensureWorkKeys(){
 }
 
 document.getElementById("saveWorkBtn").onclick = () => {
-    let title = document.getElementById("workTitle").value, publisher = document.getElementById("workPublisher").value, goal = parseInt(document.getElementById("workGoal").value), workGenre = document.getElementById("workType").value, type = workGenre==="교정" ? "correction" : (workGenre.includes("초단") ? "short" : "long"), deadline = document.getElementById("workDeadline").value, launchDate = document.getElementById("workLaunchDate").value, royaltyGenre = workGenre==="교정" ? "" : workGenre, royaltyRate = Number(document.getElementById("workRoyaltyRate").value)||70, idx = parseInt(document.getElementById("editIdx").value);
+    let title = document.getElementById("workTitle").value, publisher = document.getElementById("workPublisher").value, goal = parseInt(document.getElementById("workGoal").value), workGenre = document.getElementById("workType").value, type = workGenre==="교정" ? "correction" : (workGenre.includes("초단") ? "short" : "long"), deadline = document.getElementById("workDeadline").value, launchDate = document.getElementById("workLaunchDate").value, royaltyGenre = workGenre==="교정" ? "" : workGenre, royaltyRate = Number(document.getElementById("workRoyaltyRate").value)||70, idx = parseInt(document.getElementById("editIdx").value), hasExtra = document.getElementById("workHasExtra").checked, extraGoal = parseInt(document.getElementById("workExtraGoal").value)||0, extraLaunchDate = document.getElementById("workExtraLaunchDate").value;
     if(!title || !goal) return showModal("제목과 목표 글자수를 입력하세요");
+    if(hasExtra && !extraGoal) return showModal("외전 목표 글자수를 입력하세요");
     if (type === 'correction' && !title.startsWith('[교정] ')) title = `[교정] ${title}`; else if (type === 'short' && !title.startsWith('[초단] ')) title = `[초단] ${title}`;
-    const workData = { title, publisher, goal, color: currentPickrColor, type, workGenre, deadline, launchDate, royaltyGenre, royaltyRate, workKey: idx !== -1 ? (works[idx].workKey || ('rw_'+Date.now().toString(36))) : ('rw_'+Date.now().toString(36)), isHidden: idx !== -1 ? (works[idx].isHidden || false) : false };
+    const workData = { title, publisher, goal, color: currentPickrColor, type, workGenre, deadline, launchDate, royaltyGenre, royaltyRate, hasExtra, extraGoal:hasExtra?extraGoal:0, extraLaunchDate:hasExtra?extraLaunchDate:'', workKey: idx !== -1 ? (works[idx].workKey || ('rw_'+Date.now().toString(36))) : ('rw_'+Date.now().toString(36)), isHidden: idx !== -1 ? (works[idx].isHidden || false) : false };
     if(idx === -1) {
         if (works.some(w => w.title === title)) return showModal("이미 등록된 작품 이름입니다.");
         works.push(workData); showModal("등록되었습니다.");
     } else {
         const oldTitle = works[idx].title;
+        const oldExtraTitle = extraWorkTitle(works[idx]);
         if (works.some((w, i) => i !== idx && w.title === title)) return showModal("이미 등록된 작품 이름입니다.");
         if(oldTitle !== title) {
             for(let d in dailyData) { if(dailyData[d].works?.[oldTitle]) { dailyData[d].works[title] = dailyData[d].works[oldTitle]; delete dailyData[d].works[oldTitle]; } else if(dailyData[d][oldTitle] && !dailyData[d].works) { dailyData[d][title] = dailyData[d][oldTitle]; delete dailyData[d][oldTitle]; } }
             for(let d in schedules) if(Array.isArray(schedules[d])) schedules[d].forEach(s => { if(s.workTitle === oldTitle) s.workTitle = title; });
             for(let d in tasks) if(Array.isArray(tasks[d])) tasks[d].forEach(t => { if(t.workTitle === oldTitle) t.workTitle = title; });
+            const newExtraTitle=`[외전] ${title}`;
+            for(let d in dailyData) { if(dailyData[d].works?.[oldExtraTitle]) { dailyData[d].works[newExtraTitle] = dailyData[d].works[oldExtraTitle]; delete dailyData[d].works[oldExtraTitle]; } }
+            for(let d in schedules) if(Array.isArray(schedules[d])) schedules[d].forEach(s => { if(s.workTitle === oldExtraTitle) s.workTitle = newExtraTitle; });
+            for(let d in tasks) if(Array.isArray(tasks[d])) tasks[d].forEach(t => { if(t.workTitle === oldExtraTitle) t.workTitle = newExtraTitle; });
         }
         works[idx] = workData; showModal("수정되었습니다."); document.getElementById("editIdx").value = "-1";
         document.getElementById("formTitle").textContent = "🆕 새 작품 등록"; document.getElementById("saveWorkBtn").textContent = "저장하기";
@@ -5982,7 +6016,14 @@ document.getElementById("saveWorkBtn").onclick = () => {
     save(); syncWorksToSettlement(); renderManageList(); renderDashboard();
     document.getElementById("workTitle").value = ""; document.getElementById("workPublisher").value = ""; document.getElementById("workGoal").value = ""; document.getElementById("workDeadline").value = "";
     document.getElementById("workLaunchDate").value = "";  document.getElementById("workRoyaltyRate").value = "70";
+    document.getElementById("workHasExtra").checked = false; document.getElementById("workExtraGoal").value = ""; document.getElementById("workExtraLaunchDate").value = ""; toggleExtraWorkFields();
 };
+
+function toggleExtraWorkFields(){
+  const checked=document.getElementById('workHasExtra')?.checked;
+  document.getElementById('extraWorkFields')?.classList.toggle('open',!!checked);
+}
+document.getElementById('workHasExtra')?.addEventListener('change',toggleExtraWorkFields);
 
 if(document.getElementById("globalDailyGoal")) document.getElementById("globalDailyGoal").value = globalDailyGoal;
 if(document.getElementById("globalDailyGoal")) document.getElementById("globalDailyGoal").onchange = (e) => { globalDailyGoal = parseInt(e.target.value); save(); };
@@ -6133,15 +6174,13 @@ if(state.currentTheme) setTheme(state.currentTheme);
     try{
       const raw=localStorage.getItem('writer_data_v2');
       const s=raw?JSON.parse(raw):{};
-      payload=(s.works||[]).map((w,i)=>({
-        id:'royalty_'+i,
-        title:w.title||'',
-        displayTitle:(w.title||'').replace(/^\[(교정|초단)\]\s*/, ''),
-        type:w.type||'',
-        goal:Number(w.goal)||0,
-        deadline:w.deadline||'',
-        hidden:!!w.isHidden
-      })).filter(w=>!w.hidden);
+      const today=new Date(), todayKey=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+      const launched=date=>!!date && String(date)<=todayKey;
+      (s.works||[]).forEach((w,i)=>{
+        const clean=(w.title||'').replace(/^\[(교정|초단)\]\s*/, '');
+        payload.push({id:'royalty_'+i,title:w.title||'',displayTitle:clean,type:w.type||'',goal:Number(w.goal)||0,deadline:w.deadline||'',selectable:!w.isHidden&&!launched(w.launchDate)});
+        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',selectable:!w.isHidden&&!launched(w.extraLaunchDate)});
+      });
     }catch(e){}
     frame.contentWindow.postMessage({type:'ROYALTY_PROJECTS',projects:payload},'*');
   }
@@ -6165,7 +6204,7 @@ let planChoiceDateStr = '';
 
 function planDateKey(y,m,d){ return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
 function escPlan(v=''){ return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
-function workColorByTitle(title){ const w=works.find(x=>x.title===title); return w?.color || '#718096'; }
+function workColorByTitle(title){ const w=works.find(x=>x.title===title || extraWorkTitle(x)===title); return w?.color || '#718096'; }
 
 function openPlanChoice(ds){
   planChoiceDateStr=ds;
@@ -6186,7 +6225,7 @@ function renderPlanCalendar(){
     (schedules[ds]||[]).forEach(x=>{monthGoal+=parseInt(x.goal)||0; goalCount++;});
     monthActual+=getDayTotal(ds);
     taskCount+=(tasks[ds]||[]).length;
-    works.forEach(w=>{ if(w.deadline===ds) taskCount++; if(w.launchDate===ds) taskCount++; });
+    works.forEach(w=>{ if(w.deadline===ds) taskCount++; if(w.launchDate===ds) taskCount++; if(w.hasExtra&&w.extraLaunchDate===ds) taskCount++; });
   }
   const pct=monthGoal?Math.round(monthActual/monthGoal*100):0;
   document.getElementById('planTitle').textContent=`${y}년 ${m+1}월 작업 계획`;
@@ -6237,6 +6276,13 @@ function renderPlanCalendar(){
         item.onclick=e=>e.stopPropagation();
         el.appendChild(item);
       }
+      if(w.hasExtra && w.extraLaunchDate===ds){
+        const item=document.createElement('div');
+        item.className='plan-item work-milestone launch';
+        item.innerHTML=`<div class="plan-line"><span class="plan-title">📎 ${escPlan(title)} · 외전</span><b>외전 런칭일</b></div><div class="plan-meta">작품 설정 연동 · ${Number(w.extraGoal||0).toLocaleString()}자</div>`;
+        item.onclick=e=>e.stopPropagation();
+        el.appendChild(item);
+      }
     });
     body.appendChild(el);
   }
@@ -6259,6 +6305,13 @@ document.getElementById('planNext').onclick=()=>{planDate.setMonth(planDate.getM
   }
   function syncWriterDayState(childState){
     if(!childState || !childState.days || typeof dailyData==='undefined') return;
+
+    // The detailed-record editor runs inside an embedded document. Persist its
+    // complete state again from the parent window so Firebase's storage watcher
+    // catches mobile edits as well.
+    try{
+      localStorage.setItem('writer_log_clean_v1',JSON.stringify(childState));
+    }catch(e){ console.warn('DAY cloud bridge save failed',e); }
 
     // Remove only records previously generated by the DAY bridge.
     Object.keys(dailyData).forEach(date=>{
@@ -6373,7 +6426,7 @@ document.addEventListener('click',e=>{
     'analysisData_v6','publisherSortOrder_v6','genreList_v6','theme_v6',
     'custom_color_v6'
   ];
-  let fb=null, user=null, applyingRemote=false, unsubscribe=null, saveTimers=new Map();
+  let fb=null, user=null, applyingRemote=false, remoteSyncing=false, unsubscribe=null, saveTimers=new Map();
 
   document.body.insertAdjacentHTML('beforeend', `
     <button type="button" id="cloudSyncButton" class="cloud-sync-button" data-state="offline">☁️ 클라우드 연결</button>
@@ -6444,7 +6497,7 @@ document.addEventListener('click',e=>{
     if(!SYNC_KEYS.includes(key)||applyingRemote) return;
     stamp(key);
     clearTimeout(saveTimers.get(key));
-    saveTimers.set(key,setTimeout(()=>uploadKey(key).catch(showError),900));
+    saveTimers.set(key,setTimeout(()=>uploadKey(key).catch(showError),350));
   }
 
   const nativeSet=Storage.prototype.setItem, nativeRemove=Storage.prototype.removeItem;
@@ -6480,7 +6533,11 @@ document.addEventListener('click',e=>{
     unsubscribe=fb.onSnapshot(fb.collection(fb.db,'users',user.uid,'royalty'),snap=>{
       if(first){first=false;return}
       const changed=snap.docChanges().some(c=>Number(c.doc.data().clientUpdatedAt||0)>(times()[c.doc.id]||0));
-      if(changed){setStatus('다른 기기의 새 데이터가 있습니다. 눌러서 동기화하세요.','pending');button.onclick=()=>{modal.classList.add('open');reconcile(true).catch(showError)}}
+      if(changed && !remoteSyncing){
+        remoteSyncing=true;
+        setStatus('다른 기기 데이터를 자동 반영 중…','pending');
+        reconcile(false).catch(showError).finally(()=>{remoteSyncing=false});
+      }
     },showError);
   }
   function showError(error){console.error(error);setStatus(error?.message||'Firebase 연결을 확인해 주세요.','error')}
@@ -6489,6 +6546,17 @@ document.addEventListener('click',e=>{
   $('cloudRegister').onclick=async()=>{try{setStatus('계정 생성 중…','pending');const f=await loadFirebase(),c=await credentials();await f.createUserWithEmailAndPassword(f.auth,c.email,c.password)}catch(e){showError(e)}};
   $('cloudPull').onclick=async()=>{try{if(!fb)await loadFirebase();if(!user)throw new Error('먼저 로그인해 주세요.');await reconcile(true)}catch(e){showError(e)}};
   $('cloudLogout').onclick=async()=>{try{if(fb)await fb.signOut(fb.auth);user=null;if(unsubscribe)unsubscribe();setStatus('로그아웃되었습니다.','offline')}catch(e){showError(e)}};
+
+  // Give pending mobile edits a final chance to reach Firestore when the app
+  // moves to the background or the user switches applications.
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState!=='hidden' || !user) return;
+    for(const [key,timer] of saveTimers){
+      clearTimeout(timer);
+      saveTimers.delete(key);
+      uploadKey(key).catch(()=>{});
+    }
+  });
 
   loadFirebase().catch(showError);
 })();
