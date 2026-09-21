@@ -156,6 +156,16 @@ input[type=number] { -moz-appearance: textfield; }
 .volume-row input{width:100%;min-width:0;border:1px solid #d7e0df;border-radius:6px}
 .volume-remove{width:30px;height:30px;padding:0!important;border-radius:7px!important;background:#fff1f2!important;color:#be6475!important;border:1px solid #fecdd3!important}
 .volume-empty{font-size:.72rem;color:#94a3b8;line-height:1.45}
+.schedule-goal-preview{margin-top:12px;padding:12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;text-align:left}
+.schedule-goal-preview-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.76rem;color:#64748b}
+.schedule-goal-preview-head b{font-size:.9rem;color:#334155}
+.schedule-goal-preview-bar{height:12px;margin:9px 0 7px;border-radius:99px;background:#e8edf2;overflow:hidden;display:flex}
+.schedule-goal-preview-current{height:100%;background:var(--preview-color,#718096);opacity:.55}
+.schedule-goal-preview-added{height:100%;background:var(--preview-color,#718096)}
+.schedule-goal-preview-numbers{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center}
+.schedule-goal-preview-numbers span{padding:6px 4px;border-radius:7px;background:#fff;font-size:.68rem;color:#64748b}
+.schedule-goal-preview-numbers b{display:block;margin-top:2px;font-size:.78rem;color:#334155}
+.schedule-goal-preview-result{margin-top:8px;text-align:center;font-size:.75rem;font-weight:800;color:var(--preview-color,#4d7c77)}
 @media(max-width:560px){.extra-work-fields{grid-template-columns:1fr}}
 @media(max-width:560px){.volume-row{grid-template-columns:45px 1fr 30px}.volume-row>div:nth-child(3){grid-column:2/3}}
 .manage-btn { background: #f7fafc; border: 1px solid #edf2f7; color: #718096; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; transition: 0.2s; }
@@ -4743,6 +4753,12 @@ document.querySelectorAll(&#x27;[data-settle-tab]&#x27;).forEach(function(btn){
                 <label for="scheduleFromNow" style="font-size:0.85rem; font-weight:600; color:#4a5568;">지금부터 적용 (이 날짜 기록부터 합산)</label>
             </div>
             <p style="font-size:0.7rem; color:#718096; margin-top:4px;">* 체크 시, 선택한 날짜 이후에 작성된 기록만 계산됩니다.</p>
+            <div id="scheduleGoalPreview" class="schedule-goal-preview">
+                <div class="schedule-goal-preview-head"><span id="schedulePreviewTitle">선택 작품</span><b id="schedulePreviewPercent">0%</b></div>
+                <div class="schedule-goal-preview-bar"><i id="schedulePreviewCurrentBar" class="schedule-goal-preview-current"></i><i id="schedulePreviewAddedBar" class="schedule-goal-preview-added"></i></div>
+                <div class="schedule-goal-preview-numbers"><span>현재 누적<b id="schedulePreviewCurrent">0자</b></span><span>달성 후<b id="schedulePreviewAfter">0자</b></span><span>전체 목표<b id="schedulePreviewTotal">0자</b></span></div>
+                <div id="schedulePreviewResult" class="schedule-goal-preview-result">이번 목표 달성 후 진행률 0%</div>
+            </div>
         </div>
         <div class="modal-buttons">
             <button class="modal-btn no" onclick="closeScheduleModal()">취소</button>
@@ -5019,6 +5035,32 @@ function syncPlanGoalToDetailedRecord(dateStr){
     }catch(e){ console.warn('plan → detailed record sync failed',e); }
 }
 
+function updateScheduleGoalPreview(){
+    const title=document.getElementById('scheduleWorkSelect')?.value||'';
+    const target=getWritingTargets().find(w=>w.title===title);
+    const planned=Math.max(0,parseInt(document.getElementById('scheduleGoalInput')?.value)||0);
+    const current=title?getWorkTotal(title):0;
+    const total=Math.max(1,Number(target?.goal)||1);
+    const after=current+planned;
+    const currentPct=Math.min(100,(current/total)*100);
+    const afterPct=Math.min(100,(after/total)*100);
+    const addedPct=Math.max(0,afterPct-currentPct);
+    const color=target?.color||'#718096';
+    const preview=document.getElementById('scheduleGoalPreview'); if(!preview) return;
+    preview.style.setProperty('--preview-color',color);
+    preview.style.borderColor=color;
+    preview.style.background=getLightColor(color);
+    document.getElementById('schedulePreviewTitle').textContent=target?.displayTitle||getDisplayTitle(title)||'선택 작품';
+    document.getElementById('schedulePreviewPercent').textContent=Math.round((after/total)*100)+'%';
+    document.getElementById('schedulePreviewCurrentBar').style.width=currentPct+'%';
+    document.getElementById('schedulePreviewAddedBar').style.width=addedPct+'%';
+    document.getElementById('schedulePreviewCurrent').textContent=current.toLocaleString()+'자';
+    document.getElementById('schedulePreviewAfter').textContent=after.toLocaleString()+'자';
+    document.getElementById('schedulePreviewTotal').textContent=total.toLocaleString()+'자';
+    const remaining=total-after, result=document.getElementById('schedulePreviewResult');
+    result.textContent=remaining>0 ? `이번 목표 달성 후 ${Math.round((after/total)*100)}% · 완성까지 ${remaining.toLocaleString()}자` : (remaining===0 ? '이번 목표를 달성하면 전체 목표 완성!' : `전체 목표를 ${Math.abs(remaining).toLocaleString()}자 초과 달성`);
+}
+
 function openScheduleModal(dateStr) {
     let activeWorks = getWritingTargets();
     if(activeWorks.length === 0) { showModal("먼저 작품을 등록해주세요."); return; }
@@ -5034,9 +5076,12 @@ function openScheduleModal(dateStr) {
     document.getElementById('scheduleDateDisplay').textContent = `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 집필 목표 추가`;
     document.getElementById('scheduleWorkSelect').innerHTML = activeWorks.map(w => `<option value="${w.title}">${w.displayTitle||w.title}</option>`).join("");
     document.getElementById('scheduleGoalInput').value = "5000"; document.getElementById('scheduleFromNow').checked = false;
+    updateScheduleGoalPreview();
     modal.classList.add('open');
 }
 function closeScheduleModal() { document.getElementById('scheduleModal').classList.remove('open'); }
+document.getElementById('scheduleWorkSelect')?.addEventListener('change',updateScheduleGoalPreview);
+document.getElementById('scheduleGoalInput')?.addEventListener('input',updateScheduleGoalPreview);
 function saveSchedule() {
     const dateStr = document.getElementById('scheduleDateInput').value, workTitle = document.getElementById('scheduleWorkSelect').value;
     const goal = parseInt(document.getElementById('scheduleGoalInput').value) || 5000, fromNow = document.getElementById('scheduleFromNow').checked;
