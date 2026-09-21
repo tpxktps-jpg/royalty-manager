@@ -5014,12 +5014,22 @@ function syncPlanGoalToDetailedRecord(dateStr){
           d.planGoals=Array.isArray(d.planGoals)?d.planGoals:[];
         }
 
-        // One planned work: select it automatically in 상세기록.
+        // One planned work: ensure the project exists, then select it
+        // automatically in 상세기록. This avoids a postMessage timing race.
         if(planned.length===1){
-          const target=(dayState.royaltyProjects||[]).find(p=>
+          dayState.royaltyProjects=Array.isArray(dayState.royaltyProjects)?dayState.royaltyProjects:[];
+          let target=(dayState.royaltyProjects||[]).find(p=>
             String(p.title||'').trim()===String(planned[0].workTitle||'').trim() ||
             String(p.displayTitle||'').trim()===String(planned[0].workTitle||'').trim()
           );
+          if(!target){
+            const writingTarget=getWritingTargets().find(w=>String(w.title||'').trim()===String(planned[0].workTitle||'').trim());
+            if(writingTarget){
+              const id=writingTarget.targetKind==='extra' ? `royalty_${writingTarget.index}_extra` : (writingTarget.targetKind==='volume' ? `royalty_${writingTarget.index}_vol_${writingTarget.volumeNumber}` : `royalty_${writingTarget.index}`);
+              target={id,title:writingTarget.title,displayTitle:writingTarget.displayTitle||writingTarget.title,type:writingTarget.type||'',goal:Number(writingTarget.goal)||0,deadline:writingTarget.deadline||'',color:writingTarget.color||'#718096',selectable:true};
+              dayState.royaltyProjects.push(target);
+            }
+          }
           if(target){
             d.defaultProjectId=target.id;
             d.activeProjectId=target.id;
@@ -5087,8 +5097,21 @@ function saveSchedule() {
     const goal = parseInt(document.getElementById('scheduleGoalInput').value) || 5000, fromNow = document.getElementById('scheduleFromNow').checked;
     if(!workTitle) return;
     if(!schedules[dateStr]) schedules[dateStr] = [];
-    schedules[dateStr].push({ id: Date.now().toString(), workTitle: workTitle, goal: goal, fromNow: fromNow });
-    save(); syncPlanGoalToDetailedRecord(dateStr); closeScheduleModal(); renderScheduleCalendar(); if(typeof renderPlanCalendar==='function') renderPlanCalendar();
+    const item={ id: Date.now().toString(), workTitle: workTitle, goal: goal, fromNow: fromNow };
+    schedules[dateStr].push(item);
+    if(!save()){
+      schedules[dateStr]=schedules[dateStr].filter(x=>x.id!==item.id);
+      return showModal('저장에 실패했습니다. 브라우저 저장공간을 확인해 주세요.');
+    }
+    try{
+      const check=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');
+      const stored=Array.isArray(check.schedules?.[dateStr]) && check.schedules[dateStr].some(x=>x.id===item.id);
+      if(!stored) throw new Error('schedule verification failed');
+    }catch(e){ return showModal('집필계획 저장을 확인하지 못했습니다. 다시 시도해 주세요.'); }
+    if(typeof window.sendProjectsToDay==='function') window.sendProjectsToDay();
+    syncPlanGoalToDetailedRecord(dateStr);
+    setTimeout(()=>syncPlanGoalToDetailedRecord(dateStr),120);
+    closeScheduleModal(); renderScheduleCalendar(); if(typeof renderPlanCalendar==='function') renderPlanCalendar();
 }
 function duplicateSchedule(scheduleId, dateStr) {
     if (!schedules[dateStr]) return;
@@ -5194,7 +5217,7 @@ function initPickr(color) {
     }, 100);
 }
 
-function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ works, dailyData, dailyGoal: globalDailyGoal, schedules, tasks, menuIcons, currentTheme: state.currentTheme, customThemeColor: state.customThemeColor, categoryColors })); } catch(e) { console.warn(e); } }
+function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ works, dailyData, dailyGoal: globalDailyGoal, schedules, tasks, menuIcons, currentTheme: state.currentTheme, customThemeColor: state.customThemeColor, categoryColors })); return true; } catch(e) { console.warn(e); return false; } }
 function getYYYYMMDD(d) { return d.toISOString().split('T')[0]; }
 function getKoreanDate(d) { return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`; }
 
