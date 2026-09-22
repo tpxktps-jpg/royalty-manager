@@ -809,6 +809,59 @@ aside nav button.tab{
 }
 </style>
 
+<style id="responsive-layout-fixes-v2">
+main,section,.content-column,.summary-card,.unified-home,.dashboard-grid,.daily-grid,#settings>div{min-width:0;max-width:100%;box-sizing:border-box}
+img,canvas,iframe{max-width:100%}
+.modal-overlay{padding:16px;box-sizing:border-box}
+.modal-box{max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box}
+.modal-buttons{flex-wrap:wrap}.modal-buttons .modal-btn{flex:1 1 110px}
+@media(max-width:1200px){
+  aside{width:185px}
+  main{padding:16px}
+  .dashboard-grid{grid-template-columns:260px minmax(0,1fr);gap:14px}
+  #settings>div{grid-template-columns:minmax(280px,2fr) minmax(0,5fr)!important;gap:14px!important}
+  #manageList{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .volume-row{grid-template-columns:48px repeat(2,minmax(0,1fr)) 30px}
+  .volume-row>div:nth-child(4){grid-column:2/4;grid-row:2}
+  .volume-row .volume-remove{grid-column:4;grid-row:1/3;align-self:center}
+}
+@media(max-width:980px){
+  aside{width:165px}
+  .brand{padding:20px 10px;font-size:1.05rem}
+  nav button{padding:10px 8px;font-size:.82rem}
+  main{padding:12px}
+  .dashboard-grid,.daily-grid,#settings>div{grid-template-columns:1fr!important}
+  .stats-column,.daily-summary-panel{position:static}
+  #settings>div>div{min-width:0}
+  #manageList{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .plan-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cards-grid{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+  .content-column{padding:15px}
+}
+@media(max-width:768px){
+  #settings>div,#manageList{grid-template-columns:1fr!important}
+  #settings .summary-card{padding:13px!important}
+  .volume-manager-head{align-items:flex-start;flex-direction:column}
+  .volume-add-btn{width:100%!important}
+  .volume-row{grid-template-columns:45px minmax(0,1fr) 34px!important}
+  .volume-row>div:nth-child(1){grid-column:1;grid-row:1/4}
+  .volume-row>div:nth-child(2){grid-column:2;grid-row:1}
+  .volume-row>div:nth-child(3){grid-column:2;grid-row:2}
+  .volume-row>div:nth-child(4){grid-column:2;grid-row:3}
+  .volume-row .volume-remove{grid-column:3;grid-row:1/4;align-self:center}
+  .schedule-goal-preview-numbers{grid-template-columns:1fr}
+  .calendar-grid,.monthly-grid,#planCalendarBody{min-width:650px}
+  #calendar .content-column,#plan .content-column{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .modal-overlay{align-items:flex-start;padding:10px}
+  .modal-box{max-height:calc(100dvh - 20px);padding:18px 14px!important}
+}
+@media(max-width:420px){
+  .plan-summary,.uh-kpis,.home-settlement-stats{grid-template-columns:1fr!important}
+  .schedule-goal-preview{padding:10px}
+  .modal-buttons{flex-direction:column}.modal-buttons .modal-btn{width:100%;flex:auto}
+}
+</style>
+
 </head>
 <body>
 <aside>
