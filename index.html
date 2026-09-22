@@ -5072,7 +5072,7 @@ function updateScheduleGoalPreview(){
 }
 
 function openScheduleModal(dateStr) {
-    let activeWorks = getWritingTargets();
+    let activeWorks = getScheduleWritingTargets();
     if(activeWorks.length === 0) { showModal("먼저 작품을 등록해주세요."); return; }
     const typeOrder = { 'long': 1, 'short': 2, 'correction': 3 };
     activeWorks.sort((a, b) => {
@@ -5239,6 +5239,13 @@ function isLaunchedWork(w){
   const launch=new Date(p[0],p[1]-1,p[2]), now=new Date();
   return launch<=new Date(now.getFullYear(),now.getMonth(),now.getDate());
 }
+function isPastDeadline(dateStr){
+  if(!dateStr) return false;
+  const p=String(dateStr).split('-').map(Number);
+  if(p.length!==3 || p.some(v=>!Number.isFinite(v))) return false;
+  const deadline=new Date(p[0],p[1]-1,p[2]), now=new Date();
+  return deadline<new Date(now.getFullYear(),now.getMonth(),now.getDate());
+}
 function extraWorkTitle(w){ return `[외전] ${w?.title||''}`; }
 function volumeWorkTitle(w,number){ return `[${number}권] ${w?.title||''}`; }
 function workVolumes(w){ return Array.isArray(w?.volumes) ? w.volumes.filter(v=>Number(v?.number)>=2) : []; }
@@ -5254,6 +5261,9 @@ function getWritingTargets(){
     if(w.hasExtra && Number(w.extraGoal)>0) targets.push({...w,index,title:extraWorkTitle(w),displayTitle:`${getDisplayTitle(w.title)} · 외전`,goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',launchDate:w.extraLaunchDate||'',targetKind:'extra'});
   });
   return targets;
+}
+function getScheduleWritingTargets(){
+  return getWritingTargets().filter(target=>target.targetKind!=='main' || !isPastDeadline(target.deadline));
 }
 
 function getWorkTotal(title) {
