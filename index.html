@@ -143,14 +143,14 @@ input[type=number] { -moz-appearance: textfield; }
 .manage-item-box.hidden { opacity: 0.6; }
 .extra-work-toggle{display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid #dce7e5;border-radius:9px;background:#f5faf9;font-weight:800;color:#355f5a;cursor:pointer}
 .extra-work-toggle input{width:17px;height:17px;accent-color:#4d7c77}
-.extra-work-fields{display:none;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;padding:12px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0}
+.extra-work-fields{display:none;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;padding:12px;border-radius:9px;background:#f8fafc;border:1px solid #e2e8f0}
 .extra-work-fields.open{display:grid}
 .extra-work-info{margin-top:8px;padding:8px 10px;border-left:3px solid #8bb8b2;border-radius:4px;background:#edf7f5;color:#476b67;font-size:.72rem;font-weight:700}
 .volume-manager{margin-bottom:15px;padding:12px;border:1px solid #dce7e5;border-radius:10px;background:#fbfdfd}
 .volume-manager-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .volume-manager-title{font-size:.82rem;font-weight:900;color:#355f5a}
 .volume-add-btn{border:1px solid #8bb8b2!important;background:#fff!important;color:#3f716b!important;padding:6px 9px!important;font-size:.72rem!important;border-radius:7px!important}
-.volume-row{display:grid;grid-template-columns:52px 1fr 1fr 30px;gap:7px;align-items:end;margin-top:8px;padding-top:8px;border-top:1px dashed #dbe7e5}
+.volume-row{display:grid;grid-template-columns:52px 1fr 1fr 1fr 30px;gap:7px;align-items:end;margin-top:8px;padding-top:8px;border-top:1px dashed #dbe7e5}
 .volume-label{align-self:center;text-align:center;font-size:.75rem;font-weight:900;color:#4d7c77}
 .volume-row label{display:block;margin-bottom:4px;font-size:.68rem;font-weight:800;color:#64748b}
 .volume-row input{width:100%;min-width:0;border:1px solid #d7e0df;border-radius:6px}
@@ -166,8 +166,7 @@ input[type=number] { -moz-appearance: textfield; }
 .schedule-goal-preview-numbers span{padding:6px 4px;border-radius:7px;background:#fff;font-size:.68rem;color:#64748b}
 .schedule-goal-preview-numbers b{display:block;margin-top:2px;font-size:.78rem;color:#334155}
 .schedule-goal-preview-result{margin-top:8px;text-align:center;font-size:.75rem;font-weight:800;color:var(--preview-color,#4d7c77)}
-@media(max-width:560px){.extra-work-fields{grid-template-columns:1fr}}
-@media(max-width:560px){.volume-row{grid-template-columns:45px 1fr 30px}.volume-row>div:nth-child(3){grid-column:2/3}}
+@media(max-width:700px){.extra-work-fields{grid-template-columns:1fr}.volume-row{grid-template-columns:45px 1fr 30px}.volume-row>div:nth-child(3),.volume-row>div:nth-child(4){grid-column:2/3}}
 .manage-btn { background: #f7fafc; border: 1px solid #edf2f7; color: #718096; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; transition: 0.2s; }
 .manage-btn:hover { background: #edf2f7; color: #4a5568; }
 .manage-btn.del:hover { background: #fff5f5; color: #e53e3e; border-color: #feb2b2; }
@@ -4649,6 +4648,7 @@ document.querySelectorAll(&#x27;[data-settle-tab]&#x27;).forEach(function(btn){
                         <label class="extra-work-toggle"><input type="checkbox" id="workHasExtra"> 외전 있음</label>
                         <div id="extraWorkFields" class="extra-work-fields">
                             <div><label style="display:block;margin-bottom:5px;font-size:.78rem;font-weight:800;">외전 목표 글자수</label><input type="number" id="workExtraGoal" min="1" inputmode="numeric" placeholder="예: 20000" style="width:100%;border-radius:6px;border:1px solid #ddd;"></div>
+                            <div><label style="display:block;margin-bottom:5px;font-size:.78rem;font-weight:800;">외전 마감일</label><input type="date" id="workExtraDeadline" style="width:100%;border-radius:6px;border:1px solid #ddd;"></div>
                             <div><label style="display:block;margin-bottom:5px;font-size:.78rem;font-weight:800;">외전 런칭일</label><input type="date" id="workExtraLaunchDate" style="width:100%;border-radius:6px;border:1px solid #ddd;"></div>
                         </div>
                     </div>
@@ -5256,14 +5256,14 @@ function getWritingTargets(){
     const volumes=workVolumes(w), hasSeries=volumes.length>0;
     if(!isLaunchedWork(w)) targets.push({...w,index,displayTitle:`${getDisplayTitle(w.title)}${hasSeries?' · 1권':''}`,targetKind:'main'});
     volumes.forEach(v=>{
-      if(!isLaunchedWork({launchDate:v.launchDate})) targets.push({...w,index,title:volumeWorkTitle(w,v.number),displayTitle:`${getDisplayTitle(w.title)} · ${v.number}권`,goal:Number(v.goal)||0,deadline:v.launchDate||'',launchDate:v.launchDate||'',targetKind:'volume',volumeNumber:v.number});
+      if(!isLaunchedWork({launchDate:v.launchDate})) targets.push({...w,index,title:volumeWorkTitle(w,v.number),displayTitle:`${getDisplayTitle(w.title)} · ${v.number}권`,goal:Number(v.goal)||0,deadline:v.deadline||'',launchDate:v.launchDate||'',targetKind:'volume',volumeNumber:v.number});
     });
-    if(w.hasExtra && Number(w.extraGoal)>0) targets.push({...w,index,title:extraWorkTitle(w),displayTitle:`${getDisplayTitle(w.title)} · 외전`,goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',launchDate:w.extraLaunchDate||'',targetKind:'extra'});
+    if(w.hasExtra && Number(w.extraGoal)>0) targets.push({...w,index,title:extraWorkTitle(w),displayTitle:`${getDisplayTitle(w.title)} · 외전`,goal:Number(w.extraGoal)||0,deadline:w.extraDeadline||'',launchDate:w.extraLaunchDate||'',targetKind:'extra'});
   });
   return targets;
 }
 function getScheduleWritingTargets(){
-  return getWritingTargets().filter(target=>target.targetKind!=='main' || !isPastDeadline(target.deadline));
+  return getWritingTargets().filter(target=>!isPastDeadline(target.deadline));
 }
 
 function getWorkTotal(title) {
@@ -5777,8 +5777,8 @@ function renderManageList() {
             const div=document.createElement("div"); div.className="manage-item-box"+(w.isHidden?" hidden":"");
             const accent=getGenreAccent(label);
             div.style.borderLeft=`5px solid ${w.color||accent}`;
-            const volumeInfo=workVolumes(w).map(v=>`<div class="extra-work-info" style="border-left-color:${w.color||'#8bb8b2'}">📚 ${v.number}권 ${Number(v.goal||0).toLocaleString()}자 · ${v.launchDate?`런칭 ${v.launchDate}`:'런칭일 미정'}</div>`).join('');
-            const extraInfo=w.hasExtra ? `<div class="extra-work-info">📎 외전 ${Number(w.extraGoal||0).toLocaleString()}자 · ${w.extraLaunchDate?`런칭 ${w.extraLaunchDate}`:'런칭일 미정'}</div>` : '';
+            const volumeInfo=workVolumes(w).map(v=>`<div class="extra-work-info" style="border-left-color:${w.color||'#8bb8b2'}">📚 ${v.number}권 ${Number(v.goal||0).toLocaleString()}자 · ${v.deadline?`마감 ${v.deadline}`:'마감 미정'} · ${v.launchDate?`런칭 ${v.launchDate}`:'런칭 미정'}</div>`).join('');
+            const extraInfo=w.hasExtra ? `<div class="extra-work-info">📎 외전 ${Number(w.extraGoal||0).toLocaleString()}자 · ${w.extraDeadline?`마감 ${w.extraDeadline}`:'마감 미정'} · ${w.extraLaunchDate?`런칭 ${w.extraLaunchDate}`:'런칭 미정'}</div>` : '';
             div.innerHTML=`<div><div><span style="font-size:0.75rem;background:${accent};color:#fff;padding:2px 6px;border-radius:4px;margin-right:6px;">${label}</span><span style="font-weight:700;font-size:0.9rem;">${getDisplayTitle(w.title)}</span>${w.launchDate ? `<span style="font-size:.66rem;color:#4d7c77;margin-left:7px;font-weight:800;">런칭 ${w.launchDate}</span>` : `<span style="font-size:.66rem;color:#a0aec0;margin-left:7px;">런칭 미정 · 정산 미등록</span>`}${w.isHidden ? '<span style="font-size:0.7rem;color:#e53e3e;margin-left:5px;font-weight:700;">(숨김)</span>' : ''}</div>${volumeInfo}${extraInfo}</div><div style="display:flex;justify-content:flex-end;gap:6px;"><button onclick="toggleHide(${w.originalIndex})" class="manage-btn" style="color:${w.isHidden?'#4d7c77':'#a0aec0'}">${w.isHidden?"보이기":"숨기기"}</button><button onclick="editWork(${w.originalIndex})" class="manage-btn">수정</button><button onclick="deleteWork(${w.originalIndex})" class="manage-btn del" style="color:#e53e3e;">삭제</button></div>`;
             list.appendChild(div);
         });
@@ -5794,6 +5794,7 @@ window.editWork = (i) => {
     document.getElementById("workLaunchDate").value = w.launchDate || "";
     document.getElementById("workHasExtra").checked = !!w.hasExtra;
     document.getElementById("workExtraGoal").value = w.extraGoal || "";
+    document.getElementById("workExtraDeadline").value = w.extraDeadline || "";
     document.getElementById("workExtraLaunchDate").value = w.extraLaunchDate || "";
     toggleExtraWorkFields();
     renderVolumeRows(workVolumes(w));
@@ -6124,13 +6125,13 @@ function ensureWorkKeys(){
 }
 
 document.getElementById("saveWorkBtn").onclick = () => {
-    let title = document.getElementById("workTitle").value, publisher = document.getElementById("workPublisher").value, goal = parseInt(document.getElementById("workGoal").value), workGenre = document.getElementById("workType").value, type = workGenre==="교정" ? "correction" : (workGenre.includes("초단") ? "short" : "long"), deadline = document.getElementById("workDeadline").value, launchDate = document.getElementById("workLaunchDate").value, royaltyGenre = workGenre==="교정" ? "" : workGenre, royaltyRate = Number(document.getElementById("workRoyaltyRate").value)||70, idx = parseInt(document.getElementById("editIdx").value), hasExtra = document.getElementById("workHasExtra").checked, extraGoal = parseInt(document.getElementById("workExtraGoal").value)||0, extraLaunchDate = document.getElementById("workExtraLaunchDate").value;
+    let title = document.getElementById("workTitle").value, publisher = document.getElementById("workPublisher").value, goal = parseInt(document.getElementById("workGoal").value), workGenre = document.getElementById("workType").value, type = workGenre==="교정" ? "correction" : (workGenre.includes("초단") ? "short" : "long"), deadline = document.getElementById("workDeadline").value, launchDate = document.getElementById("workLaunchDate").value, royaltyGenre = workGenre==="교정" ? "" : workGenre, royaltyRate = Number(document.getElementById("workRoyaltyRate").value)||70, idx = parseInt(document.getElementById("editIdx").value), hasExtra = document.getElementById("workHasExtra").checked, extraGoal = parseInt(document.getElementById("workExtraGoal").value)||0, extraDeadline = document.getElementById("workExtraDeadline").value, extraLaunchDate = document.getElementById("workExtraLaunchDate").value;
     if(!title || !goal) return showModal("제목과 목표 글자수를 입력하세요");
     if(hasExtra && !extraGoal) return showModal("외전 목표 글자수를 입력하세요");
     const volumes=readVolumeRows();
     if(volumes.some(v=>!v.goal)) return showModal("후속권 목표 글자수를 입력하세요");
     if (type === 'correction' && !title.startsWith('[교정] ')) title = `[교정] ${title}`; else if (type === 'short' && !title.startsWith('[초단] ')) title = `[초단] ${title}`;
-    const workData = { title, publisher, goal, color: currentPickrColor, type, workGenre, deadline, launchDate, royaltyGenre, royaltyRate, volumes, hasExtra, extraGoal:hasExtra?extraGoal:0, extraLaunchDate:hasExtra?extraLaunchDate:'', workKey: idx !== -1 ? (works[idx].workKey || ('rw_'+Date.now().toString(36))) : ('rw_'+Date.now().toString(36)), isHidden: idx !== -1 ? (works[idx].isHidden || false) : false };
+    const workData = { title, publisher, goal, color: currentPickrColor, type, workGenre, deadline, launchDate, royaltyGenre, royaltyRate, volumes, hasExtra, extraGoal:hasExtra?extraGoal:0, extraDeadline:hasExtra?extraDeadline:'', extraLaunchDate:hasExtra?extraLaunchDate:'', workKey: idx !== -1 ? (works[idx].workKey || ('rw_'+Date.now().toString(36))) : ('rw_'+Date.now().toString(36)), isHidden: idx !== -1 ? (works[idx].isHidden || false) : false };
     if(idx === -1) {
         if (works.some(w => w.title === title)) return showModal("이미 등록된 작품 이름입니다.");
         works.push(workData); showModal("등록되었습니다.");
@@ -6160,7 +6161,7 @@ document.getElementById("saveWorkBtn").onclick = () => {
     if(typeof window.sendProjectsToDay==='function') window.sendProjectsToDay();
     document.getElementById("workTitle").value = ""; document.getElementById("workPublisher").value = ""; document.getElementById("workGoal").value = ""; document.getElementById("workDeadline").value = "";
     document.getElementById("workLaunchDate").value = "";  document.getElementById("workRoyaltyRate").value = "70";
-    document.getElementById("workHasExtra").checked = false; document.getElementById("workExtraGoal").value = ""; document.getElementById("workExtraLaunchDate").value = ""; toggleExtraWorkFields();
+    document.getElementById("workHasExtra").checked = false; document.getElementById("workExtraGoal").value = ""; document.getElementById("workExtraDeadline").value = ""; document.getElementById("workExtraLaunchDate").value = ""; toggleExtraWorkFields();
     renderVolumeRows([]);
 };
 
@@ -6174,7 +6175,7 @@ function renderVolumeRows(volumes=[]){
   const root=document.getElementById('volumeRows'); if(!root) return;
   const rows=(volumes||[]).slice().sort((a,b)=>Number(a.number)-Number(b.number));
   if(!rows.length){ root.innerHTML='<div class="volume-empty">후속권이 생기면 추가하세요. 현재 작품은 자동으로 1권이 됩니다.</div>'; return; }
-  root.innerHTML=rows.map(v=>`<div class="volume-row" data-number="${Number(v.number)}"><div class="volume-label">${Number(v.number)}권</div><div><label>목표 글자수</label><input class="volume-goal" type="number" min="1" inputmode="numeric" value="${Number(v.goal)||''}" placeholder="예: 20000"></div><div><label>런칭일</label><input class="volume-launch" type="date" value="${v.launchDate||''}"></div><button type="button" class="volume-remove" title="삭제">×</button></div>`).join('');
+  root.innerHTML=rows.map(v=>`<div class="volume-row" data-number="${Number(v.number)}"><div class="volume-label">${Number(v.number)}권</div><div><label>목표 글자수</label><input class="volume-goal" type="number" min="1" inputmode="numeric" value="${Number(v.goal)||''}" placeholder="예: 20000"></div><div><label>마감일</label><input class="volume-deadline" type="date" value="${v.deadline||''}"></div><div><label>런칭일</label><input class="volume-launch" type="date" value="${v.launchDate||''}"></div><button type="button" class="volume-remove" title="삭제">×</button></div>`).join('');
   root.querySelectorAll('.volume-remove').forEach(btn=>btn.onclick=()=>{btn.closest('.volume-row').remove(); renumberVolumeRows();});
 }
 function renumberVolumeRows(){
@@ -6183,10 +6184,10 @@ function renumberVolumeRows(){
   if(!rows.length) renderVolumeRows([]);
 }
 function readVolumeRows(){
-  return [...document.querySelectorAll('#volumeRows .volume-row')].map((row,i)=>({number:i+2,goal:parseInt(row.querySelector('.volume-goal')?.value)||0,launchDate:row.querySelector('.volume-launch')?.value||''}));
+  return [...document.querySelectorAll('#volumeRows .volume-row')].map((row,i)=>({number:i+2,goal:parseInt(row.querySelector('.volume-goal')?.value)||0,deadline:row.querySelector('.volume-deadline')?.value||'',launchDate:row.querySelector('.volume-launch')?.value||''}));
 }
 document.getElementById('addVolumeBtn')?.addEventListener('click',()=>{
-  const rows=readVolumeRows(); rows.push({number:rows.length+2,goal:0,launchDate:''}); renderVolumeRows(rows);
+  const rows=readVolumeRows(); rows.push({number:rows.length+2,goal:0,deadline:'',launchDate:''}); renderVolumeRows(rows);
 });
 
 if(document.getElementById("globalDailyGoal")) document.getElementById("globalDailyGoal").value = globalDailyGoal;
@@ -6344,8 +6345,8 @@ if(state.currentTheme) setTheme(state.currentTheme);
         const clean=(w.title||'').replace(/^\[(교정|초단)\]\s*/, '');
         const volumes=Array.isArray(w.volumes)?w.volumes.filter(v=>Number(v?.number)>=2):[], hasSeries=volumes.length>0;
         payload.push({id:'royalty_'+i,title:w.title||'',displayTitle:`${clean}${hasSeries?' · 1권':''}`,type:w.type||'',goal:Number(w.goal)||0,deadline:w.deadline||'',color:w.color||'#718096',selectable:!w.isHidden&&!launched(w.launchDate)});
-        volumes.forEach(v=>payload.push({id:`royalty_${i}_vol_${Number(v.number)}`,title:`[${Number(v.number)}권] ${w.title||''}`,displayTitle:`${clean} · ${Number(v.number)}권`,type:w.type||'',goal:Number(v.goal)||0,deadline:v.launchDate||'',color:w.color||'#718096',selectable:!w.isHidden&&!launched(v.launchDate)}));
-        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraLaunchDate||'',color:w.color||'#718096',selectable:!w.isHidden});
+        volumes.forEach(v=>payload.push({id:`royalty_${i}_vol_${Number(v.number)}`,title:`[${Number(v.number)}권] ${w.title||''}`,displayTitle:`${clean} · ${Number(v.number)}권`,type:w.type||'',goal:Number(v.goal)||0,deadline:v.deadline||'',launchDate:v.launchDate||'',color:w.color||'#718096',selectable:!w.isHidden&&!launched(v.launchDate)}));
+        if(w.hasExtra && Number(w.extraGoal)>0) payload.push({id:'royalty_'+i+'_extra',title:`[외전] ${w.title||''}`,displayTitle:`${clean} · 외전`,type:w.type||'',goal:Number(w.extraGoal)||0,deadline:w.extraDeadline||'',launchDate:w.extraLaunchDate||'',color:w.color||'#718096',selectable:!w.isHidden});
       });
     }catch(e){}
     frame.contentWindow.postMessage({type:'ROYALTY_PROJECTS',projects:payload},'*');
@@ -6392,7 +6393,7 @@ function renderPlanCalendar(){
     (schedules[ds]||[]).forEach(x=>{monthGoal+=parseInt(x.goal)||0; goalCount++;});
     monthActual+=getDayTotal(ds);
     taskCount+=(tasks[ds]||[]).length;
-    works.forEach(w=>{ if(w.deadline===ds) taskCount++; if(w.launchDate===ds) taskCount++; workVolumes(w).forEach(v=>{if(v.launchDate===ds)taskCount++;}); if(w.hasExtra&&w.extraLaunchDate===ds) taskCount++; });
+    works.forEach(w=>{ if(w.deadline===ds) taskCount++; if(w.launchDate===ds) taskCount++; workVolumes(w).forEach(v=>{if(v.deadline===ds)taskCount++;if(v.launchDate===ds)taskCount++;}); if(w.hasExtra&&w.extraDeadline===ds) taskCount++; if(w.hasExtra&&w.extraLaunchDate===ds) taskCount++; });
   }
   const pct=monthGoal?Math.round(monthActual/monthGoal*100):0;
   document.getElementById('planTitle').textContent=`${y}년 ${m+1}월 작업 계획`;
@@ -6446,6 +6447,13 @@ function renderPlanCalendar(){
         el.appendChild(item);
       }
       workVolumes(w).forEach(v=>{
+        if(v.deadline===ds){
+          const item=document.createElement('div');
+          item.className='plan-item work-milestone deadline';
+          item.style.setProperty('--item-color',w.color||'#c98998');
+          item.innerHTML=`<div class="plan-line"><span class="plan-title">📌 ${escPlan(title)} · ${Number(v.number)}권</span><b>마감일</b></div><div class="plan-meta">작품 설정 연동 · ${Number(v.goal||0).toLocaleString()}자</div>`;
+          item.onclick=e=>e.stopPropagation(); el.appendChild(item);
+        }
         if(v.launchDate!==ds) return;
         const item=document.createElement('div');
         item.className='plan-item work-milestone launch';
@@ -6453,6 +6461,13 @@ function renderPlanCalendar(){
         item.innerHTML=`<div class="plan-line"><span class="plan-title">📚 ${escPlan(title)} · ${Number(v.number)}권</span><b>런칭일</b></div><div class="plan-meta">작품 설정 연동 · ${Number(v.goal||0).toLocaleString()}자</div>`;
         item.onclick=e=>e.stopPropagation(); el.appendChild(item);
       });
+      if(w.hasExtra && w.extraDeadline===ds){
+        const item=document.createElement('div');
+        item.className='plan-item work-milestone deadline';
+        item.style.setProperty('--item-color',w.color||'#c98998');
+        item.innerHTML=`<div class="plan-line"><span class="plan-title">📌 ${escPlan(title)} · 외전</span><b>외전 마감일</b></div><div class="plan-meta">작품 설정 연동 · ${Number(w.extraGoal||0).toLocaleString()}자</div>`;
+        item.onclick=e=>e.stopPropagation(); el.appendChild(item);
+      }
       if(w.hasExtra && w.extraLaunchDate===ds){
         const item=document.createElement('div');
         item.className='plan-item work-milestone launch';
