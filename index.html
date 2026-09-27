@@ -1932,6 +1932,20 @@ function getSlotWords(slot){
   const s=num(slot?.start), e=num(slot?.end);
   return Math.max(0,e-s);
 }
+function getLatestProjectWordsBeforeDate(projectId,dateKey){
+  let current=0, found=false;
+  Object.keys(state.days||{}).filter(key=&gt;key&lt;dateKey).sort().forEach(key=&gt;{
+    const day=state.days[key]||{};
+    Object.keys(day.slots||{}).sort((a,b)=&gt;String(a).localeCompare(String(b),undefined,{numeric:true})).forEach(slotKey=&gt;{
+      const slot=day.slots[slotKey]||{};
+      const slotProject=slot.projectId||day.defaultProjectId||&#x27;&#x27;;
+      if(slotProject!==projectId || (slot.activity||&#x27;집필&#x27;)!==&#x27;집필&#x27;) return;
+      if(slot.end!==undefined &amp;&amp; slot.end!==null &amp;&amp; slot.end!==&#x27;&#x27;){ current=Math.max(0,num(slot.end)); found=true; }
+      else if(slot.startManual &amp;&amp; slot.start!==undefined &amp;&amp; slot.start!==null &amp;&amp; slot.start!==&#x27;&#x27;){ current=Math.max(0,num(slot.start)); found=true; }
+    });
+  });
+  return found?current:0;
+}
 function getDayStats(key){
   const d=state.days[key] || {goal:10000,slots:{}};
   let total=0,slotPomo=0,best=0;
@@ -2034,6 +2048,11 @@ function renderDay(){
   if(d.defaultProjectId===undefined || d.defaultProjectId===null || d.defaultProjectId===&#x27;&#x27;){
     const exists=(state.royaltyProjects||[]).some(p=&gt;p.id===state.lastProjectId);
     if(exists) d.defaultProjectId=state.lastProjectId;
+  }
+  // 새 날짜는 선택 작품의 직전 마지막 글자수를 시작값으로 자동 연결한다.
+  // 사용자가 행을 입력했거나 시작값을 직접 수정한 날짜는 절대 덮어쓰지 않는다.
+  if(d.defaultProjectId &amp;&amp; Object.keys(d.slots||{}).length===0){
+    d.initialWords=getLatestProjectWordsBeforeDate(d.defaultProjectId,selectedDate);
   }
   const projectOptions=(state.royaltyProjects||[]).filter(p=&gt;p.selectable!==false || p.id===d.defaultProjectId).map(p=&gt;`&lt;option value=&quot;${p.id}&quot; ${p.selectable===false?&#x27;disabled&#x27;:&#x27;&#x27;}&gt;${escapeProjectHtml(p.displayTitle||p.title)}${p.selectable===false?&#x27; · 런칭 완료&#x27;:&#x27;&#x27;}&lt;/option&gt;`).join(&#x27;&#x27;);
   const defaultProject=document.getElementById(&#x27;dayDefaultProject&#x27;);
@@ -2284,12 +2303,20 @@ function updateDaySummary(){
 
 document.getElementById(&#x27;dayDefaultProject&#x27;).addEventListener(&#x27;change&#x27;,e=&gt;{
   const d=dayData(selectedDate);
+  const untouched=Object.values(d.slots||{}).every(slot=&gt;
+    !slot.startManual &amp;&amp; (slot.end===undefined || slot.end===null || slot.end===&#x27;&#x27;)
+  );
   d.defaultProjectId=e.target.value||&#x27;&#x27;;
   d.activeProjectId=d.defaultProjectId;
   state.lastProjectId=d.defaultProjectId;
   Object.values(d.slots||{}).forEach(slot=&gt;{
-    if(slot.projectId===undefined || slot.projectId===null || slot.projectId===&#x27;&#x27;) slot.projectId=d.defaultProjectId;
+    if(untouched || slot.projectId===undefined || slot.projectId===null || slot.projectId===&#x27;&#x27;) slot.projectId=d.defaultProjectId;
   });
+  if(untouched &amp;&amp; d.defaultProjectId){
+    const previousWords=getLatestProjectWordsBeforeDate(d.defaultProjectId,selectedDate);
+    d.initialWords=previousWords;
+    Object.values(d.slots||{}).forEach(slot=&gt;{ if(!slot.startManual) slot.start=previousWords; });
+  }
   saveState();
   renderDay();
 });
@@ -5325,17 +5352,26 @@ function getScheduleWritingTargets(){
 }
 
 function getWorkTotal(title) {
-    let sum = 0;
-    for(let date in dailyData) { const wd = getDayWorkData(date, title); if(wd?.hours) sum += Object.values(wd.hours).reduce((a,b)=>a+(b.diff||0), 0); }
-    return sum;
+    return getWorkCurrentWordsThroughDate(title,'9999-12-31');
 }
 function getWorkTotalThroughDate(title, endDateStr) {
-    let sum=0;
-    for(const date in dailyData) {
-        if(date>endDateStr) continue;
-        sum+=getWorkDayTotal(date,title);
-    }
-    return sum;
+    return getWorkCurrentWordsThroughDate(title,endDateStr);
+}
+function getWorkCurrentWordsThroughDate(title,endDateStr) {
+    let current=0, found=false;
+    Object.keys(dailyData||{}).filter(date=>date<=endDateStr).sort().forEach(date=>{
+        const wd=getDayWorkData(date,title);
+        if(!wd?.hours) return;
+        Object.keys(wd.hours).sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true})).forEach(key=>{
+            const h=wd.hours[key]||{};
+            if(h.now!==undefined && h.now!==null && h.now!=='') {
+                current=Math.max(0,Number(h.now)||0); found=true;
+            } else if(h.startManual && h.prev!==undefined && h.prev!==null && h.prev!=='') {
+                current=Math.max(0,Number(h.prev)||0); found=true;
+            }
+        });
+    });
+    return found?current:0;
 }
 function getWritingTargetGoal(title) {
     for(const w of works) {
@@ -6629,6 +6665,7 @@ document.getElementById('planNext').onclick=()=>{planDate.setMonth(planDate.getM
           prev: slot.start===''||slot.start==null ? '' : prev,
           now: slot.end===''||slot.end==null ? '' : now,
           diff,
+          startManual:!!slot.startManual,
           activity: slot.activity||'집필',
           done: !!slot.done,
           source:'writerDay'
