@@ -5348,40 +5348,16 @@ function getWritingTargetGoal(title) {
 function getScheduledGoalForWorkDate(dateStr,title) {
     return (schedules[dateStr]||[]).reduce((sum,item)=>item.workTitle===title?sum+(Number(item.goal)||0):sum,0);
 }
-function getLocalTodayKey() {
-    const d=new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
 function getProjectedCumulative(title,endDateStr) {
-    const today=getLocalTodayKey();
     const actual=getWorkTotalThroughDate(title,endDateStr);
     let remainingPlans=0;
     Object.keys(schedules||{}).sort().forEach(dateStr=>{
-        if(dateStr<today || dateStr>endDateStr) return;
+        if(dateStr>endDateStr) return;
         const goal=getScheduledGoalForWorkDate(dateStr,title);
         if(!goal) return;
         remainingPlans+=Math.max(0,goal-getWorkDayTotal(dateStr,title));
     });
     return {actual,projected:actual+remainingPlans,totalGoal:getWritingTargetGoal(title)};
-}
-function pruneExpiredUnmetSchedules() {
-    const today=getLocalTodayKey();
-    let changed=false;
-    Object.keys(schedules||{}).forEach(dateStr=>{
-        if(dateStr>=today || !Array.isArray(schedules[dateStr])) return;
-        const original=schedules[dateStr];
-        const incompleteTitles=new Set(original.map(item=>item.workTitle).filter(title=>
-            getWorkDayTotal(dateStr,title)<getScheduledGoalForWorkDate(dateStr,title)
-        ));
-        schedules[dateStr]=original.filter(item=>{
-            const completed=!incompleteTitles.has(item.workTitle);
-            if(!completed) changed=true;
-            return completed;
-        });
-        if(!schedules[dateStr].length) delete schedules[dateStr];
-    });
-    if(changed) save();
-    return changed;
 }
 function getWorkTotalFromDate(title, fromDateStr) {
     let sum = 0; if (!fromDateStr) return 0;
@@ -6497,7 +6473,6 @@ document.getElementById('planAddGoal').onclick=()=>{ const ds=planChoiceDateStr;
 document.getElementById('planAddTask').onclick=()=>{ const ds=planChoiceDateStr; closePlanChoice(); openTaskModal(ds); };
 
 function renderPlanCalendar(){
-  pruneExpiredUnmetSchedules();
   const y=planDate.getFullYear(), m=planDate.getMonth();
   const first=new Date(y,m,1).getDay(), last=new Date(y,m+1,0).getDate(), prevLast=new Date(y,m,0).getDate();
   let monthGoal=0, monthActual=0, taskCount=0, goalCount=0;
