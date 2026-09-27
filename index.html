@@ -5102,9 +5102,13 @@ function updateScheduleGoalPreview(){
     const title=document.getElementById('scheduleWorkSelect')?.value||'';
     const target=getWritingTargets().find(w=>w.title===title);
     const planned=Math.max(0,parseInt(document.getElementById('scheduleGoalInput')?.value)||0);
-    const current=title?getWorkTotal(title):0;
+    const dateStr=document.getElementById('scheduleDateInput')?.value||getYYYYMMDD(new Date());
+    const current=title?getWorkTotalThroughDate(title,dateStr):0;
     const total=Math.max(1,Number(target?.goal)||1);
-    const after=current+planned;
+    const existing=title?getProjectedCumulative(title,dateStr):{projected:current};
+    const dayActual=title?getWorkDayTotal(dateStr,title):0;
+    const existingDayGoal=title?getScheduledGoalForWorkDate(dateStr,title):0;
+    const after=existing.projected-Math.max(0,existingDayGoal-dayActual)+Math.max(0,existingDayGoal+planned-dayActual);
     const currentPct=Math.min(100,(current/total)*100);
     const afterPct=Math.min(100,(after/total)*100);
     const addedPct=Math.max(0,afterPct-currentPct);
@@ -5323,6 +5327,61 @@ function getWorkTotal(title) {
     let sum = 0;
     for(let date in dailyData) { const wd = getDayWorkData(date, title); if(wd?.hours) sum += Object.values(wd.hours).reduce((a,b)=>a+(b.diff||0), 0); }
     return sum;
+}
+function getWorkTotalThroughDate(title, endDateStr) {
+    let sum=0;
+    for(const date in dailyData) {
+        if(date>endDateStr) continue;
+        sum+=getWorkDayTotal(date,title);
+    }
+    return sum;
+}
+function getWritingTargetGoal(title) {
+    for(const w of works) {
+        if(w.title===title) return Number(w.goal)||0;
+        if(extraWorkTitle(w)===title) return Number(w.extraGoal)||0;
+        const volume=workVolumes(w).find(v=>volumeWorkTitle(w,v.number)===title);
+        if(volume) return Number(volume.goal)||0;
+    }
+    return 0;
+}
+function getScheduledGoalForWorkDate(dateStr,title) {
+    return (schedules[dateStr]||[]).reduce((sum,item)=>item.workTitle===title?sum+(Number(item.goal)||0):sum,0);
+}
+function getLocalTodayKey() {
+    const d=new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function getProjectedCumulative(title,endDateStr) {
+    const today=getLocalTodayKey();
+    const actual=getWorkTotalThroughDate(title,endDateStr);
+    let remainingPlans=0;
+    Object.keys(schedules||{}).sort().forEach(dateStr=>{
+        if(dateStr<today || dateStr>endDateStr) return;
+        const goal=getScheduledGoalForWorkDate(dateStr,title);
+        if(!goal) return;
+        remainingPlans+=Math.max(0,goal-getWorkDayTotal(dateStr,title));
+    });
+    return {actual,projected:actual+remainingPlans,totalGoal:getWritingTargetGoal(title)};
+}
+function pruneExpiredUnmetSchedules() {
+    const today=getLocalTodayKey();
+    let changed=false;
+    Object.keys(schedules||{}).forEach(dateStr=>{
+        if(dateStr>=today || !Array.isArray(schedules[dateStr])) return;
+        const original=schedules[dateStr];
+        const incompleteTitles=new Set(original.map(item=>item.workTitle).filter(title=>
+            getWorkDayTotal(dateStr,title)<getScheduledGoalForWorkDate(dateStr,title)
+        ));
+        schedules[dateStr]=original.filter(item=>{
+            const completed=!incompleteTitles.has(item.workTitle);
+            if(!completed) changed=true;
+            return completed;
+        });
+        if(!schedules[dateStr].length) delete schedules[dateStr];
+    });
+    if(changed) save();
+    return changed;
 }
 function getWorkTotalFromDate(title, fromDateStr) {
     let sum = 0; if (!fromDateStr) return 0;
@@ -6438,6 +6497,7 @@ document.getElementById('planAddGoal').onclick=()=>{ const ds=planChoiceDateStr;
 document.getElementById('planAddTask').onclick=()=>{ const ds=planChoiceDateStr; closePlanChoice(); openTaskModal(ds); };
 
 function renderPlanCalendar(){
+  pruneExpiredUnmetSchedules();
   const y=planDate.getFullYear(), m=planDate.getMonth();
   const first=new Date(y,m,1).getDay(), last=new Date(y,m+1,0).getDate(), prevLast=new Date(y,m,0).getDate();
   let monthGoal=0, monthActual=0, taskCount=0, goalCount=0;
@@ -6467,9 +6527,11 @@ function renderPlanCalendar(){
     (schedules[ds]||[]).forEach(g=>{
       const color=workColorByTitle(g.workTitle), actual=getWorkDayTotal(ds,g.workTitle), goal=parseInt(g.goal)||0;
       const progress=goal?Math.min(100,Math.round(actual/goal*100)):0;
+      const cumulative=getProjectedCumulative(g.workTitle,ds), totalGoal=cumulative.totalGoal;
+      const overallPct=totalGoal?Math.round(cumulative.projected/totalGoal*100):0;
       const item=document.createElement('div'); item.className='plan-item goal'; item.style.setProperty('--item-color',color);
       item.innerHTML=`<div class="plan-line"><span class="plan-title">✍ ${escPlan(g.workTitle)}</span><b>${actual.toLocaleString()} / ${goal.toLocaleString()}자</b></div>
-        <div class="plan-meta">${progress}% 달성</div><div class="plan-progress"><i style="width:${progress}%"></i></div>`;
+        <div class="plan-meta">하루 ${progress}% · 달성 시 전체 ${cumulative.projected.toLocaleString()} / ${totalGoal.toLocaleString()}자 (${overallPct}%)</div><div class="plan-progress"><i style="width:${Math.min(100,overallPct)}%"></i></div>`;
       item.onclick=e=>{e.stopPropagation(); openEditScheduleModal(g.id,ds);};
       el.appendChild(item);
     });
