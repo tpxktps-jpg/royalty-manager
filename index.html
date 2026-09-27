@@ -172,8 +172,8 @@ input[type=number] { -moz-appearance: textfield; }
 .manage-btn.del:hover { background: #fff5f5; color: #e53e3e; border-color: #feb2b2; }
 
 /* 캘린더 */
-.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
-.cal-day { background: #fff; border-radius: 10px; min-height: 100px; padding: 6px; border: 1px solid #f0f0f0; display: flex; flex-direction: column; align-items: center; justify-content: space-between; position: relative; cursor: pointer; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.cal-day { min-width:0; background: #fff; border-radius: 10px; min-height: 100px; padding: 6px; border: 1px solid #f0f0f0; display: flex; flex-direction: column; align-items: center; justify-content: space-between; position: relative; cursor: pointer; }
 .cal-day:hover { border-color: var(--primary-color); background: #f0f9f8; }
 .cal-date { font-weight: 700; font-size: 0.8rem; color: #2d3748; align-self: flex-start; }
 .cal-val { font-size: 0.8rem; font-weight: 700; color: #4d7c77; margin-bottom: 4px; margin-top: 2px; }
@@ -251,7 +251,7 @@ input[type=number] { -moz-appearance: textfield; }
 #plan .calendar-weekdays>div{text-align:center;font-weight:700;color:#718096;font-size:.75rem}
 .plan-day{min-height:150px!important;cursor:pointer}
 .plan-day.other-month{opacity:.42}
-.plan-item{border-radius:7px;padding:5px 7px;margin-top:5px;font-size:.72rem;line-height:1.35;cursor:pointer;border-left:4px solid var(--item-color,#718096);background:#f8fafc}
+.plan-item{width:100%;max-width:100%;min-width:0;box-sizing:border-box;overflow:hidden;border-radius:7px;padding:5px 7px;margin-top:5px;font-size:.72rem;line-height:1.35;cursor:pointer;border-left:4px solid var(--item-color,#718096);background:#f8fafc}
 .plan-item.goal{background:#f4faf7}
 .plan-item.task{background:#faf7f8}
 .plan-item .plan-line{display:flex;justify-content:space-between;gap:5px;align-items:flex-start;min-width:0}
