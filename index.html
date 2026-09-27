@@ -5348,11 +5348,17 @@ function getWritingTargetGoal(title) {
 function getScheduledGoalForWorkDate(dateStr,title) {
     return (schedules[dateStr]||[]).reduce((sum,item)=>item.workTitle===title?sum+(Number(item.goal)||0):sum,0);
 }
+function getLocalTodayKey() {
+    const d=new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 function getProjectedCumulative(title,endDateStr) {
+    const today=getLocalTodayKey();
     const actual=getWorkTotalThroughDate(title,endDateStr);
     let remainingPlans=0;
     Object.keys(schedules||{}).sort().forEach(dateStr=>{
-        if(dateStr>endDateStr) return;
+        // 지난 날짜는 실제 집필량만 남기고, 목표 미달분을 오늘 이후로 이월하지 않는다.
+        if(dateStr<today || dateStr>endDateStr) return;
         const goal=getScheduledGoalForWorkDate(dateStr,title);
         if(!goal) return;
         remainingPlans+=Math.max(0,goal-getWorkDayTotal(dateStr,title));
