@@ -254,8 +254,9 @@ input[type=number] { -moz-appearance: textfield; }
 .plan-item{border-radius:7px;padding:5px 7px;margin-top:5px;font-size:.72rem;line-height:1.35;cursor:pointer;border-left:4px solid var(--item-color,#718096);background:#f8fafc}
 .plan-item.goal{background:#f4faf7}
 .plan-item.task{background:#faf7f8}
-.plan-item .plan-line{display:flex;justify-content:space-between;gap:5px;align-items:center}
-.plan-item .plan-title{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plan-item .plan-line{display:flex;justify-content:space-between;gap:5px;align-items:flex-start;min-width:0}
+.plan-item .plan-title{flex:1;min-width:0;font-weight:800;white-space:normal;word-break:keep-all;overflow-wrap:anywhere;line-height:1.4}
+.plan-item .plan-line>b{flex-shrink:0;white-space:nowrap}
 .plan-item .plan-meta{font-size:.67rem;color:#718096;margin-top:2px}
 .plan-progress{height:4px;background:#e6ecef;border-radius:99px;margin-top:4px;overflow:hidden}
 .plan-progress>i{display:block;height:100%;background:var(--item-color,#718096);border-radius:99px}
