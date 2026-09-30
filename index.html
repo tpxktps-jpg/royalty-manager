@@ -1940,7 +1940,11 @@ function getLatestProjectWordsBeforeDate(projectId,dateKey){
       const slot=day.slots[slotKey]||{};
       const slotProject=slot.projectId||day.defaultProjectId||&#x27;&#x27;;
       if(slotProject!==projectId || (slot.activity||&#x27;집필&#x27;)!==&#x27;집필&#x27;) return;
-      if(slot.end!==undefined &amp;&amp; slot.end!==null &amp;&amp; slot.end!==&#x27;&#x27;){ current=Math.max(0,num(slot.end)); found=true; }
+      if(slot.end!==undefined &amp;&amp; slot.end!==null &amp;&amp; slot.end!==&#x27;&#x27;){
+        const endWords=Math.max(0,num(slot.end)), startWords=Math.max(0,num(slot.start));
+        // 기존 글자수 뒤의 비어 있는 마무리 칸이 0으로 저장된 경우는 삭제로 보지 않는다.
+        if(endWords!==0 || startWords===0 || slot.startManual){ current=endWords; found=true; }
+      }
       else if(slot.startManual &amp;&amp; slot.start!==undefined &amp;&amp; slot.start!==null &amp;&amp; slot.start!==&#x27;&#x27;){ current=Math.max(0,num(slot.start)); found=true; }
     });
   });
@@ -2197,7 +2201,8 @@ function renderDay(){
     inp.addEventListener(&#x27;input&#x27;,()=&gt;{
       const i=inp.dataset.slot, field=inp.dataset.field, row=Number(inp.dataset.row);
       if(!d.slots[i]) d.slots[i]={};
-      d.slots[i][field]=num(inp.value);
+      const isBlank=String(inp.value||&#x27;&#x27;).trim()===&#x27;&#x27;;
+      d.slots[i][field]=isBlank?&#x27;&#x27;:num(inp.value);
 
       // 시작 글자수 직접 수정은 가능하며, 이후 자동 전파보다 우선한다.
       if(field===&#x27;start&#x27;){
@@ -2212,6 +2217,12 @@ function renderDay(){
       // 마무리 글자수는 이후 시간대의 시작 글자수로 계속 이어진다.
       // 중간 시간대를 놓쳤어도 다음 실제 작업 구간에는 마지막 마무리 글자수가 유지된다.
       if(field===&#x27;end&#x27;){
+        if(isBlank){
+          const w=getSlotWords(d.slots[i]);
+          const cell=document.getElementById(`words-${i}`);
+          cell.textContent=fmt(w); cell.className=&#x27;calc &#x27;+(w&gt;0?&#x27;positive&#x27;:&#x27;zero&#x27;);
+          updateDaySummary(); saveState(); return;
+        }
         let carry=num(inp.value);
         for(let r=row+1;r&lt;intervals.length;r++){
           const nextKey=`r${r}`;
@@ -5365,7 +5376,9 @@ function getWorkCurrentWordsThroughDate(title,endDateStr) {
         Object.keys(wd.hours).sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true})).forEach(key=>{
             const h=wd.hours[key]||{};
             if(h.now!==undefined && h.now!==null && h.now!=='') {
-                current=Math.max(0,Number(h.now)||0); found=true;
+                const now=Math.max(0,Number(h.now)||0), prev=Math.max(0,Number(h.prev)||0);
+                // 직접 초기화한 시작값이 아닌데 기존 글자수 뒤에 0이 붙은 경우는 빈칸 오염으로 처리한다.
+                if(now!==0 || prev===0 || h.startManual) { current=now; found=true; }
             } else if(h.startManual && h.prev!==undefined && h.prev!==null && h.prev!=='') {
                 current=Math.max(0,Number(h.prev)||0); found=true;
             }
