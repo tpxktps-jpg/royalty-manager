@@ -6336,7 +6336,12 @@ document.getElementById('addVolumeBtn')?.addEventListener('click',()=>{
 
 if(document.getElementById("globalDailyGoal")) document.getElementById("globalDailyGoal").value = globalDailyGoal;
 if(document.getElementById("globalDailyGoal")) document.getElementById("globalDailyGoal").onchange = (e) => { globalDailyGoal = parseInt(e.target.value); save(); };
-document.getElementById("exportData").onclick = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify({ works, dailyData, dailyGoal: globalDailyGoal, schedules, tasks, menuIcons, currentTheme: state.currentTheme, customThemeColor: state.customThemeColor, categoryColors })], { type: "application/json" })); a.download = `royalty_backup_${getYYYYMMDD(new Date())}.json`; a.click(); };
+document.getElementById("exportData").onclick = () => {
+  const writerData={ works, dailyData, dailyGoal: globalDailyGoal, schedules, tasks, menuIcons, currentTheme: state.currentTheme, customThemeColor: state.customThemeColor, categoryColors };
+  let writerLog=null; try{writerLog=JSON.parse(localStorage.getItem('writer_log_clean_v1')||'null')}catch(e){}
+  const backup={backupVersion:2,writerData,writerLog};
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)], { type: "application/json" })); a.download = `royalty_backup_${getYYYYMMDD(new Date())}.json`; a.click();
+};
 document.getElementById("importBtn").onclick = () => { document.getElementById("importFile").click(); };
 document.getElementById("importFile").onchange = (e) => {
   const file=e.target.files && e.target.files[0];
@@ -6348,8 +6353,12 @@ document.getElementById("importFile").onchange = (e) => {
       localStorage.setItem('royalty_clean_build_20260920_v1','1');
       localStorage.setItem('writer_log_clean_initialized_v1','1');
 
-      if(d.writerData && Array.isArray(d.writerData.works)){
-        localStorage.setItem(STORAGE_KEY,JSON.stringify(d.writerData));
+      const restoredWriterData=(d.writerData && Array.isArray(d.writerData.works)) ? d.writerData : (Array.isArray(d.works)?d:null);
+      if(restoredWriterData){
+        localStorage.setItem(STORAGE_KEY,JSON.stringify(restoredWriterData));
+      }
+      if(d.writerLog && d.writerLog.days){
+        localStorage.setItem('writer_log_clean_v1',JSON.stringify(d.writerLog));
       }
 
       if(Array.isArray(d.masterWorks)){
@@ -6360,7 +6369,7 @@ document.getElementById("importFile").onchange = (e) => {
           return x;
         });
 
-        if(!d.writerData){
+        if(!restoredWriterData){
           const existing=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');
           const existingWorks=Array.isArray(existing.works)?existing.works:[];
           const known=new Set(existingWorks.map(w=>w.workKey));
