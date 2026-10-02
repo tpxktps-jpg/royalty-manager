@@ -1932,11 +1932,24 @@ function getSlotWords(slot){
   const s=num(slot?.start), e=num(slot?.end);
   return Math.max(0,e-s);
 }
+function getActiveSlotCount(day){
+  const [sh,sm]=String(day?.startTime||&#x27;15:00&#x27;).split(&#x27;:&#x27;).map(Number);
+  const [eh,em]=String(day?.endTime||&#x27;00:00&#x27;).split(&#x27;:&#x27;).map(Number);
+  let start=sh*60+sm, end=eh*60+em;
+  if(end&lt;=start) end+=1440;
+  let count=0, cursor=start;
+  if(cursor%30!==0){ count++; cursor=Math.min(Math.ceil(cursor/30)*30,end); }
+  if(cursor&lt;end) count+=Math.ceil((end-cursor)/30);
+  return count;
+}
 function getLatestProjectWordsBeforeDate(projectId,dateKey){
   let current=0, found=false;
   Object.keys(state.days||{}).filter(key=&gt;key&lt;dateKey).sort().forEach(key=&gt;{
     const day=state.days[key]||{};
-    Object.keys(day.slots||{}).sort((a,b)=&gt;String(a).localeCompare(String(b),undefined,{numeric:true})).forEach(slotKey=&gt;{
+    const activeCount=getActiveSlotCount(day);
+    Object.keys(day.slots||{}).filter(slotKey=&gt;{
+      const match=String(slotKey).match(/^r(\\d+)$/); return !match || Number(match[1])&lt;activeCount;
+    }).sort((a,b)=&gt;String(a).localeCompare(String(b),undefined,{numeric:true})).forEach(slotKey=&gt;{
       const slot=day.slots[slotKey]||{};
       const slotProject=slot.projectId||day.defaultProjectId||&#x27;&#x27;;
       if(slotProject!==projectId || (slot.activity||&#x27;집필&#x27;)!==&#x27;집필&#x27;) return;
@@ -2055,8 +2068,13 @@ function renderDay(){
   }
   // 새 날짜는 선택 작품의 직전 마지막 글자수를 시작값으로 자동 연결한다.
   // 사용자가 행을 입력했거나 시작값을 직접 수정한 날짜는 절대 덮어쓰지 않는다.
-  if(d.defaultProjectId &amp;&amp; Object.keys(d.slots||{}).length===0){
-    d.initialWords=getLatestProjectWordsBeforeDate(d.defaultProjectId,selectedDate);
+  const untouchedDay=Object.values(d.slots||{}).every(slot=&gt;
+    !slot.startManual &amp;&amp; (slot.end===undefined || slot.end===null || slot.end===&#x27;&#x27;)
+  );
+  if(d.defaultProjectId &amp;&amp; untouchedDay &amp;&amp; !d.initialWordsManual){
+    const previousWords=getLatestProjectWordsBeforeDate(d.defaultProjectId,selectedDate);
+    d.initialWords=previousWords;
+    Object.values(d.slots||{}).forEach(slot=&gt;{ if(!slot.startManual) slot.start=previousWords; });
   }
   const projectOptions=(state.royaltyProjects||[]).filter(p=&gt;p.selectable!==false || p.id===d.defaultProjectId).map(p=&gt;`&lt;option value=&quot;${p.id}&quot; ${p.selectable===false?&#x27;disabled&#x27;:&#x27;&#x27;}&gt;${escapeProjectHtml(p.displayTitle||p.title)}${p.selectable===false?&#x27; · 런칭 완료&#x27;:&#x27;&#x27;}&lt;/option&gt;`).join(&#x27;&#x27;);
   const defaultProject=document.getElementById(&#x27;dayDefaultProject&#x27;);
@@ -2209,6 +2227,7 @@ function renderDay(){
         d.slots[i].startManual=true;
         if(row===0){
           d.initialWords=num(inp.value);
+          d.initialWordsManual=true;
           const top=document.getElementById(&#x27;dayInitialWords&#x27;);
           if(top) top.value=inp.value?fmt(num(inp.value)):&#x27;&#x27;;
         }
@@ -2326,6 +2345,7 @@ document.getElementById(&#x27;dayDefaultProject&#x27;).addEventListener(&#x27;ch
   if(untouched &amp;&amp; d.defaultProjectId){
     const previousWords=getLatestProjectWordsBeforeDate(d.defaultProjectId,selectedDate);
     d.initialWords=previousWords;
+    d.initialWordsManual=false;
     Object.values(d.slots||{}).forEach(slot=&gt;{ if(!slot.startManual) slot.start=previousWords; });
   }
   saveState();
@@ -2339,6 +2359,7 @@ document.getElementById(&#x27;dayGoal&#x27;).addEventListener(&#x27;blur&#x27;,e
 document.getElementById(&#x27;dayInitialWords&#x27;).addEventListener(&#x27;input&#x27;,e=&gt;{
   const d=dayData(selectedDate);
   d.initialWords=num(e.target.value);
+  d.initialWordsManual=true;
   if(!d.slots[&#x27;r0&#x27;]) d.slots[&#x27;r0&#x27;]={};
   d.slots[&#x27;r0&#x27;].start=d.initialWords;
   d.slots[&#x27;r0&#x27;].startManual=false;
@@ -6668,7 +6689,14 @@ document.getElementById('planNext').onclick=()=>{planDate.setMonth(planDate.getM
     Object.entries(childState.days).forEach(([date,d])=>{
       if(!d || !d.slots) return;
       const grouped={};
-      Object.entries(d.slots).forEach(([slotKey,slot])=>{
+      const [sh,sm]=String(d.startTime||'15:00').split(':').map(Number), [eh,em]=String(d.endTime||'00:00').split(':').map(Number);
+      let startMin=sh*60+sm, endMin=eh*60+em; if(endMin<=startMin) endMin+=1440;
+      let activeCount=0, cursor=startMin;
+      if(cursor%30!==0){ activeCount++; cursor=Math.min(Math.ceil(cursor/30)*30,endMin); }
+      if(cursor<endMin) activeCount+=Math.ceil((endMin-cursor)/30);
+      Object.entries(d.slots).filter(([slotKey])=>{
+        const match=String(slotKey).match(/^r(\d+)$/); return !match || Number(match[1])<activeCount;
+      }).forEach(([slotKey,slot])=>{
         if(!slot || slot.isBreak) return;
         const title=royaltyProjectTitle(slot.projectId || d.defaultProjectId, childState);
         if(!title){
