@@ -56,6 +56,11 @@
   // 현재 Firebase 보안 규칙이 users/{uid}/royalty/** 경로만 허용하므로
   // 기존 로열티 데이터와 겹치지 않는 settlement 문서를 그 안에 둔다.
   function baseRef(uid) { return db.collection('users').doc(uid).collection('royalty').doc('settlement'); }
+  var LEGACY_FINANCE_KEYS = {
+    masterWorks_v6: 'masterWorks', monthlyData_v6: 'monthlyData', years_v6: 'years',
+    publisherData_v6: 'publisherData', analysisData_v6: 'analysisData',
+    publisherSortOrder_v6: 'publisherSortOrder', genreList_v6: 'genreList'
+  };
   function splitText(text) { var a = []; for (var i = 0; i < text.length; i += CHUNK_SIZE) a.push(text.slice(i, i + CHUNK_SIZE)); return a; }
   async function readCloud(uid) {
     var metaSnap = await baseRef(uid).get();
@@ -66,7 +71,30 @@
     for (var i = 0; i < count; i++) reads.push(baseRef(uid).collection('chunks').doc(String(i).padStart(5, '0')).get());
     var docs = await Promise.all(reads), text = '';
     for (var j = 0; j < docs.length; j++) { if (!docs[j].exists) throw new Error('클라우드 데이터 조각이 누락되었습니다.'); text += (docs[j].data() || {}).text || ''; }
-    return { json: text, version: Number(meta.version || 0), updatedAt: meta.updatedAt && meta.updatedAt.toDate ? meta.updatedAt.toDate() : null };
+    return { json: text, version: Number(meta.version || 0), legacyFinanceVersion: Number(meta.legacyFinanceVersion || 0), updatedAt: meta.updatedAt && meta.updatedAt.toDate ? meta.updatedAt.toDate() : null };
+  }
+  async function readLegacyFinance(uid) {
+    var snap = await db.collection('users').doc(uid).collection('royalty').get();
+    var result = {}, version = 0, found = 0;
+    snap.forEach(function (doc) {
+      var prop = LEGACY_FINANCE_KEYS[doc.id];
+      if (!prop) return;
+      var raw = (doc.data() || {}).value;
+      if (raw === null || typeof raw === 'undefined' || raw === '') return;
+      try {
+        result[prop] = JSON.parse(raw); found++;
+        var data = doc.data() || {};
+        var stamp = Number(data.clientUpdatedAt || 0);
+        if (!stamp && data.serverUpdatedAt && data.serverUpdatedAt.toMillis) stamp = data.serverUpdatedAt.toMillis();
+        version = Math.max(version, stamp || 1);
+      } catch (e) { console.warn('기존 정산 데이터 읽기 실패:', doc.id, e); }
+    });
+    return found ? { data: result, version: version || 1 } : null;
+  }
+  function mergeLegacyFinance(json, legacy) {
+    var parsed = json ? JSON.parse(json) : {};
+    Object.keys(legacy.data).forEach(function (key) { parsed[key] = legacy.data[key]; });
+    return parsed;
   }
   async function writeCloudObject(obj) {
     if (!currentUser) return;
@@ -138,12 +166,25 @@
     if (!user || !db) return localJson || null;
     try {
       pill('☁️ 클라우드 확인 중', 'busy');
-      var cloud = await readCloud(user.uid), localTs = Date.parse(localStorage.getItem('lastModified_v6') || '') || 0;
+      var cloud = await readCloud(user.uid), legacy = await readLegacyFinance(user.uid), localTs = Date.parse(localStorage.getItem('lastModified_v6') || '') || 0;
       if (!cloud) {
-        if (localJson) { var localObj = JSON.parse(localJson); await writeCloudObject(localObj); }
-        startLive(user.uid); pill('☁️ 클라우드 연결됨', 'ok'); return localJson || null;
+        var firstObj = legacy ? mergeLegacyFinance(localJson, legacy) : (localJson ? JSON.parse(localJson) : null);
+        if (firstObj) {
+          await writeCloudObject(firstObj);
+          if (legacy) await baseRef(user.uid).set({ legacyFinanceVersion: legacy.version }, { merge: true });
+        }
+        startLive(user.uid); pill(legacy ? '☁️ 기존 정산금 가져옴' : '☁️ 클라우드 연결됨', 'ok'); return firstObj ? JSON.stringify(firstObj) : null;
       }
       lastAppliedVersion = cloud.version;
+      var selectedJson = (!localJson || cloud.version > localTs) ? cloud.json : localJson;
+      if (legacy && legacy.version > cloud.legacyFinanceVersion) {
+        var merged = mergeLegacyFinance(selectedJson, legacy);
+        await writeCloudObject(merged);
+        await baseRef(user.uid).set({ legacyFinanceVersion: legacy.version }, { merge: true });
+        applyUiFromCloud(merged);
+        localStorage.setItem('lastModified_v6', new Date().toISOString());
+        startLive(user.uid); pill('☁️ 기존 정산금 가져옴', 'ok'); return JSON.stringify(merged);
+      }
       if (!localJson || cloud.version > localTs) {
         var parsed = JSON.parse(cloud.json); applyUiFromCloud(parsed);
         localStorage.setItem('lastModified_v6', new Date(cloud.version).toISOString());
