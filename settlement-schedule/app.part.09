@@ -1,0 +1,2622 @@
+                for (let j = i; j < end; j++) {
+                    const { el, src, remoteId } = deferred[j];
+                    const img = new Image();
+                    img.className = 'w-full h-full object-cover transition-transform duration-500 group-hover:scale-110';
+                    img.alt = '표지';
+                    img.onload = () => {
+                        if (el && el.firstChild) el.replaceChild(img, el.firstChild);
+                    };
+                    img.onerror = () => {}; // 실패해도 placeholder 유지
+                    if (remoteId) { getRemoteCoverUrl(remoteId).then(u => { if (u) img.src = u; }); }   // 웹: Storage에서 받아온 표지
+                    else img.src = src;
+                }
+                if (end < deferred.length) setTimeout(() => loadBatch(end), 50);
+            }
+            if (deferred.length > 0) setTimeout(() => loadBatch(0), 0);
+        }
+        function deleteCoverImage(workId, event) { event.stopPropagation(); if(confirm("표지 이미지를 삭제하시겠습니까?")) { const work = masterWorks.find(w => w.id === workId); if(work) { work.coverImage = null; save(); renderVisualLibrary(); } } }
+        function switchVisualLibTab(tab) { currentVisualLibTab = tab; renderVisualLibrary(); }
+        function triggerCoverUpload(workId) { uploadingWorkId = workId; document.getElementById('cover-upload-input').click(); }
+
+        function processCoverImage(input) {
+            if (input.files && input.files[0] && uploadingWorkId) {
+                const file = input.files[0], reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d'), maxWidth = 800;
+                        let width = img.width, height = img.height;
+                        if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
+                        canvas.width = width; canvas.height = height; ctx.drawImage(img, 0, 0, width, height);
+                        const dataUrl = canvas.toDataURL('image/jpeg', 0.8), work = masterWorks.find(w => w.id === uploadingWorkId);
+                        if (work) { work.coverImage = dataUrl; save(); renderVisualLibrary(); }
+                        uploadingWorkId = null; input.value = '';
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        // 이미 업로드된 표지를 다시 잘라내고 싶을 때 (라이브러리 카드의 "자르기" 버튼)
+        function openCoverCropForWork(workId){
+            const work = masterWorks.find(w => w.id === workId);
+            if (!work || !work.coverImage) return;
+            uploadingWorkId = workId;
+            openCoverCropModal(work.coverImage);
+        }
+
+        // ══ 표지 자르기(크롭) ══════════════════════════════
+        const coverCropState = { naturalW: 0, naturalH: 0, baseScale: 1, scale: 1, x: 0, y: 0, dragging: false, startX: 0, startY: 0, startImgX: 0, startImgY: 0 };
+        const COVER_CROP_VW = 260, COVER_CROP_VH = 390; // 뷰포트 크기 (2:3 비율)
+        function openCoverCropModal(dataUrl){
+            // onload 타이밍 레이스를 피하기 위해 별도 Image 객체로 먼저 크기를 확정한 뒤 화면의 img에 적용
+            const probe = new Image();
+            probe.onload = function(){
+                const displayImg = document.getElementById('cover-crop-img');
+                displayImg.src = dataUrl;
+                coverCropState.naturalW = probe.naturalWidth;
+                coverCropState.naturalH = probe.naturalHeight;
+                // 뷰포트를 완전히 채우는 최소 배율(cover 방식)을 기본값으로
+                const base = Math.max(COVER_CROP_VW / probe.naturalWidth, COVER_CROP_VH / probe.naturalHeight);
+                coverCropState.baseScale = base;
+                coverCropState.scale = base;
+                const w = probe.naturalWidth * base, h = probe.naturalHeight * base;
+                coverCropState.x = (COVER_CROP_VW - w) / 2;
+                coverCropState.y = (COVER_CROP_VH - h) / 2;
+                document.getElementById('cover-crop-zoom').value = 100;
+                applyCoverCropTransform();
+            };
+            probe.src = dataUrl;
+            document.getElementById('cover-crop-modal').classList.add('open');
+            setupCoverCropDrag();
+        }
+        function closeCoverCropModal(){
+            document.getElementById('cover-crop-modal').classList.remove('open');
+            uploadingWorkId = null;
+        }
+        function applyCoverCropTransform(){
+            const img = document.getElementById('cover-crop-img');
+            img.style.width = coverCropState.naturalW + 'px';
+            img.style.height = coverCropState.naturalH + 'px';
+            img.style.transform = `translate(${coverCropState.x}px, ${coverCropState.y}px) scale(${coverCropState.scale})`;
+        }
+        function clampCoverCropPosition(){
+            const w = coverCropState.naturalW * coverCropState.scale, h = coverCropState.naturalH * coverCropState.scale;
+            const minX = COVER_CROP_VW - w, minY = COVER_CROP_VH - h;
+            coverCropState.x = Math.min(0, Math.max(minX, coverCropState.x));
+            coverCropState.y = Math.min(0, Math.max(minY, coverCropState.y));
+        }
+        function updateCoverCropZoom(sliderVal){
+            const ratio = Number(sliderVal) / 100; // 100~400 -> 1.0~4.0
+            // 확대 중심을 뷰포트 중앙으로 유지
+            const oldScale = coverCropState.scale;
+            const newScale = coverCropState.baseScale * ratio;
+            const cx = COVER_CROP_VW / 2, cy = COVER_CROP_VH / 2;
+            coverCropState.x = cx - (cx - coverCropState.x) * (newScale / oldScale);
+            coverCropState.y = cy - (cy - coverCropState.y) * (newScale / oldScale);
+            coverCropState.scale = newScale;
+            clampCoverCropPosition();
+            applyCoverCropTransform();
+        }
+        let coverCropDragBound = false;
+        function setupCoverCropDrag(){
+            if (coverCropDragBound) return;
+            coverCropDragBound = true;
+            const viewport = document.getElementById('cover-crop-viewport');
+            const onDown = (clientX, clientY) => {
+                coverCropState.dragging = true;
+                coverCropState.startX = clientX; coverCropState.startY = clientY;
+                coverCropState.startImgX = coverCropState.x; coverCropState.startImgY = coverCropState.y;
+                viewport.style.cursor = 'grabbing';
+            };
+            const onMove = (clientX, clientY) => {
+                if (!coverCropState.dragging) return;
+                coverCropState.x = coverCropState.startImgX + (clientX - coverCropState.startX);
+                coverCropState.y = coverCropState.startImgY + (clientY - coverCropState.startY);
+                clampCoverCropPosition();
+                applyCoverCropTransform();
+            };
+            const onUp = () => { coverCropState.dragging = false; viewport.style.cursor = 'grab'; };
+            viewport.addEventListener('mousedown', (e) => { e.preventDefault(); onDown(e.clientX, e.clientY); });
+            window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+            window.addEventListener('mouseup', onUp);
+            viewport.addEventListener('touchstart', (e) => { const t = e.touches[0]; onDown(t.clientX, t.clientY); }, { passive: true });
+            viewport.addEventListener('touchmove', (e) => { const t = e.touches[0]; onMove(t.clientX, t.clientY); }, { passive: true });
+            viewport.addEventListener('touchend', onUp);
+            viewport.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomEl = document.getElementById('cover-crop-zoom');
+                const cur = Number(zoomEl.value);
+                const next = Math.min(400, Math.max(100, cur + (e.deltaY < 0 ? 10 : -10)));
+                zoomEl.value = next;
+                updateCoverCropZoom(next);
+            }, { passive: false });
+        }
+        function applyCoverCrop(){
+            const outW = 800, outH = 1200; // 2:3 비율 출력 해상도
+            const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+            canvas.width = outW; canvas.height = outH;
+            const img = document.getElementById('cover-crop-img');
+            // 뷰포트(CSS px) 좌표를 출력 캔버스 좌표로 환산
+            const ratio = outW / COVER_CROP_VW;
+            const drawW = coverCropState.naturalW * coverCropState.scale * ratio;
+            const drawH = coverCropState.naturalH * coverCropState.scale * ratio;
+            const drawX = coverCropState.x * ratio;
+            const drawY = coverCropState.y * ratio;
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            const work = masterWorks.find(w => w.id === uploadingWorkId);
+            if (work) { work.coverImage = dataUrl; save(); renderVisualLibrary(); }
+            closeCoverCropModal();
+        }
+
+
+        function openWorkMemo(workId) {
+            memoEditingWorkId = workId; const work = masterWorks.find(w => w.id === workId); if (!work) return;
+            document.getElementById('memo-work-title').innerText = work.title + " 메모";
+            const isWebtoonMemo = work.genre && work.genre.includes('웹툰');
+            if (isWebtoonMemo) {
+                let rateText = '';
+                if (work.rs && work.webtoonRate) rateText = `RS ${work.rs} (비율 ${work.webtoonRate})`;
+                else if (work.rs) rateText = `RS ${work.rs}`;
+                else if (work.webtoonRate) rateText = `비율 ${work.webtoonRate}`;
+                else rateText = '-';
+                document.getElementById('memo-rate-display').innerText = rateText;
+            } else {
+                document.getElementById('memo-rate-display').innerText = work.rate ? work.rate + '%' : '-';
+            }
+            const _pendingLabel = getPendingLabel(work);
+            const _dateEl = document.getElementById('memo-date-display');
+            _dateEl.textContent = _pendingLabel;
+            _dateEl.style.color = work.isPending ? (work.pendingMonth ? '#ec4899' : '#3b82f6') : '';
+            document.getElementById('memo-contract-term').value = work.contractTerm || '';
+            document.getElementById('memo-extension-term').value = work.extensionTerm || '';
+            meLoad(work.memo || '');
+            // 계약서 파일은 '작품 관리 / 웹툰 관리'의 계약 메모에서 다룬다 (여기선 다루지 않음)
+            tempContractFile = null;
+            document.getElementById('work-memo-modal').classList.add('open');
+        }
+
+        /* ════════════════════════════════════════════════
+           메모 에디터 (단일 contenteditable)
+        ════════════════════════════════════════════════ */
+
+        // ── 선택 범위 저장/복원 (팔레트 클릭 시 포커스 날아감 방지) ──
+        let _meSavedRange = null;
+        function meSaveSelection() {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount) _meSavedRange = sel.getRangeAt(0).cloneRange();
+        }
+        function meRestoreSelection() {
+            if (!_meSavedRange) return;
+            const sel = window.getSelection();
+            try { sel.removeAllRanges(); sel.addRange(_meSavedRange); } catch(e) {}
+        }
+        function meCmd(cmd, val) {
+            meRestoreSelection();
+            document.execCommand(cmd, false, val || null);
+        }
+
+        // ── 색상 팔레트 ──
+        const BE_FG_COLORS = [
+            {c:'#334155',l:'기본'},{c:'#ef4444',l:'빨강'},{c:'#f97316',l:'주황'},
+            {c:'#eab308',l:'노랑'},{c:'#22c55e',l:'초록'},{c:'#06b6d4',l:'하늘'},
+            {c:'#3b82f6',l:'파랑'},{c:'#8b5cf6',l:'보라'},{c:'#ec4899',l:'핑크'},{c:'#94a3b8',l:'회색'},
+        ];
+        const BE_BG_COLORS = [
+            {c:'transparent',l:'없음'},{c:'#fef08a',l:'노랑'},{c:'#fed7aa',l:'주황'},
+            {c:'#fecaca',l:'빨강'},{c:'#bbf7d0',l:'초록'},{c:'#bae6fd',l:'하늘'},
+            {c:'#c7d2fe',l:'파랑'},{c:'#e9d5ff',l:'보라'},{c:'#fbcfe8',l:'핑크'},{c:'#e2e8f0',l:'회색'},
+        ];
+        function beInitPalettes() {
+            function build(id, colors, cmd, iconId) {
+                const wrap = document.getElementById(id); if (!wrap) return;
+                wrap.innerHTML = '';
+                colors.forEach(({c,l}) => {
+                    const btn = document.createElement('div');
+                    if (c === 'transparent') {
+                        btn.className = 'be-swatch-none'; btn.title = l; btn.innerHTML = '✕';
+                        btn.onmousedown = e => { e.preventDefault(); meRestoreSelection(); document.execCommand(cmd, false, 'transparent'); beClosePalettes(); };
+                    } else {
+                        btn.className = 'be-swatch'; btn.style.background = c; btn.title = l;
+                        btn.onmousedown = e => { e.preventDefault(); meRestoreSelection(); document.execCommand(cmd, false, c); const ic=document.getElementById(iconId); if(ic) ic.style.color=c; beClosePalettes(); };
+                    }
+                    wrap.appendChild(btn);
+                });
+            }
+            build('be-fg-palette', BE_FG_COLORS, 'foreColor', 'be-fg-icon');
+            build('be-bg-palette', BE_BG_COLORS, 'hiliteColor', 'be-bg-icon');
+        }
+        function beTogglePalette(type) {
+            meSaveSelection();
+            const fp=document.getElementById('be-fg-palette'), bp=document.getElementById('be-bg-palette');
+            if (type==='fg') { const o=fp.style.display!=='none'; beClosePalettes(); if(!o) fp.style.display='grid'; }
+            else { const o=bp.style.display!=='none'; beClosePalettes(); if(!o) bp.style.display='grid'; }
+        }
+        function beClosePalettes() {
+            const fp=document.getElementById('be-fg-palette'), bp=document.getElementById('be-bg-palette');
+            if(fp) fp.style.display='none'; if(bp) bp.style.display='none';
+        }
+        document.addEventListener('mousedown', e => {
+            if (!e.target.closest('#be-fg-wrap') && !e.target.closest('#be-bg-wrap')) beClosePalettes();
+        });
+
+        // ── 이미지 리사이즈 (1600px JPEG 0.92) ──
+        function meResizeImage(blob, cb) {
+            const reader = new FileReader();
+            reader.onload = ev => {
+                const img = new Image();
+                img.onload = () => {
+                    const MAX = 1600; let w = img.width, h = img.height;
+                    if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+                    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+                    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+                    cb(cv.toDataURL('image/jpeg', 0.92));
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(blob);
+        }
+
+        // ── 이미지 선택/복사/삭제/드래그/리사이즈 ──
+        (function(){
+            let _selImg  = null;   // 현재 선택된 img
+            let _cpSrc   = null;   // {src, width} 복사 버퍼
+            let _rsz     = null;   // {img, startX, startW}
+            let _dragImg = null;   // 드래그 중인 img
+
+            /* 선택 */
+            function sel(img) {
+                if (_selImg) { _selImg.classList.remove('me-sel'); _selImg.style.outline = ''; }
+                _selImg = img || null;
+                if (_selImg) _selImg.style.outline = '2px solid var(--primary)';
+            }
+            window._meGetSel  = () => _selImg;
+            window._meClearSel = () => sel(null);
+
+            /* 이미지 클릭 → 선택 */
+            document.addEventListener('mousedown', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor) return;
+                if (e.target.tagName === 'IMG' && editor.contains(e.target)) {
+                    // 리사이즈 핸들 클릭이면 리사이즈 시작
+                    sel(e.target);
+                } else if (!e.target.closest('#me-resize-ui')) {
+                    sel(null);
+                }
+                updateResizeUI();
+            });
+
+            /* ── 리사이즈 UI (에디터 밖 fixed div) ── */
+            function getResizeUI() {
+                let ui = document.getElementById('me-resize-ui');
+                if (!ui) {
+                    ui = document.createElement('div');
+                    ui.id = 'me-resize-ui';
+                    ui.style.cssText = 'position:fixed;z-index:9000;pointer-events:none;display:none;box-sizing:border-box;';
+
+                    // 우하단 리사이즈 핸들
+                    const rh = document.createElement('div');
+                    rh.id = 'me-rh';
+                    rh.style.cssText = 'position:absolute;bottom:-7px;right:-7px;width:14px;height:14px;background:white;border:2px solid var(--primary);border-radius:3px;cursor:se-resize;pointer-events:all;';
+                    rh.addEventListener('mousedown', e => {
+                        e.preventDefault(); e.stopPropagation();
+                        if (!_selImg) return;
+                        _rsz = { img: _selImg, startX: e.clientX, startW: _selImg.offsetWidth };
+                    });
+
+                    // 우상단 삭제 버튼
+                    const del = document.createElement('div');
+                    del.id = 'me-del';
+                    del.style.cssText = 'position:absolute;top:-11px;right:-11px;width:22px;height:22px;background:#ef4444;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;pointer-events:all;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+                    del.innerHTML = '✕';
+                    del.addEventListener('mousedown', e => {
+                        e.preventDefault(); e.stopPropagation();
+                        if (_selImg) { _selImg.remove(); sel(null); updateResizeUI(); meAutoSave(); }
+                    });
+
+                    // 힌트
+                    const hint = document.createElement('div');
+                    hint.style.cssText = 'position:absolute;top:-26px;left:0;background:rgba(0,0,0,0.6);color:#fff;font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;white-space:nowrap;pointer-events:none;';
+                    hint.textContent = 'Ctrl+C 복사 · 드래그 이동';
+
+                    ui.appendChild(rh);
+                    ui.appendChild(del);
+                    ui.appendChild(hint);
+                    document.body.appendChild(ui);
+                }
+                return ui;
+            }
+
+            function updateResizeUI() {
+                const ui = getResizeUI();
+                if (!_selImg || !_selImg.isConnected) {
+                    ui.style.display = 'none'; return;
+                }
+                const r = _selImg.getBoundingClientRect();
+                ui.style.display = 'block';
+                ui.style.left   = r.left + 'px';
+                ui.style.top    = r.top  + 'px';
+                ui.style.width  = r.width  + 'px';
+                ui.style.height = r.height + 'px';
+                ui.style.border = '2px solid var(--primary)';
+                ui.style.borderRadius = '8px';
+            }
+            window._meUpdateResizeUI = updateResizeUI;
+
+            /* 스크롤/리사이즈 시 UI 위치 갱신 */
+            window.addEventListener('scroll', updateResizeUI, true);
+            window.addEventListener('resize', updateResizeUI);
+
+            /* 리사이즈 드래그 */
+            document.addEventListener('mousemove', e => {
+                if (!_rsz) return;
+                const newW = Math.max(60, _rsz.startW + e.clientX - _rsz.startX);
+                _rsz.img.style.width = newW + 'px';
+                updateResizeUI();
+            });
+            document.addEventListener('mouseup', () => {
+                if (_rsz) { _rsz = null; meAutoSave(); }
+            });
+
+            /* Ctrl+C 복사 / Ctrl+V 붙여넣기 / Del 삭제 */
+            document.addEventListener('keydown', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor) return;
+                const editorFocused = document.activeElement === editor || editor.contains(document.activeElement);
+
+                if ((e.ctrlKey||e.metaKey) && e.key === 'c' && _selImg) {
+                    _cpSrc = { src: _selImg.src, width: _selImg.style.width };
+                    meShowToast('이미지 복사됨 — Ctrl+V로 붙여넣기');
+                    // [FIX] 앱 내부 복사(_cpSrc)는 그대로 두고, 실제 윈도우 클립보드에도
+                    // 이미지를 함께 써서 다른 프로그램(카톡, 워드, 그림판 등)에도 붙여넣기 가능하도록 처리
+                    try {
+                        const _cpImg = new Image();
+                        _cpImg.onload = () => {
+                            try {
+                                const _cpCanvas = document.createElement('canvas');
+                                _cpCanvas.width = _cpImg.naturalWidth;
+                                _cpCanvas.height = _cpImg.naturalHeight;
+                                _cpCanvas.getContext('2d').drawImage(_cpImg, 0, 0);
+                                _cpCanvas.toBlob(blob => {
+                                    if (blob && navigator.clipboard && window.ClipboardItem) {
+                                        navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(()=>{});
+                                    }
+                                }, 'image/png');
+                            } catch(err) {}
+                        };
+                        _cpImg.src = _selImg.src;
+                    } catch(err) {}
+                    e.preventDefault(); return;
+                }
+                if ((e.ctrlKey||e.metaKey) && e.key === 'v' && _cpSrc && (editorFocused || _selImg)) {
+                    e.preventDefault();
+                    meInsertImgSrc(_cpSrc.src, _cpSrc.width); return;
+                }
+                if ((e.key === 'Delete' || e.key === 'Backspace') && _selImg) {
+                    // 에디터에 포커스가 있어도 이미지가 선택된 경우 삭제
+                    e.preventDefault();
+                    _selImg.remove(); sel(null); updateResizeUI(); meAutoSave();
+                }
+            }, true);
+
+
+            /* 드래그로 이미지 이동 — 텍스트 커서 위치에 삽입 */
+            let _dropCaret = null; // 드롭 위치 커서 표시 div
+
+            function getDropCaret() {
+                if (!_dropCaret) {
+                    _dropCaret = document.createElement('div');
+                    _dropCaret.style.cssText = 'position:fixed;width:2px;background:var(--primary);z-index:9999;pointer-events:none;border-radius:2px;display:none;';
+                    document.body.appendChild(_dropCaret);
+                }
+                return _dropCaret;
+            }
+
+            function getCaretRange(x, y) {
+                if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+                if (document.caretPositionFromPoint) {
+                    const pos = document.caretPositionFromPoint(x, y);
+                    if (!pos) return null;
+                    const r = document.createRange();
+                    r.setStart(pos.offsetNode, pos.offset);
+                    r.collapse(true);
+                    return r;
+                }
+                return null;
+            }
+
+            document.addEventListener('dragstart', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor) return;
+                if (e.target.tagName === 'IMG' && editor.contains(e.target)) {
+                    _dragImg = e.target;
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', 'me-img');
+                    setTimeout(() => { if (_dragImg) _dragImg.style.opacity = '0.3'; }, 0);
+                }
+            });
+
+            document.addEventListener('dragover', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor || !_dragImg) return;
+                if (e.target === editor || editor.contains(e.target)) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    // 커서 위치 표시
+                    const range = getCaretRange(e.clientX, e.clientY);
+                    const dc = getDropCaret();
+                    if (range) {
+                        const rects = range.getClientRects();
+                        const rect = rects[0];
+                        if (rect) {
+                            dc.style.display = 'block';
+                            dc.style.left = rect.left + 'px';
+                            dc.style.top  = rect.top + 'px';
+                            dc.style.height = (rect.height || 20) + 'px';
+                        }
+                    }
+                }
+            });
+
+            document.addEventListener('dragleave', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor || !_dragImg) return;
+                if (!editor.contains(e.relatedTarget)) {
+                    const dc = getDropCaret();
+                    if (dc) dc.style.display = 'none';
+                }
+            });
+
+            document.addEventListener('dragend', () => {
+                if (_dragImg) { _dragImg.style.opacity = ''; _dragImg = null; meAutoSave(); }
+                const dc = getDropCaret();
+                if (dc) dc.style.display = 'none';
+            });
+
+            document.addEventListener('drop', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor || !_dragImg) return;
+                if (e.target === editor || editor.contains(e.target)) {
+                    e.preventDefault(); e.stopPropagation();
+                    const dc = getDropCaret();
+                    if (dc) dc.style.display = 'none';
+                    // caretRangeFromPoint로 정확한 삽입 위치 계산
+                    const range = getCaretRange(e.clientX, e.clientY);
+                    if (range) {
+                        // 드래그 중인 이미지를 DOM에서 먼저 제거
+                        _dragImg.remove();
+                        range.insertNode(_dragImg);
+                        // 커서를 이미지 뒤로
+                        const newRange = document.createRange();
+                        newRange.setStartAfter(_dragImg);
+                        newRange.collapse(true);
+                        const s = window.getSelection();
+                        s.removeAllRanges(); s.addRange(newRange);
+                    }
+                    sel(_dragImg); updateResizeUI();
+                }
+            });
+
+            // 노션/브라우저/탐색기 등에서 이미지 파일 자체를 끌어다 놓는 경우
+            // (Ctrl+V는 링크만 오는 경우가 많지만, 드래그는 브라우저가 이미 받아온
+            //  실제 이미지 데이터를 파일로 주는 경우가 많아 더 잘 붙는다)
+            document.addEventListener('dragover', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor || _dragImg) return;
+                if ((e.target === editor || editor.contains(e.target)) && Array.from(e.dataTransfer.types).includes('Files')) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                }
+            });
+            document.addEventListener('drop', e => {
+                const editor = document.getElementById('memo-editor');
+                if (!editor || _dragImg) return;
+                if (!(e.target === editor || editor.contains(e.target))) return;
+                const files = Array.from(e.dataTransfer.files || []).filter(f => f.type.indexOf('image') === 0);
+                if (!files.length) return;
+                e.preventDefault(); e.stopPropagation();
+                editor.focus();
+                files.forEach(f => meResizeImage(f, src => meInsertImgSrc(src, null)));
+                meAutoSave();
+            });
+        })();
+
+        // ── 이미지 삽입 ──
+
+
+        function meInsertImgSrc(src, width) {
+            const editor = document.getElementById('memo-editor'); if (!editor) return;
+            editor.focus();
+            const img = document.createElement('img');
+            img.src = src;
+            if (width) img.style.width = width;
+            img.style.maxWidth = '100%';
+            img.draggable = true;
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(img);
+                range.setStartAfter(img); range.collapse(true);
+                sel.removeAllRanges(); sel.addRange(range);
+            } else {
+                editor.appendChild(img);
+            }
+            if (typeof _meUpdateResizeUI === 'function') _meUpdateResizeUI();
+            meAutoSave();
+        }
+
+        function meInsertImageFile(input) {
+            if (!input.files[0]) return;
+            meResizeImage(input.files[0], src => meInsertImgSrc(src, null));
+            input.value = '';
+        }
+
+        // ── 붙여넣기 (이미지 Ctrl+V) ──
+        document.addEventListener('paste', e => {
+            const editor = document.getElementById('memo-editor');
+            if (!editor) return;
+            const active = document.activeElement;
+            if (active !== editor && !editor.contains(active)) return;
+            const cd = e.clipboardData || e.originalEvent.clipboardData;
+            const items = cd.items;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') === 0) {
+                    e.preventDefault();
+                    meResizeImage(items[i].getAsFile(), src => meInsertImgSrc(src, null));
+                    return;
+                }
+            }
+            // 노션 등 외부 앱에서 복사한 경우: 이미지가 클립보드 파일이 아니라
+            // HTML 안에 원격 URL(<img src="https://...">)로만 들어있는 경우가 많다.
+            // 그 URL은 원본 사이트 로그인 세션이 있어야 열리거나 시간이 지나면 만료돼서
+            // 이 앱에서 그대로 두면 깨진 이미지로 보인다. 그래서 직접 받아와 파일로 심어둔다.
+            const html = cd.getData('text/html');
+            if (html && /<img/i.test(html)) {
+                e.preventDefault();
+                meInsertPastedHtml(html);
+            }
+        });
+
+        // 붙여넣은 HTML 속 원격 이미지를 다운로드해 내 PC 데이터로 심어 넣는다 (링크 만료/깨짐 방지)
+        function meInsertPastedHtml(html) {
+            const editor = document.getElementById('memo-editor');
+            const wrap = document.createElement('div');
+            wrap.innerHTML = html;
+            wrap.querySelectorAll('script,style').forEach(n => n.remove());
+            const imgs = Array.from(wrap.querySelectorAll('img'));
+            const jobs = imgs.map(img => {
+                const src = img.getAttribute('src') || '';
+                if (!src || src.indexOf('data:') === 0) return Promise.resolve();
+                return fetch(src).then(r => { if (!r.ok) throw new Error('bad status'); return r.blob(); })
+                    .then(blob => new Promise(res => meResizeImage(blob, dataUrl => { img.src = dataUrl; res(); })))
+                    .catch(() => {
+                        // 원본을 못 받아오면 깨진 아이콘 대신 이유를 알려주는 문구로 대체
+                        const p = document.createElement('span');
+                        p.style.cssText = 'display:inline-block;padding:6px 10px;background:#fef2f2;color:#dc2626;border-radius:8px;font-size:12px;';
+                        p.textContent = '⚠️ 이미지를 불러오지 못했어요 (원본 링크가 만료됐거나 접근 권한이 필요해요). 이미지를 파일로 저장한 뒤 툴바의 이미지 버튼으로 다시 넣어주세요.';
+                        img.replaceWith(p);
+                    });
+            });
+            Promise.all(jobs).then(() => {
+                editor.focus();
+                const sel = window.getSelection();
+                const frag = document.createDocumentFragment();
+                let node; let lastNode = null;
+                while ((node = wrap.firstChild)) { lastNode = frag.appendChild(node); }
+                if (sel && sel.rangeCount) {
+                    const range = sel.getRangeAt(0);
+                    range.deleteContents();
+                    range.insertNode(frag);
+                    if (lastNode) { range.setStartAfter(lastNode); range.collapse(true); sel.removeAllRanges(); sel.addRange(range); }
+                } else {
+                    editor.appendChild(frag);
+                }
+                editor.querySelectorAll('img').forEach(img => { img.draggable = true; if (!img.style.maxWidth) img.style.maxWidth = '100%'; });
+                if (typeof _meRefreshImgDraggable === 'function') _meRefreshImgDraggable();
+                meAutoSave();
+            });
+        }
+
+        // ── 로드 (HTML 복원 + 레거시 JSON 변환) ──
+        function meLoad(raw) {
+            const editor = document.getElementById('memo-editor'); if (!editor) return;
+            if (!raw) { editor.innerHTML = ''; beInitPalettes(); if(typeof _meRefreshImgDraggable==='function') _meRefreshImgDraggable(); return; }
+            let parsed = null;
+            try { parsed = JSON.parse(raw); } catch(e) {}
+            if (Array.isArray(parsed)) {
+                // 레거시 블록 JSON → HTML
+                let html = '';
+                parsed.forEach(b => {
+                    if (b.type === 'image') {
+                        const w = b.width ? ` style="width:${b.width};max-width:100%"` : ' style="max-width:100%"';
+                        html += `<img src="${b.content}"${w} draggable="true"><br>`;
+                    } else if (b.type === 'divider') {
+                        html += '<hr style="border:none;border-top:2px solid #e2e8f0;margin:8px 0">';
+                    } else {
+                        html += (b.content || '') + (b.content ? '<br>' : '');
+                    }
+                });
+                editor.innerHTML = html;
+            } else {
+                editor.innerHTML = raw;
+            }
+            // me-img-wrap span 언래핑 (이전 버전 호환)
+            editor.querySelectorAll('span.me-img-wrap').forEach(wrap => {
+                const img = wrap.querySelector('img');
+                if (img) { img.draggable = true; img.style.maxWidth = '100%'; wrap.replaceWith(img); }
+                else wrap.remove();
+            });
+            // 모든 img에 draggable + max-width
+            editor.querySelectorAll('img').forEach(img => { img.draggable = true; if(!img.style.maxWidth) img.style.maxWidth = '100%'; });
+            beInitPalettes();
+            if (typeof _meRefreshImgDraggable === 'function') _meRefreshImgDraggable();
+            if (typeof _meOverlayUpdate === 'function') _meOverlayUpdate();
+        }
+
+
+        // ── memo-editor 이벤트 바인딩 (DOMContentLoaded 후) ──
+        document.addEventListener('DOMContentLoaded', () => {
+
+            const editor = document.getElementById('memo-editor');
+            if (!editor) return;
+            editor.addEventListener('input', meAutoSave);
+            editor.addEventListener('mouseup', () => {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount) _meSavedRange = sel.getRangeAt(0).cloneRange();
+            });
+            editor.addEventListener('keyup', () => {
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount) _meSavedRange = sel.getRangeAt(0).cloneRange();
+            });
+        });
+
+        // ── 자동저장 (1초 디바운스) ──
+        let _meAutoSaveTimer = null;
+        function meAutoSave() {
+            if (!memoEditingWorkId) return;
+            clearTimeout(_meAutoSaveTimer);
+            _meAutoSaveTimer = setTimeout(() => {
+                const work = masterWorks.find(w => w.id === memoEditingWorkId); if (!work) return;
+                const editor = document.getElementById('memo-editor'); if (!editor) return;
+                work.memo = editor.innerHTML;
+                work.contractTerm = document.getElementById('memo-contract-term').value;
+                work.extensionTerm = document.getElementById('memo-extension-term').value;
+                if (tempContractFile) work.contractFile = tempContractFile;
+                save();
+            }, 1000);
+        }
+
+        // ── 토스트 ──
+        function meShowToast(msg) {
+            let t = document.getElementById('me-toast');
+            if (!t) { t = document.createElement('div'); t.id = 'me-toast'; t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;font-size:0.8rem;padding:8px 18px;border-radius:20px;z-index:99999;opacity:0;transition:opacity 0.2s;pointer-events:none;white-space:nowrap;'; document.body.appendChild(t); }
+            t.textContent = msg; t.style.opacity = '1';
+            clearTimeout(t._t); t._t = setTimeout(() => { t.style.opacity = '0'; }, 2000);
+        }
+
+        // ── openWorkMemo / closeWorkMemo / saveWorkMemo ──
+        function closeWorkMemo() {
+            if (memoEditingWorkId) {
+                const work = masterWorks.find(w => w.id === memoEditingWorkId);
+                const editor = document.getElementById('memo-editor');
+                if (work && editor) {
+                    work.memo = editor.innerHTML;
+                    work.contractTerm = document.getElementById('memo-contract-term').value;
+                    work.extensionTerm = document.getElementById('memo-extension-term').value;
+                    if (tempContractFile) work.contractFile = tempContractFile;
+                    save();
+                }
+            }
+            document.getElementById('work-memo-modal').classList.remove('open');
+            memoEditingWorkId = null; tempContractFile = null;
+        }
+        function saveWorkMemo() { closeWorkMemo(); }
+        function execCmd(cmd, val) { document.execCommand(cmd, false, val||null); }
+
+        function openSettingsPanel() {
+            document.getElementById('settings-panel-modal').classList.add('open');
+            try { applyModalDesign(); } catch (e) {}
+            if (window.__liteSnapList) window.__liteSnapList();
+        }
+        function closeSettingsPanel() { document.getElementById('settings-panel-modal').classList.remove('open'); save(true); }
+
+        // ════ 공미 ↔ 공포 글자수 계산기 ════
+        const CC_PER_OPTIONS = {
+            mi: [3000, 3100, 3200, 3300, 3400, 3500],
+            po: [3200, 3300, 3400, 3500, 3600, 3700, 3800, 3900, 4000, 4100, 4200]
+        };
+        let ccPerUnit = 'po';
+
+        function openCharCalc() {
+            document.getElementById('char-calc-modal').classList.add('open');
+            ccSetPerUnit(ccPerUnit, true);
+        }
+        function closeCharCalc() { document.getElementById('char-calc-modal').classList.remove('open'); }
+
+        function ccNum(id) {
+            const v = parseFloat(document.getElementById(id).value);
+            return isNaN(v) ? null : v;
+        }
+
+        function ccSetPerUnit(unit, keepValue) {
+            ccPerUnit = unit;
+            [['cc-per-unit-po', 'po'], ['cc-per-unit-mi', 'mi']].forEach(([id, u]) => {
+                const btn = document.getElementById(id);
+                const active = u === unit;
+                btn.style.background = active ? 'var(--primary)' : '#fff';
+                btn.style.color = active ? '#fff' : '#475569';
+                btn.style.borderColor = active ? 'var(--primary)' : '#e2e8f0';
+            });
+            const sel = document.getElementById('cc-per-episode');
+            const prevVal = keepValue ? sel.value : null;
+            sel.innerHTML = CC_PER_OPTIONS[unit].map(v => `<option value="${v}">${v.toLocaleString()}</option>`).join('') + `<option value="custom">직접 입력</option>`;
+            if (prevVal && Array.from(sel.options).some(o => o.value === prevVal)) sel.value = prevVal;
+            ccPerEpisodeChange();
+        }
+
+        function ccPerEpisodeChange() {
+            const sel = document.getElementById('cc-per-episode');
+            document.getElementById('cc-per-episode-custom').classList.toggle('hidden', sel.value !== 'custom');
+            ccCompute();
+        }
+        function ccPerEpisode() {
+            const sel = document.getElementById('cc-per-episode').value;
+            if (sel === 'custom') return ccNum('cc-per-episode-custom');
+            return sel ? Number(sel) : null;
+        }
+        function ccAutoRatio() {
+            const mi = ccNum('cc-cur-nospace'), po = ccNum('cc-cur-space');
+            if (mi !== null && po) document.getElementById('cc-ratio').value = (mi / po).toFixed(3);
+            else alert('현재 공미/공포 값을 둘 다 입력하세요.');
+            ccCompute();
+        }
+        // 비율(공미÷공포)을 직접 입력한 값 > 현재 값 > 목표 값 순으로 구하고,
+        // 그마저도 없으면 통상적인 공미/공포 비율(0.765)을 기본값으로 써서 한쪽만 입력해도 계산되게 한다
+        const CC_DEFAULT_RATIO = 0.765;
+        function ccGetRatio(curMi, curPo, goalMi, goalPo) {
+            const r = ccNum('cc-ratio');
+            if (r && r > 0 && r < 1) return r;
+            if (curMi !== null && curPo) return curMi / curPo;
+            if (goalMi !== null && goalPo) return goalMi / goalPo;
+            return CC_DEFAULT_RATIO;
+        }
+        function ccCompute() {
+            const curMiIn = ccNum('cc-cur-nospace'), curPoIn = ccNum('cc-cur-space');
+            const goalMiIn = ccNum('cc-goal-nospace'), goalPoIn = ccNum('cc-goal-space');
+            const per = ccPerEpisode();
+            const ratio = ccGetRatio(curMiIn, curPoIn, goalMiIn, goalPoIn);
+            const mul = ratio ? 1 / ratio : null;
+
+            let curMi = curMiIn, curPo = curPoIn;
+            if (ratio) {
+                if (curMi === null && curPo !== null) curMi = curPo * ratio;
+                if (curPo === null && curMi !== null) curPo = curMi * mul;
+            }
+            let goalMi = goalMiIn, goalPo = goalPoIn;
+            if (ratio) {
+                if (goalMi === null && goalPo !== null) goalMi = goalPo * ratio;
+                if (goalPo === null && goalMi !== null) goalPo = goalMi * mul;
+            }
+
+            const leftMi = (goalMi !== null && curMi !== null) ? goalMi - curMi : null;
+            const leftPo = (goalPo !== null && curPo !== null) ? goalPo - curPo : null;
+
+            const fmt = n => (n === null || isNaN(n)) ? '-' : formatCurrency(n) + '자';
+
+            document.getElementById('cc-out-multiplier').textContent = mul ? mul.toFixed(3) : '-';
+            document.getElementById('cc-out-cur-nospace').textContent = fmt(curMi);
+            document.getElementById('cc-out-cur-space').textContent = fmt(curPo);
+            document.getElementById('cc-out-goal-nospace').textContent = fmt(goalMi);
+            document.getElementById('cc-out-goal-space').textContent = fmt(goalPo);
+            document.getElementById('cc-out-left-nospace').textContent = fmt(leftMi);
+            document.getElementById('cc-out-left-space').textContent = fmt(leftPo);
+
+            const goalBasis = ccPerUnit === 'mi' ? goalMi : goalPo;
+            const leftBasis = ccPerUnit === 'mi' ? leftMi : leftPo;
+
+            const totalEl = document.getElementById('cc-out-total-eps');
+            const totalNoteEl = document.getElementById('cc-out-total-eps-note');
+            if (!per) { totalEl.textContent = '-'; totalNoteEl.textContent = '편당 글자수를 입력하세요.'; }
+            else if (goalBasis === null) { totalEl.textContent = '-'; totalNoteEl.textContent = '목표 값을 입력하세요.'; }
+            else {
+                const totalEp = goalBasis / per;
+                const full = Math.floor(totalEp);
+                const rem = goalBasis - full * per;
+                const need = rem > 0 ? full + 1 : full;
+                totalEl.textContent = `${totalEp.toFixed(2)}편 (≈ ${need}편)`;
+                totalNoteEl.textContent = rem > 0 ? `남는 분량 약 ${formatCurrency(rem)}자` : '딱 맞아떨어져요';
+            }
+
+            const leftEl = document.getElementById('cc-out-left-eps');
+            const leftNoteEl = document.getElementById('cc-out-left-eps-note');
+            if (!per) { leftEl.textContent = '-'; leftNoteEl.textContent = '편당 글자수를 입력하세요.'; }
+            else if (leftBasis === null) { leftEl.textContent = '-'; leftNoteEl.textContent = '목표/현재 값을 입력하세요.'; }
+            else {
+                const clamped = Math.max(0, leftBasis);
+                const leftEp = clamped / per;
+                const full = Math.floor(leftEp);
+                const rem = clamped - full * per;
+                const need = rem > 0 ? full + 1 : full;
+                leftEl.textContent = `${leftEp.toFixed(2)}편 (≈ ${need}편)`;
+                leftNoteEl.textContent = rem > 0 ? `남는 분량 약 ${formatCurrency(rem)}자` : '딱 맞아떨어져요';
+            }
+        }
+        function ccSwap() {
+            const a = document.getElementById('cc-cur-nospace').value;
+            const b = document.getElementById('cc-cur-space').value;
+            document.getElementById('cc-cur-nospace').value = b;
+            document.getElementById('cc-cur-space').value = a;
+            const c = document.getElementById('cc-goal-nospace').value;
+            const d = document.getElementById('cc-goal-space').value;
+            document.getElementById('cc-goal-nospace').value = d;
+            document.getElementById('cc-goal-space').value = c;
+            const r = ccNum('cc-ratio');
+            if (r) document.getElementById('cc-ratio').value = (1 / r).toFixed(3);
+            ccCompute();
+        }
+        function ccReset() {
+            ['cc-cur-nospace', 'cc-cur-space', 'cc-goal-nospace', 'cc-goal-space', 'cc-ratio', 'cc-per-episode-custom'].forEach(id => document.getElementById(id).value = '');
+            ccSetPerUnit('po');
+        }
+
+        // ════ 작가 정산 금액 계산기 (매출 시뮬레이터) ════
+        let rcState = { appliedSales: 0, platformFeePercent: 30, writerRatio: 70, discountRate: 0, addDiscountRate: 0, charCalcRatio: 70 };
+        let rcComparisonList = [];
+        let rcCharComparisonList = [];
+
+        function openRevenueCalc() {
+            document.getElementById('revenue-calc-modal').classList.add('open');
+            rcSelectPlatform(rcState.platformFeePercent);
+            rcSelectRatio(rcState.writerRatio);
+            rcSelectCharRatio(rcState.charCalcRatio);
+            rcUpdateUI();
+        }
+        function closeRevenueCalc() { document.getElementById('revenue-calc-modal').classList.remove('open'); }
+
+        function rcParseNumber(val) { return parseInt(String(val).replace(/[^0-9]/g, ''), 10) || 0; }
+        function rcFormatCurrency(input) {
+            const v = input.value.replace(/[^0-9]/g, '');
+            input.value = v === '' ? '' : parseInt(v, 10).toLocaleString('ko-KR');
+        }
+
+        function rcCalcSimPreview() {
+            const price = rcParseNumber(document.getElementById('rc-bookPrice').value);
+            const count = rcParseNumber(document.getElementById('rc-bookCount').value);
+            const discountRate = parseFloat(document.getElementById('rc-discountRate').value) || 0;
+            const addDiscountRate = parseFloat(document.getElementById('rc-additionalDiscount').value) || 0;
+            const baseTotal = price * count;
+            const afterFirst = baseTotal * (1 - discountRate / 100);
+            const finalTotal = Math.max(0, Math.floor(afterFirst * (1 - addDiscountRate / 100)));
+            document.getElementById('rc-simTotalPreview').textContent = finalTotal.toLocaleString('ko-KR') + '원';
+        }
+
+        function rcApplyDirect() {
+            const val = rcParseNumber(document.getElementById('rc-salesInput').value);
+            if (!val) { meShowToast('매출액을 입력해주세요.'); return; }
+            rcState.appliedSales = val;
+            rcState.discountRate = 0;
+            rcState.addDiscountRate = 0;
+            rcUpdateUI();
+            meShowToast('적용되었습니다.');
+        }
+
+        function rcApplySim() {
+            const price = rcParseNumber(document.getElementById('rc-bookPrice').value);
+            const count = rcParseNumber(document.getElementById('rc-bookCount').value);
+            const discountRate = parseFloat(document.getElementById('rc-discountRate').value) || 0;
+            const addDiscountRate = parseFloat(document.getElementById('rc-additionalDiscount').value) || 0;
+            if (!price && !count) { meShowToast('가격과 수량을 입력해주세요.'); return; }
+            const baseTotal = price * count;
+            const afterFirst = baseTotal * (1 - discountRate / 100);
+            const finalTotal = Math.max(0, Math.floor(afterFirst * (1 - addDiscountRate / 100)));
+            rcState.appliedSales = finalTotal;
+            rcState.discountRate = discountRate;
+            rcState.addDiscountRate = addDiscountRate;
+            document.getElementById('rc-salesInput').value = finalTotal.toLocaleString('ko-KR');
+            rcUpdateUI();
+            meShowToast('계산 결과가 적용되었습니다.');
+        }
+
+        function rcResetAll() {
+            rcState = { appliedSales: 0, platformFeePercent: 30, writerRatio: 70, discountRate: 0, addDiscountRate: 0, charCalcRatio: 70 };
+            ['rc-salesInput', 'rc-bookPrice', 'rc-bookCount', 'rc-discountRate', 'rc-additionalDiscount', 'rc-customPlatformInput', 'rc-customRatioInput', 'rc-charCountExc', 'rc-perCharPrice'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+            document.getElementById('rc-simTotalPreview').textContent = '0원';
+            document.getElementById('rc-resultPerOneInc').textContent = '0';
+            document.getElementById('rc-resultRevenue1000').textContent = '0';
+            rcCharComparisonList = [];
+            rcRenderCharComparisonList();
+            rcSelectPlatform(30);
+            rcSelectRatio(70);
+            rcSelectCharRatio(70);
+            meShowToast('초기화되었습니다.');
+        }
+
+        function rcSelectPlatform(percent) {
+            rcState.platformFeePercent = percent;
+            const custom = document.getElementById('rc-customPlatformInput');
+            custom.value = ''; custom.classList.remove('rc-active-input');
+            rcUpdateButtons('.rc-platform-btn', percent);
+            rcUpdateUI();
+        }
+        function rcSetCustomPlatform(input) {
+            let val = parseFloat(input.value);
+            if (val > 100) val = 100; if (val < 0) val = 0;
+            document.querySelectorAll('.rc-platform-btn').forEach(btn => btn.classList.remove('rc-selected'));
+            input.classList.add('rc-active-input');
+            rcState.platformFeePercent = isNaN(val) ? 0 : val;
+            rcUpdateUI();
+        }
+        function rcSelectRatio(percent) {
+            rcState.writerRatio = percent;
+            const custom = document.getElementById('rc-customRatioInput');
+            custom.value = ''; custom.classList.remove('rc-active-input');
+            rcUpdateButtons('.rc-ratio-btn', percent);
+            rcUpdateUI();
+        }
+        function rcSetCustomRatio(input) {
+            let val = parseFloat(input.value);
+            if (val > 100) val = 100; if (val < 0) val = 0;
+            document.querySelectorAll('.rc-ratio-btn').forEach(btn => btn.classList.remove('rc-selected'));
+            input.classList.add('rc-active-input');
+            rcState.writerRatio = isNaN(val) ? 0 : val;
+            rcUpdateUI();
+        }
+        function rcUpdateButtons(selector, value) {
+            document.querySelectorAll(selector).forEach(btn => btn.classList.toggle('rc-selected', parseFloat(btn.dataset.value) === value));
+        }
+
+        function rcUpdateUI() {
+            const platformFee = Math.floor(rcState.appliedSales * (rcState.platformFeePercent / 100));
+            const salesAfterPlatform = rcState.appliedSales - platformFee;
+            const grossIncome = Math.floor(salesAfterPlatform * (rcState.writerRatio / 100));
+            const tax = Math.floor(grossIncome * 0.033);
+            const finalAmount = grossIncome - tax;
+            document.getElementById('rc-platformFeePercent').textContent = rcState.platformFeePercent;
+            document.getElementById('rc-platformFeeAmount').textContent = platformFee.toLocaleString('ko-KR');
+            document.getElementById('rc-netSalesAmount').textContent = salesAfterPlatform.toLocaleString('ko-KR');
+            document.getElementById('rc-grossIncome').textContent = grossIncome.toLocaleString('ko-KR');
+            document.getElementById('rc-taxAmount').textContent = tax.toLocaleString('ko-KR');
+            document.getElementById('rc-finalAmount').textContent = finalAmount.toLocaleString('ko-KR') + '원';
+        }
+
+        function rcAddToComparison() {
+            if (!rcState.appliedSales) { meShowToast('계산 결과가 없습니다.'); return; }
+            const platformFee = Math.floor(rcState.appliedSales * (rcState.platformFeePercent / 100));
+            const salesAfterPlatform = rcState.appliedSales - platformFee;
+            const grossIncome = Math.floor(salesAfterPlatform * (rcState.writerRatio / 100));
+            const tax = Math.floor(grossIncome * 0.033);
+            const finalAmount = grossIncome - tax;
+            rcComparisonList.push({ id: Date.now(), sales: rcState.appliedSales, platformPercent: rcState.platformFeePercent, ratioPercent: rcState.writerRatio, finalAmount, discountRate: rcState.discountRate, addDiscountRate: rcState.addDiscountRate });
+            rcRenderComparisonList();
+            meShowToast('비교함에 담았습니다.');
+        }
+        function rcRenderComparisonList() {
+            const listEl = document.getElementById('rc-comparisonList');
+            const emptyEl = document.getElementById('rc-comparisonEmpty');
+            if (!rcComparisonList.length) { listEl.classList.add('hidden'); emptyEl.classList.remove('hidden'); listEl.innerHTML = ''; return; }
+            listEl.classList.remove('hidden'); emptyEl.classList.add('hidden');
+            const maxVal = Math.max(...rcComparisonList.map(i => i.finalAmount));
+            listEl.innerHTML = rcComparisonList.map((item, i) => {
+                const label = String.fromCharCode(65 + i);
+                const isBest = item.finalAmount === maxVal && rcComparisonList.length > 1;
+                const discountParts = [];
+                if (item.discountRate > 0) discountParts.push(`할인율 ${item.discountRate}%`);
+                if (item.addDiscountRate > 0) discountParts.push(`추가 ${item.addDiscountRate}%`);
+                const discountHtml = discountParts.length ? `<div class="text-[10px] text-rose-500 mb-1"><i class="fa-solid fa-tag mr-1"></i>${discountParts.join(' + ')}</div>` : '';
+                return `<div class="bg-white p-3 rounded-xl border ${isBest ? 'border-amber-400 ring-1 ring-amber-300' : 'border-slate-200'} relative">
+                    ${isBest ? '<span class="absolute -top-2 -left-1 bg-amber-400 text-amber-900 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm"><i class="fa-solid fa-crown mr-0.5"></i>BEST</span>' : ''}
+                    <button onclick="rcRemoveComparisonItem(${item.id})" class="absolute top-1.5 right-1.5 text-slate-300 hover:text-rose-400"><i class="fa-solid fa-xmark"></i></button>
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <span class="w-5 h-5 flex items-center justify-center bg-slate-100 text-slate-500 font-bold rounded-full text-[10px]">${label}</span>
+                        <span class="text-[11px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded">매출 ${item.sales.toLocaleString()}원</span>
+                    </div>
+                    ${discountHtml}
+                    <div class="flex gap-2 text-[11px] text-slate-400 mb-1.5">
+                        <span>수수료 ${item.platformPercent}%</span><span class="text-slate-200">|</span><span class="font-bold" style="color:var(--primary)">정산 ${item.ratioPercent}%</span>
+                    </div>
+                    <div class="text-right font-black" style="color:var(--primary)">${item.finalAmount.toLocaleString()}원</div>
+                </div>`;
+            }).join('');
+        }
+        function rcRemoveComparisonItem(id) { rcComparisonList = rcComparisonList.filter(i => i.id !== id); rcRenderComparisonList(); }
+        function rcClearComparison() { rcComparisonList = []; rcRenderComparisonList(); meShowToast('비교함이 비워졌습니다.'); }
+
+        function rcSelectCharRatio(percent) {
+            rcState.charCalcRatio = percent;
+            rcUpdateButtons('.rc-char-ratio-btn', percent);
+            rcCalculatePerChar();
+        }
+        function rcCalculatePerChar() {
+            const excVal = rcParseNumber(document.getElementById('rc-charCountExc').value);
+            const price = rcParseNumber(document.getElementById('rc-perCharPrice').value);
+            const priceAfterFee = price * 0.7;
+            const revenuePerBook = priceAfterFee * (rcState.charCalcRatio / 100);
+            const rev1000 = revenuePerBook * 1000;
+            document.getElementById('rc-resultRevenue1000').textContent = Math.floor(rev1000).toLocaleString('ko-KR');
+            if (excVal > 0 && price > 0) {
+                document.getElementById('rc-resultPerOneInc').textContent = (revenuePerBook / excVal).toLocaleString('ko-KR', { maximumFractionDigits: 3 });
+            } else {
+                document.getElementById('rc-resultPerOneInc').textContent = '0';
+            }
+        }
+        function rcAddToCharComparison() {
+            const excVal = rcParseNumber(document.getElementById('rc-charCountExc').value);
+            const price = rcParseNumber(document.getElementById('rc-perCharPrice').value);
+            const res = parseFloat(document.getElementById('rc-resultPerOneInc').textContent.replace(/,/g, ''));
+            if (!res) { meShowToast('계산 결과가 없습니다.'); return; }
+            const priceAfterFee = price * 0.7;
+            const revenuePerBook = priceAfterFee * (rcState.charCalcRatio / 100);
+            const rev1000 = Math.floor(revenuePerBook * 1000);
+            rcCharComparisonList.push({ id: Date.now(), excVal, price, ratio: rcState.charCalcRatio, result: res, rev1000 });
+            rcRenderCharComparisonList();
+            meShowToast('비교함에 담았습니다.');
+        }
+        function rcRenderCharComparisonList() {
+            const listEl = document.getElementById('rc-charComparisonList');
+            if (!rcCharComparisonList.length) { listEl.innerHTML = '<p class="text-[11px] text-slate-300 text-center mt-4" id="rc-charListEmpty">비교할 결과가 없습니다.</p>'; return; }
+            const maxVal = Math.max(...rcCharComparisonList.map(i => i.result));
+            listEl.innerHTML = rcCharComparisonList.map(item => {
+                const isBest = item.result === maxVal && rcCharComparisonList.length > 1;
+                return `<div class="bg-white p-2.5 rounded-lg border ${isBest ? 'border-amber-400 ring-1 ring-amber-300' : 'border-slate-200'} relative">
+                    ${isBest ? '<span class="absolute top-1 left-1 bg-amber-400 text-amber-900 text-[9px] font-bold px-1 rounded"><i class="fa-solid fa-crown"></i></span>' : ''}
+                    <button onclick="rcRemoveCharComparison(${item.id})" class="absolute top-1 right-1 text-slate-300 hover:text-rose-400"><i class="fa-solid fa-xmark text-xs"></i></button>
+                    <div class="text-[10px] text-slate-400 flex gap-2 mt-1 pr-4">
+                        <span>${item.excVal.toLocaleString()}자</span><span>|</span><span>${item.price.toLocaleString()}원 (${item.ratio}%)</span>
+                    </div>
+                    <div class="flex justify-between items-end mt-1">
+                        <span class="text-[11px] font-bold text-slate-500">1,000부: ${item.rev1000.toLocaleString()}원</span>
+                        <span class="text-sm font-bold" style="color:var(--primary)">${item.result.toLocaleString('ko-KR', { maximumFractionDigits: 3 })}원<span class="text-[9px] text-slate-400">/자</span></span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+        function rcRemoveCharComparison(id) { rcCharComparisonList = rcCharComparisonList.filter(i => i.id !== id); rcRenderCharComparisonList(); }
+        function rcClearCharComparison() { rcCharComparisonList = []; rcRenderCharComparisonList(); meShowToast('비교함이 비워졌습니다.'); }
+
+        function rcCopyResult() {
+            const amount = document.getElementById('rc-finalAmount').textContent;
+            if (amount === '0원') return;
+            const text = `[작가 정산 계산]\n매출: ${rcState.appliedSales.toLocaleString()}원\n실수령액: ${amount}`;
+            const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+            document.execCommand('copy'); document.body.removeChild(ta);
+            meShowToast('복사되었습니다!');
+        }
+
+        function openViewOptions() { document.getElementById('crosshair-toggle').checked = crosshairSettings.enabled; document.getElementById('crosshair-color-picker').value = crosshairSettings.color; document.getElementById('view-options-modal').classList.add('open'); }
+        function closeViewOptions() { document.getElementById('view-options-modal').classList.remove('open'); save(true); }
+        function toggleCrosshair(checked) { crosshairSettings.enabled = checked; if (!checked) removeCrosshair(); }
+        function updateCrosshairColor(color) { crosshairSettings.color = color; document.documentElement.style.setProperty('--crosshair-color', color); }
+        document.addEventListener('focusin', function(e) { if (!crosshairSettings.enabled) return; if (e.target.classList.contains('cell-input')) { highlightCrosshair(e.target); } });
+        document.addEventListener('focusout', function(e) { if (e.target.classList.contains('cell-input')) { removeCrosshair(); } });
+        function highlightCrosshair(input) {
+            const row = input.closest('tr'); if (row) row.classList.add('crosshair-active-row');
+            const cell = input.closest('td');
+            if (cell) {
+                const cellIndex = cell.cellIndex, table = input.closest('table');
+                if (table) {
+                    const th = table.querySelector(`thead th:nth-child(${cellIndex + 1})`); if (th) th.classList.add('crosshair-active-col');
+                    table.querySelectorAll('tbody tr').forEach(r => { const c = r.children[cellIndex]; if (c) c.classList.add('crosshair-active-col'); });
+                }
+            }
+        }
+        function removeCrosshair() { document.querySelectorAll('.crosshair-active-row').forEach(r => r.classList.remove('crosshair-active-row')); document.querySelectorAll('.crosshair-active-col').forEach(c => c.classList.remove('crosshair-active-col')); }
+        function openTableStyleSettings() { 
+            document.getElementById('set-cell-size').value = tableFontSettings.cell.size; document.getElementById('set-cell-color').value = tableFontSettings.cell.color; document.getElementById('set-cell-weight').value = tableFontSettings.cell.weight; 
+            document.getElementById('set-total-size').value = tableFontSettings.total.size; document.getElementById('set-total-color').value = tableFontSettings.total.color; document.getElementById('set-total-weight').value = tableFontSettings.total.weight; 
+            document.getElementById('set-grand-size').value = tableFontSettings.grand.size; document.getElementById('set-grand-color').value = tableFontSettings.grand.color; document.getElementById('set-grand-weight').value = tableFontSettings.grand.weight; 
+            document.getElementById('table-style-settings-modal').classList.add('open'); 
+        }
+        function closeTableStyleSettings() { document.getElementById('table-style-settings-modal').classList.remove('open'); save(true); }
+        function applyTableStyles() { 
+            tableFontSettings.cell.size = document.getElementById('set-cell-size').value; tableFontSettings.cell.color = document.getElementById('set-cell-color').value; tableFontSettings.cell.weight = document.getElementById('set-cell-weight').value; 
+            tableFontSettings.total.size = document.getElementById('set-total-size').value; tableFontSettings.total.color = document.getElementById('set-total-color').value; tableFontSettings.total.weight = document.getElementById('set-total-weight').value; 
+            tableFontSettings.grand.size = document.getElementById('set-grand-size').value; tableFontSettings.grand.color = document.getElementById('set-grand-color').value; tableFontSettings.grand.weight = document.getElementById('set-grand-weight').value; 
+            const root = document.documentElement; 
+            root.style.setProperty('--cell-font-size', tableFontSettings.cell.size + 'rem'); root.style.setProperty('--cell-font-color', tableFontSettings.cell.color); root.style.setProperty('--cell-font-weight', tableFontSettings.cell.weight);
+            root.style.setProperty('--total-font-size', tableFontSettings.total.size + 'rem'); root.style.setProperty('--total-font-color', tableFontSettings.total.color); root.style.setProperty('--total-font-weight', tableFontSettings.total.weight); 
+            root.style.setProperty('--grand-total-font-size', tableFontSettings.grand.size + 'rem'); root.style.setProperty('--grand-total-font-color', tableFontSettings.grand.color); root.style.setProperty('--grand-total-font-weight', tableFontSettings.grand.weight); 
+            renderRoyaltySheets(); 
+        }
+        function toggleSheetLock() { isSheetLocked = !isSheetLocked; const btn = document.getElementById('sheet-lock-btn'); if (isSheetLocked) { btn.innerHTML = '<i class="fa-solid fa-lock"></i>'; btn.classList.remove('bg-slate-100', 'text-slate-400'); btn.classList.add('bg-rose-100', 'text-rose-500'); } else { btn.innerHTML = '<i class="fa-solid fa-lock-open"></i>'; btn.classList.remove('bg-rose-100', 'text-rose-500'); btn.classList.add('bg-slate-100', 'text-slate-400'); } renderRoyaltySheets(); }
+        function changeYear(yr) { currentYear = yr; updateUI(); }
+        function addNewYear() { const nextYear = Math.max(...years) + 1; years.push(nextYear); years.sort((a,b)=>a-b); save(); updateUI(); }
+        function deleteCurrentYear() { if (years.length <= 1) { alert("최소 하나의 연도는 유지해야 합니다."); return; } if (confirm(`${currentYear}년도를 삭제하시겠습니까?`)) { years = years.filter(y => y !== currentYear); currentYear = years[years.length - 1]; save(); updateUI(); } }
+        function switchGenreTab(genre) { currentGenreTab = genre; renderRoyaltySheets(); }
+        function switchLibraryTab(tab) { currentLibraryTab = tab; renderMasterWorksList(); }
+        function handleRateSelectChange(select) { const customInput = document.getElementById('new-work-rate-custom'); if(select.value === 'custom') { customInput.classList.remove('hidden'); customInput.focus(); } else { customInput.classList.add('hidden'); } }
+        function handleNewWorkPlatformChange(select) { const customInput = document.getElementById('new-work-platform-custom'); if(select.value === 'custom') { customInput.classList.remove('hidden'); customInput.focus(); } else { customInput.classList.add('hidden'); customInput.value = ''; } }
+        function handleNewWorkPromotionChange(select) { const customInput = document.getElementById('new-work-promotion-custom'); if(select.value === 'custom') { customInput.classList.remove('hidden'); customInput.focus(); } else { customInput.classList.add('hidden'); customInput.value = ''; } }
+        function getPendingLabel(w) {
+            if (!w.isPending) return w.publishDate || '-';
+            if (w.pendingMonth) {
+                const [y, m] = w.pendingMonth.split('-');
+                return `${y.slice(2)}-${m} 출간예정`;
+            }
+            return '출간 예정';
+        }
+        function getDateDisplay(w) {
+            const today = new Date().toISOString().slice(0, 10);
+            if (!w.isPending) {
+                const d = w.publishDate || '';
+                if (d && d > today) {
+                    // 미래 확정 날짜 → 핑크 진하게
+                    return `<span style="color:#ec4899;font-weight:700;">${d}</span>`;
+                }
+                return d || '-';
+            }
+            if (w.pendingMonth) {
+                return `<span style="color:#ec4899;font-weight:600;">${getPendingLabel(w)}</span>`;
+            }
+            return '<span style="color:#3b82f6;font-weight:400;">출간 예정</span>';
+        }
+        function sortKeyDate(w) {
+            // 정렬 우선순위 (오름차순 비교용 문자열 키):
+            // 1. 실제 출간일이 있거나(완료/확정), 월까지 정해진 출간 예정 → 날짜순으로 최우선 정렬
+            // 2. 위 날짜 정보가 전혀 없으면 → 계약일이 빠른 순
+            // 3. 계약일마저 없으면 → 맨 뒤
+            if (!w.isPending && w.publishDate) return '1_' + w.publishDate;
+            if (w.isPending && w.pendingMonth) return '1_' + w.pendingMonth + '-01';
+            if (w.contractDate) return '2_' + w.contractDate;
+            return '3_9999-99-99';
+        }
+        function toggleNewWorkDate(checkbox) {
+            const dateInput = document.getElementById('new-work-date');
+            const monthInput = document.getElementById('new-work-pending-month');
+            const wtDateInput = document.getElementById('new-work-date-webtoon');
+            const wtMonthInput = document.getElementById('new-work-pending-month-webtoon');
+            if (checkbox.checked) {
+                if (dateInput) { dateInput.classList.add('hidden'); dateInput.value = ''; }
+                if (monthInput) monthInput.classList.remove('hidden');
+                if (wtDateInput) { wtDateInput.classList.add('hidden'); wtDateInput.value = ''; }
+                if (wtMonthInput) wtMonthInput.classList.remove('hidden');
+            } else {
+                if (dateInput) dateInput.classList.remove('hidden');
+                if (monthInput) { monthInput.classList.add('hidden'); monthInput.value = ''; }
+                if (wtDateInput) wtDateInput.classList.remove('hidden');
+                if (wtMonthInput) { wtMonthInput.classList.add('hidden'); wtMonthInput.value = ''; }
+            }
+        }
+        function toggleEditWorkDate(id) { const checkbox = document.getElementById(`edit-pending-${id}`); const dateInput = document.getElementById(`edit-date-${id}`); if (checkbox.checked) { dateInput.disabled = true; dateInput.value = ''; dateInput.classList.add('bg-slate-100', 'text-slate-400'); } else { dateInput.disabled = false; dateInput.classList.remove('bg-slate-100', 'text-slate-400'); } }
+        // ═══ 정산 출판사(웹툰화 등으로 실제 정산처가 원 출판사와 다른 경우) ═══
+        // 기본값은 '출판사'와 항상 동일하게 따라가고, 사용자가 직접 정산 출판사 필드를 건드린 순간부터는
+        // 더 이상 출판사 필드 변경에 자동으로 따라가지 않고 수동 지정값을 유지한다.
+        let settlementPublisherTouched = false;
+        function syncSettlementPublisher(val) {
+            if (settlementPublisherTouched) return;
+            const el = document.getElementById('new-work-settlement-publisher');
+            if (el) el.value = val;
+        }
+        function toggleStudioInput() { 
+            const genre = document.getElementById('new-work-genre').value; 
+            const studioGroup = document.getElementById('studio-field-group'); 
+            const normalRate = document.getElementById('normal-rate-group');
+            const goalGroup = document.getElementById('goal-field-group');
+            const datesRow = document.getElementById('dates-row');
+            const pubRateRow = document.getElementById('publisher-rate-row');
+            const webtoonDates = document.getElementById('webtoon-dates-group');
+            const volsGroup = document.getElementById('volumes-field-group');
+            const platformPromoRow = document.getElementById('platform-promo-row');
+            if (genre.includes('웹툰')) {
+                studioGroup.classList.remove('hidden');
+                normalRate.classList.add('hidden');
+                if (volsGroup) volsGroup.classList.add('hidden');
+                if (goalGroup) goalGroup.classList.add('hidden');
+                if (webtoonDates) webtoonDates.classList.remove('hidden');
+                if (platformPromoRow) platformPromoRow.classList.add('hidden');
+                if (pubRateRow) pubRateRow.className = 'grid grid-cols-1 gap-3';
+                if (datesRow) datesRow.className = 'hidden';
+                const advDateLabel = document.getElementById('new-work-advance-date-label');
+                if (advDateLabel) advDateLabel.textContent = 'MG 예정일';
+                // 웹툰 날짜 → 실제 필드 동기화
+                const wtDate = document.getElementById('new-work-date-webtoon');
+                const mainDate = document.getElementById('new-work-date');
+                if (wtDate && mainDate && !wtDate._synced) {
+                    wtDate._synced = true;
+                    wtDate.addEventListener('change', () => { mainDate.value = wtDate.value; });
+                    const wtPending = document.getElementById('new-work-pending-webtoon');
+                    const mainPending = document.getElementById('new-work-pending');
+                    if (wtPending && mainPending) {
+                        wtPending.addEventListener('change', () => { mainPending.checked = wtPending.checked; toggleNewWorkDate(mainPending); });
+                    }
+                }
+            } else { 
+                studioGroup.classList.add('hidden');
+                normalRate.classList.remove('hidden');
+                if (volsGroup) volsGroup.classList.remove('hidden');
+                if (goalGroup) goalGroup.classList.remove('hidden');
+                if (webtoonDates) webtoonDates.classList.add('hidden');
+                if (platformPromoRow) platformPromoRow.classList.remove('hidden');
+                if (pubRateRow) pubRateRow.className = 'grid grid-cols-2 gap-3';
+                if (datesRow) datesRow.className = 'hidden';
+                const advDateLabel = document.getElementById('new-work-advance-date-label');
+                if (advDateLabel) advDateLabel.textContent = '선인세 예정일';
+            }
+        }
+        function toggleEditStudioInput(id) { const genre = document.getElementById(`edit-genre-${id}`).value; const studioInput = document.getElementById(`edit-studio-${id}`); if (genre.includes('웹툰')) { studioInput.classList.remove('hidden'); } else { studioInput.classList.add('hidden'); } }
+        
+        const NOSPACE_TO_WITHSPACE_RATIO = 0.765; // 공미 / 공포 = 0.765
+        function calcGoalFromNoSpace(val) {
+            const noSpace = parseFloat(val);
+            if (!isNaN(noSpace) && noSpace > 0) {
+                document.getElementById('new-work-goal-withspace').value = Math.round(noSpace / NOSPACE_TO_WITHSPACE_RATIO);
+            } else {
+                document.getElementById('new-work-goal-withspace').value = '';
+            }
+        }
+        function calcGoalFromWithSpace(val) {
+            const withSpace = parseFloat(val);
+            if (!isNaN(withSpace) && withSpace > 0) {
+                document.getElementById('new-work-goal-nospace').value = Math.round(withSpace * NOSPACE_TO_WITHSPACE_RATIO);
+            } else {
+                document.getElementById('new-work-goal-nospace').value = '';
+            }
+        }
+        // 완고 입고일이 변경되면 스케줄 관리(taskSchedules)에서 자동 항목을 갱신
+        function syncManuscriptTaskSchedule(work, oldDate, newDate) {
+            // oldDate에 자동 등록된 태스크가 있으면 제거
+            if (oldDate && taskSchedules[oldDate]) {
+                taskSchedules[oldDate] = taskSchedules[oldDate].filter(t => 
+                    !(t.workId === work.id && t.isAutoManuscript)
+                );
+                if (taskSchedules[oldDate].length === 0) delete taskSchedules[oldDate];
+            }
+            // newDate에 자동 태스크 추가
+            if (newDate) {
+                if (!taskSchedules[newDate]) taskSchedules[newDate] = [];
+                // 이미 같은 작품의 자동 태스크가 있으면 추가 안 함
+                const exists = taskSchedules[newDate].some(t => t.workId === work.id && t.isAutoManuscript);
+                if (!exists) {
+                    taskSchedules[newDate].push({
+                        id: 'ts_auto_' + work.id,
+                        date: newDate, workId: work.id,
+                        category: '완고 입고',
+                        memo: '', isCompleted: false, isAutoManuscript: true
+                    });
+                }
+            }
+        }
+
+        // ════ 외전 관리 ═════════════════════════════════════════
+        let extraEditingWorkId = null; // 현재 외전 편집 중인 본편 작품 id
+
+        function calcExtraGoalFromNoSpace(val) {
+            const n = parseFloat(val);
+            document.getElementById('extra-goal-withspace').value = (!isNaN(n) && n>0) ? Math.round(n / NOSPACE_TO_WITHSPACE_RATIO) : '';
+        }
+        function calcExtraGoalFromWithSpace(val) {
+            const n = parseFloat(val);
+            document.getElementById('extra-goal-nospace').value = (!isNaN(n) && n>0) ? Math.round(n * NOSPACE_TO_WITHSPACE_RATIO) : '';
+        }
+
+        function openExtraModal(extraId = null) {
+            const workId = document.getElementById('work-editing-id').value;
+            if (!workId) { alert('수정 모드에서만 외전을 추가할 수 있습니다.'); return; }
+            extraEditingWorkId = workId;
+            document.getElementById('extra-edit-id').value = extraId || '';
+            
+            if (extraId) {
+                const w = masterWorks.find(x => x.id === workId);
+                const ex = (w?.extras || []).find(e => e.id === extraId);
+                if (ex) {
+                    document.getElementById('extra-modal-title').textContent = '외전 수정';
+                    document.getElementById('extra-name').value = ex.name || '';
+                    document.getElementById('extra-goal-nospace').value = ex.goalNoSpace || '';
+                    document.getElementById('extra-goal-withspace').value = ex.goalWithSpace || '';
+                    document.getElementById('extra-manuscript-date').value = ex.manuscriptDate || '';
+                    document.getElementById('extra-publish-date').value = ex.publishDate || '';
+                }
+            } else {
+                document.getElementById('extra-modal-title').textContent = '외전 추가';
+                document.getElementById('extra-name').value = '';
+                document.getElementById('extra-goal-nospace').value = '';
+                document.getElementById('extra-goal-withspace').value = '';
+                document.getElementById('extra-manuscript-date').value = '';
+                document.getElementById('extra-publish-date').value = '';
+                // 자동 이름 제안
+                const w = masterWorks.find(x => x.id === workId);
+                const count = (w?.extras || []).length + 1;
+                document.getElementById('extra-name').value = `외전 ${count}`;
+            }
+            document.getElementById('extra-modal').classList.add('open');
+        }
+
+        function closeExtraModal() {
+            document.getElementById('extra-modal').classList.remove('open');
+        }
+
+        function saveExtra() {
+            const workId = extraEditingWorkId;
+            const w = masterWorks.find(x => x.id === workId); if (!w) return;
+            if (!w.extras) w.extras = [];
+            
+            const editId = document.getElementById('extra-edit-id').value;
+            const name = document.getElementById('extra-name').value.trim();
+            if (!name) { alert('외전 이름을 입력해주세요.'); return; }
+            
+            const data = {
+                name,
+                goalNoSpace: parseInt(document.getElementById('extra-goal-nospace').value) || 0,
+                goalWithSpace: parseInt(document.getElementById('extra-goal-withspace').value) || 0,
+                manuscriptDate: document.getElementById('extra-manuscript-date').value || '',
+                publishDate: document.getElementById('extra-publish-date').value || ''
+            };
+
+            if (editId) {
+                const idx = w.extras.findIndex(e => e.id === editId);
+                if (idx > -1) {
+                    const oldMD = w.extras[idx].manuscriptDate;
+                    Object.assign(w.extras[idx], data);
+                    syncExtraManuscriptTask(w, w.extras[idx], oldMD, data.manuscriptDate);
+                }
+            } else {
+                const newExtra = { id: 'ex_' + Date.now(), ...data };
+                w.extras.push(newExtra);
+                if (data.manuscriptDate) syncExtraManuscriptTask(w, newExtra, '', data.manuscriptDate);
+            }
+            save(); renderExtrasList(); closeExtraModal();
+        }
+
+        function deleteExtra(extraId) {
+            if (!confirm('이 외전을 삭제하시겠습니까?')) return;
+            const w = masterWorks.find(x => x.id === extraEditingWorkId); if (!w?.extras) return;
+            const ex = w.extras.find(e => e.id === extraId);
+            if (ex?.manuscriptDate) syncExtraManuscriptTask(w, ex, ex.manuscriptDate, '');
+            w.extras = w.extras.filter(e => e.id !== extraId);
+            purgeOrphanSchedules();
+            save(); renderExtrasList();
+        }
+
+        function syncExtraManuscriptTask(work, extra, oldDate, newDate) {
+            const taskId = 'ts_auto_extra_' + extra.id;
+            // 기존 자동 태스크 제거
+            if (oldDate && taskSchedules[oldDate]) {
+                taskSchedules[oldDate] = taskSchedules[oldDate].filter(t => t.id !== taskId);
+                if (taskSchedules[oldDate].length === 0) delete taskSchedules[oldDate];
+            }
+            // 새 태스크 생성
+            if (newDate) {
+                if (!taskSchedules[newDate]) taskSchedules[newDate] = [];
+                if (!taskSchedules[newDate].some(t => t.id === taskId)) {
+                    taskSchedules[newDate].push({
+                        id: taskId, date: newDate, workId: work.id,
+                        category: '완고 입고', memo: `[${extra.name}]`,
+                        isCompleted: false, isAutoManuscript: true,
+                        extraId: extra.id
+                    });
+                }
+            }
+        }
+
+        function renderExtrasList() {
+            const workId = extraEditingWorkId || document.getElementById('work-editing-id').value;
+            const cont = document.getElementById('extras-list');
+            if (!cont) return;
+            const w = masterWorks.find(x => x.id === workId);
+            const extras = w?.extras || [];
+            if (extras.length === 0) {
+                cont.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">등록된 외전이 없습니다.</p>';
+                return;
+            }
+            const today = getYYYYMMDD(new Date());
+            cont.innerHTML = extras.map(ex => {
+                const isPast = ex.publishDate && ex.publishDate < today;
+                const opacity = isPast ? 'opacity-50' : '';
+                const dateInfo = ex.publishDate ? `📅 ${ex.publishDate}` : (ex.manuscriptDate ? `✍️ 완고 ${ex.manuscriptDate}` : '날짜 미정');
+                const goalInfo = ex.goalWithSpace ? `${ex.goalWithSpace.toLocaleString()}자` : '';
+                return `<div class="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 ${opacity}">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold text-emerald-600">📖 ${ex.name}</span>
+                            ${goalInfo ? `<span class="text-[10px] text-slate-500">${goalInfo}</span>` : ''}
+                            ${isPast ? '<span class="text-[9px] text-slate-400">(출간 지남)</span>' : ''}
+                        </div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">${dateInfo}</div>
+                    </div>
+                    <button onclick="event.stopPropagation(); extraEditingWorkId='${workId}'; openExtraModal('${ex.id}')" class="text-slate-400 hover:text-blue-500 text-xs p-1" title="수정"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="event.stopPropagation(); extraEditingWorkId='${workId}'; deleteExtra('${ex.id}')" class="text-slate-400 hover:text-rose-500 text-xs p-1" title="삭제"><i class="fa-solid fa-trash-can"></i></button>
+                </div>`;
+            }).join('');
+        }
+
+        // 작품 수정/외전 포함 - 사용 가능한 항목 목록 (집필/스케줄/상세 기록용)
+        // includePast: true면 출간일 지난 작품도 포함
+        function getActiveWorkItems(includeWebtoon = false, includePast = false) {
+            const today = getYYYYMMDD(new Date());
+            const items = [];
+            masterWorks.forEach(w => {
+                if (!includeWebtoon && w.genre.includes('웹툰')) return;
+                if (w.contractBroken) return;   // 계약 파기한 작품은 고를 일이 없으니 목록에서 뺀다
+                const mainPast = !w.isPending && w.publishDate && w.publishDate < today;
+                const mainDone = !!w.workDone;   // 수동으로 '작업 완료' 표시 — 출간일 전이어도 숨김
+                if (includePast || (!mainDone && !mainPast)) {
+                    items.push({
+                        id: w.id, displayTitle: w.title + (mainPast ? ' (출간됨)' : ''), genre: w.genre,
+                        manuscriptDate: w.manuscriptDate, publishDate: w.publishDate,
+                        goalWithSpace: w.goalWithSpace, goalNoSpace: w.goalNoSpace,
+                        _work: w, _extra: null, _isPast: mainPast
+                    });
+                }
+                (w.extras || []).forEach(ex => {
+                    const exPast = ex.publishDate && ex.publishDate < today;
+                    const exDone = !!ex.workDone;
+                    if (includePast || (!exDone && !exPast)) {
+                        items.push({
+                            id: w.id + '::' + ex.id,
+                            displayTitle: `${w.title} [${ex.name}]` + (exPast ? ' (출간됨)' : ''),
+                            genre: w.genre,
+                            manuscriptDate: ex.manuscriptDate, publishDate: ex.publishDate,
+                            goalWithSpace: ex.goalWithSpace, goalNoSpace: ex.goalNoSpace,
+                            _work: w, _extra: ex, _isPast: exPast
+                        });
+                    }
+                });
+            });
+            return items;
+        }
+        // ════════════════════════════════════════════════════════
+
+        function resetWorkForm() {
+            document.getElementById('work-editing-id').value = '';
+            document.getElementById('work-form-icon').innerHTML = '<i class="fa-solid fa-plus"></i>';
+            document.getElementById('work-form-label').textContent = '신규 작품 등록';
+            document.getElementById('work-form-submit-label').textContent = '등록하기';
+            document.getElementById('work-form-cancel-btn').classList.add('hidden');
+            // 외전 섹션 숨김
+            const extrasSec = document.getElementById('extras-section');
+            if (extrasSec) extrasSec.classList.add('hidden');
+            document.getElementById('new-work-title').value = '';
+            document.getElementById('new-work-publisher').value = '';
+            document.getElementById('new-work-studio').value = '';
+            const spReset = document.getElementById('new-work-settlement-publisher'); if (spReset) spReset.value = '';
+            settlementPublisherTouched = false;
+            document.getElementById('new-work-rs').value = '';
+            document.getElementById('new-work-webtoon-rate').value = '';
+            document.getElementById('new-work-goal-nospace').value = '';
+            document.getElementById('new-work-goal-withspace').value = '';
+            document.getElementById('new-work-platform-select').value = '';
+            const npReset = document.getElementById('new-work-platform-custom'); if (npReset) { npReset.value = ''; npReset.classList.add('hidden'); }
+            document.getElementById('new-work-promotion-select').value = '';
+            const nrReset = document.getElementById('new-work-promotion-custom'); if (nrReset) { nrReset.value = ''; nrReset.classList.add('hidden'); }
+            const md = document.getElementById('new-work-manuscript-date');
+            if (md) md.value = '';
+            document.getElementById('new-work-date').value = '';
+            document.getElementById('new-work-pending').checked = false;
+            const pmReset = document.getElementById('new-work-pending-month'); if (pmReset) { pmReset.value = ''; pmReset.classList.add('hidden'); }
+            const wmReset = document.getElementById('new-work-pending-month-webtoon'); if (wmReset) { wmReset.value = ''; wmReset.classList.add('hidden'); }
+            document.getElementById('new-work-rate').value = '';
+            const rcReset = document.getElementById('new-work-rate-custom'); if (rcReset) { rcReset.value = ''; rcReset.classList.add('hidden'); }
+            // 웹툰 날짜 필드도 초기화
+            const wtDate = document.getElementById('new-work-date-webtoon');
+            const wtPending = document.getElementById('new-work-pending-webtoon');
+            const wtContract = document.getElementById('new-work-contract-date');
+            if (wtDate) wtDate.value = '';
+            if (wtPending) wtPending.checked = false;
+            if (wtContract) wtContract.value = '';
+            toggleNewWorkDate(document.getElementById('new-work-pending'));
+            toggleStudioInput();
+            // 신규 등록 모드로 복귀
+            document.getElementById('work-form-icon').innerHTML = '<i class="fa-solid fa-plus"></i>';
+            document.getElementById('work-form-icon').style.background = '';
+            document.getElementById('work-form-icon').className = 'w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-md text-xs';
+            document.getElementById('work-form-label').textContent = '신규 작품 등록';
+            document.getElementById('work-form-submit-label').textContent = '등록하기';
+            document.getElementById('work-form-cancel-btn').classList.add('hidden');
+            document.getElementById('work-form-submit-btn').classList.remove('hidden');
+            currentViewWorkId = null;
+            workFormMode = 'new';
+        }
+
+        function showWorkForm() {
+            document.getElementById('work-form-card').classList.remove('hidden');
+            document.getElementById('work-new-btn-area').classList.add('hidden');
+        }
+        function hideWorkForm() {
+            // 취소 시: 신규 폼으로 리셋만 하고 폼은 유지
+            resetWorkForm();
+            showWorkForm();
+        }
+        function openNewWorkForm() {
+            resetWorkForm();
+            showWorkForm();
+        }
+
+        let currentViewWorkId = null;
+        let workFormMode = 'new'; // 'new' | 'view'
+
+        function viewWork(id) {
+            const w = masterWorks.find(x => x.id === id);
+            if (!w) return;
+            currentViewWorkId = id;
+            workFormMode = 'view';
+
+            // 카드 클릭 시 목록 스크롤 위치가 맨 위로 튀지 않도록 현재 위치를 저장했다가 복원
+            const listScroller = document.querySelector('#master-works-by-genre-container')?.parentElement;
+            const savedScroll = listScroller ? listScroller.scrollTop : 0;
+
+            _fillWorkForm(w);
+            showWorkForm();
+            renderMasterWorksList();
+
+            if (listScroller) {
+                listScroller.scrollTop = savedScroll;
+                requestAnimationFrame(() => { listScroller.scrollTop = savedScroll; });
+            }
+
+            // UI: 수정하기 모드
+            document.getElementById('work-form-icon').innerHTML = '<i class="fa-solid fa-pen"></i>';
+            document.getElementById('work-form-icon').style.background = getGenreColor(w.genre);
+            document.getElementById('work-form-icon').className = 'w-7 h-7 rounded-lg text-white flex items-center justify-center shadow-md text-xs';
+            document.getElementById('work-form-label').textContent = w.title;
+            document.getElementById('work-form-cancel-btn').classList.remove('hidden');
+            document.getElementById('work-form-submit-btn').classList.remove('hidden');
+            document.getElementById('work-form-submit-label').textContent = '수정하기';
+            document.getElementById('work-editing-id').value = id;
+
+            // 외전 섹션 표시
+            const extrasSec = document.getElementById('extras-section');
+            if (extrasSec) {
+                if (w.genre.includes('웹툰')) extrasSec.classList.add('hidden');
+                else { extrasSec.classList.remove('hidden'); extraEditingWorkId = id; renderExtrasList(); }
+            }
+
+        }
+
+        function _fillWorkForm(w) {
+            document.getElementById('new-work-genre').value = w.genre;
+            document.getElementById('new-work-title').value = w.title;
+            document.getElementById('new-work-publisher').value = w.publisher !== '-' ? w.publisher : '';
+            document.getElementById('new-work-studio').value = w.studio !== '-' ? w.studio : '';
+            const spFill = document.getElementById('new-work-settlement-publisher');
+            if (spFill) spFill.value = (w.settlementPublisher && w.settlementPublisher !== w.publisher) ? w.settlementPublisher : '';
+            settlementPublisherTouched = !!(w.settlementPublisher && w.settlementPublisher !== w.publisher);
+            document.getElementById('new-work-rs').value = w.rs || '';
+            document.getElementById('new-work-webtoon-rate').value = w.webtoonRate || w.rate || '';
+            document.getElementById('new-work-goal-nospace').value = w.goalNoSpace || '';
+            const wmInfo = workManage[w.id] || {};
+            const platformPresets = ['리디', '시리즈', '카카오', '봄툰', '미스터블루', '레진'];
+            const platformSel = document.getElementById('new-work-platform-select');
+            const platformCustom = document.getElementById('new-work-platform-custom');
+            const platformVal = wmInfo.launchPlatform || '';
+            if (!platformVal) { platformSel.value = ''; platformCustom.classList.add('hidden'); platformCustom.value = ''; }
+            else if (platformPresets.includes(platformVal)) { platformSel.value = platformVal; platformCustom.classList.add('hidden'); platformCustom.value = ''; }
+            else { platformSel.value = 'custom'; platformCustom.classList.remove('hidden'); platformCustom.value = platformVal; }
+            const promotionPresets = ['오리발', '원픽', '단독배너', '출판사 배너', '캘린더', '묶음 시단신', '단독 시단신'];
+            const promotionSel = document.getElementById('new-work-promotion-select');
+            const promotionCustom = document.getElementById('new-work-promotion-custom');
+            const promotionVal = wmInfo.promotion || '';
+            if (!promotionVal) { promotionSel.value = ''; promotionCustom.classList.add('hidden'); promotionCustom.value = ''; }
+            else if (promotionPresets.includes(promotionVal)) { promotionSel.value = promotionVal; promotionCustom.classList.add('hidden'); promotionCustom.value = ''; }
+            else { promotionSel.value = 'custom'; promotionCustom.classList.remove('hidden'); promotionCustom.value = promotionVal; }
+            document.getElementById('new-work-volumes').value = w.volumes || 1;
+            document.getElementById('new-work-goal-withspace').value = w.goalWithSpace || '';
+            const md = document.getElementById('new-work-manuscript-date');
+            if (md) md.value = w.manuscriptDate || '';
+            document.getElementById('new-work-date').value = w.publishDate || '';
+            document.getElementById('new-work-pending').checked = w.isPending || false;
+            const pmInput = document.getElementById('new-work-pending-month');
+            if (pmInput) { pmInput.value = w.pendingMonth || ''; if (w.isPending) { pmInput.classList.remove('hidden'); document.getElementById('new-work-date').classList.add('hidden'); } }
+            const rateEl = document.getElementById('new-work-rate');
+            if (rateEl && !w.genre.includes('웹툰')) {
+                const opts = Array.from(rateEl.options).map(o => o.value);
+                if (opts.includes(String(w.rate))) { rateEl.value = w.rate; const rc = document.getElementById('new-work-rate-custom'); if(rc){rc.value=''; rc.classList.add('hidden');} }
+                else { rateEl.value = 'custom'; const rc = document.getElementById('new-work-rate-custom'); if(rc){rc.value=w.rate;rc.classList.remove('hidden');} }
+            }
+            if (w.genre.includes('웹툰')) {
+                const wtDate = document.getElementById('new-work-date-webtoon');
+                const wtPending = document.getElementById('new-work-pending-webtoon');
+                if (wtDate) wtDate.value = w.publishDate || '';
+                if (wtPending) wtPending.checked = w.isPending || false;
+                const wtpm = document.getElementById('new-work-pending-month-webtoon');
+                if (wtpm) { wtpm.value = w.pendingMonth || ''; if (w.isPending) { wtpm.classList.remove('hidden'); if (wtDate) wtDate.classList.add('hidden'); } }
+                const wtContract = document.getElementById('new-work-contract-date');
+                if (wtContract) wtContract.value = w.contractDate || '';
+            }
+            const advAmt = document.getElementById('new-work-advance-amount');
+            const advDt  = document.getElementById('new-work-advance-date');
+            if (advAmt) advAmt.value = w.advanceAmount || '';
+            if (advDt)  advDt.value  = w.advanceDate   || '';
+            toggleNewWorkDate(document.getElementById('new-work-pending'));
+            toggleStudioInput();
+        }
+
+        function closeWorkView() {
+            currentViewWorkId = null;
+            workFormMode = 'new';
+            resetWorkForm();
+        }
+
+        function startEditWork(id) {
+            viewWork(id);
+        }
+
+        function cancelEditWork() { hideWorkForm(); editingWorkId = null; currentViewWorkId = null; renderMasterWorksList(); }
+
+        // 오른쪽 패널 클릭 시 수정모드 취소
+        document.addEventListener('DOMContentLoaded', function() {
+            const rightPanel = document.getElementById('works-right-panel');
+            if (rightPanel) {
+                rightPanel.addEventListener('click', function(e) {
+                    // 수정 모드일 때만 (취소 버튼이 보일 때)
+                    const cancelBtn = document.getElementById('work-form-cancel-btn');
+                    if (cancelBtn && !cancelBtn.classList.contains('hidden')) {
+                        // 작품 카드 클릭은 제외 (viewWork 실행되는 곳)
+                        if (!e.target.closest('[onclick*="viewWork"]') && !e.target.closest('[onclick*="startEditWork"]')) {
+                            cancelEditWork();
+                        }
+                    }
+                });
+            }
+        });
+
+        function registerOrUpdateWork() {
+            const editId = document.getElementById('work-editing-id').value;
+            const title = document.getElementById('new-work-title').value.trim();
+            const genre = document.getElementById('new-work-genre').value;
+            const isWebtoon = genre.includes('웹툰');
+            // 웹툰 날짜 동기화
+            if (isWebtoon) {
+                const wtDate = document.getElementById('new-work-date-webtoon');
+                const wtPending = document.getElementById('new-work-pending-webtoon');
+                const wtMonthInput = document.getElementById('new-work-pending-month-webtoon');
+                const mainMonthInput = document.getElementById('new-work-pending-month');
+                if (wtDate) document.getElementById('new-work-date').value = wtDate.value || '';
+                if (wtPending) document.getElementById('new-work-pending').checked = wtPending.checked;
+                if (wtMonthInput && mainMonthInput) mainMonthInput.value = wtMonthInput.value || '';
+            }
+            const date = document.getElementById('new-work-date').value;
+            const isPending = document.getElementById('new-work-pending').checked;
+            const pendingMonth = isPending ? (document.getElementById('new-work-pending-month')?.value || '') : '';
+            const publisher = document.getElementById('new-work-publisher').value.trim() || '-';
+            const studio = document.getElementById('new-work-studio').value.trim();
+            const settlementPublisherRaw = document.getElementById('new-work-settlement-publisher')?.value.trim() || '';
+            // 정산 출판사가 출판사와 같으면(=수동 지정 안 했으면) 굳이 저장하지 않고 출판사를 계속 따라가게 비워둔다
+            const settlementPublisher = (settlementPublisherRaw && settlementPublisherRaw !== publisher) ? settlementPublisherRaw : '';
+
+            let rate, rs = null, webtoonRate = null;
+            if (isWebtoon) {
+                const rsVal = document.getElementById('new-work-rs').value;
+                const wrVal = document.getElementById('new-work-webtoon-rate').value;
+                rs = rsVal !== '' ? parseFloat(rsVal) : null;
+                webtoonRate = wrVal !== '' ? parseFloat(wrVal) : null;
+                // 둘 다 있으면 비율 계산, 아니면 0 (정산 비율 미정)
+                if (rs && webtoonRate) {
+                    rate = Math.round(rs * webtoonRate / 100 * 10) / 10;
+                } else {
+                    rate = 0; // 미정
+                }
+            } else {
+                rate = document.getElementById('new-work-rate').value;
+                if (rate === 'custom') rate = document.getElementById('new-work-rate-custom').value;
+            }
+
+            if (!title || (!isWebtoon && !isPending && !date)) { alert("작품명, 출간일을 모두 입력해주세요."); return; }
+
+            const goalNoSpace = parseInt(document.getElementById('new-work-goal-nospace').value) || 0;
+            const goalWithSpace = parseInt(document.getElementById('new-work-goal-withspace').value) || 0;
+            const manuscriptDate = isWebtoon ? '' : (document.getElementById('new-work-manuscript-date').value || '');
+            const volumes = parseInt(document.getElementById('new-work-volumes').value) || 1;
+            const advanceAmount = document.getElementById('new-work-advance-amount')?.value.trim() || '';
+            const advanceDate   = document.getElementById('new-work-advance-date')?.value.trim() || '';
+            const contractDate  = isWebtoon ? (document.getElementById('new-work-contract-date')?.value || '') : '';
+            const platformSelVal = document.getElementById('new-work-platform-select')?.value || '';
+            const platform = platformSelVal === 'custom' ? (document.getElementById('new-work-platform-custom')?.value.trim() || '') : platformSelVal;
+            const promotionSelVal = document.getElementById('new-work-promotion-select')?.value || '';
+            const promotion = promotionSelVal === 'custom' ? (document.getElementById('new-work-promotion-custom')?.value.trim() || '') : promotionSelVal;
+
+            let savedWorkId;
+            if (editId) {
+                const w = masterWorks.find(x => x.id === editId); if (!w) return;
+                const oldManuscriptDate = w.manuscriptDate;
+                w.title = title; w.genre = genre; w.publisher = publisher || '-'; w.studio = studio || '-'; w.settlementPublisher = settlementPublisher;
+                w.rate = rate; w.rs = rs; w.webtoonRate = webtoonRate;
+                w.goalNoSpace = goalNoSpace; w.goalWithSpace = goalWithSpace;
+                w.manuscriptDate = manuscriptDate;
+                w.isPending = isPending; w.pendingMonth = isPending ? pendingMonth : ''; w.publishDate = isPending ? '' : date;
+                w.volumes = volumes;
+                w.advanceAmount = advanceAmount ? Number(advanceAmount) : '';
+                w.advanceDate   = advanceDate;
+                w.contractDate  = contractDate;
+                savedWorkId = editId;
+                editingWorkId = null;
+                // 완고 입고일 변경 시 기존 자동 스케줄 갱신
+                syncManuscriptTaskSchedule(w, oldManuscriptDate, manuscriptDate);
+            } else {
+                if (genre.includes('웹툰')) {
+                    const originalWork = masterWorks.find(w => w.title === title && !w.genre.includes('웹툰'));
+                    if (originalWork) originalWork.hasWebtoon = true;
+                }
+                const newWork = { id: Date.now().toString(), genre, title, publisher: publisher || '-', studio: studio || '-', settlementPublisher, rate, rs, webtoonRate, goalNoSpace, goalWithSpace, manuscriptDate, publishDate: date, isPending, pendingMonth, volumes, advanceAmount: advanceAmount ? Number(advanceAmount) : '', advanceDate, contractDate };
+                masterWorks.push(newWork);
+                savedWorkId = newWork.id;
+                // 신규 등록 시 완고 입고일이 있으면 자동 스케줄 생성
+                if (manuscriptDate) syncManuscriptTaskSchedule(newWork, '', manuscriptDate);
+            }
+            // 플랫폼·프로모션은 작품관리 데이터(workManage)에 저장 → 작품관리와 서로 연동 (웹툰은 웹툰관리에서 따로 관리)
+            if (!isWebtoon) {
+                if (!workManage[savedWorkId]) workManage[savedWorkId] = {};
+                workManage[savedWorkId].launchPlatform = platform;
+                workManage[savedWorkId].promotion = promotion;
+            }
+            masterWorks.sort((a,b) => { const dA = sortKeyDate(a), dB = sortKeyDate(b); return dA < dB ? -1 : dA > dB ? 1 : 0; });
+            if (editId) {
+                const lbl = document.getElementById('work-form-submit-label');
+                if (lbl) { lbl.textContent = '✓ 수정 완료'; }
+                setTimeout(() => {
+                    save(); updateUI();
+                    const savedId = currentViewWorkId;
+                    renderMasterWorksList();
+                    if (savedId) viewWork(savedId);
+                }, 600);
+            } else {
+                save(); updateUI(); resetWorkForm(); showWorkForm();
+            }
+        }
+
+        // 하위 호환성 유지
+        function registerWork() { registerOrUpdateWork(); }
+        function saveEditedWork(id) { startEditWork(id); registerOrUpdateWork(); }
+        
+        function updateRoyalty(monthStr, workId, value) { if (!monthlyData[monthStr]) monthlyData[monthStr] = {}; monthlyData[monthStr][workId] = Number(value.replace(/[^0-9]/g, '')) || 0; save(); updateSheetTotals(); }
+        function renderRoyaltySheets() {
+            const container = document.getElementById('genre-sheets-container'), tabsContainer = document.getElementById('genre-tabs-container'), searchTerm = document.getElementById('work-search').value.toLowerCase();
+            if(!container || !tabsContainer) return;
+            const viewYearEl = document.getElementById('current-view-year'); if (viewYearEl) { viewYearEl.innerText = currentYear === 'total' ? '전체' : currentYear; viewYearEl.style.color = "var(--primary)"; }
+            const tabs = ['종합', ...genreList.map(g => g.name)];
+            tabsContainer.innerHTML = tabs.map(t => `<button onclick="switchGenreTab('${t}')" class="genre-tab-btn ${currentGenreTab === t ? 'active' : ''}">${t}</button>`).join('');
+            container.innerHTML = ""; const currencySymbol = '₩ ', readonlyAttr = isSheetLocked ? 'readonly' : '';
+            const sortedWorks = (works) => works.sort((a,b) => {
+                if (currentGenreTab === '현로 초단') {
+                    const order = ['알사탕', '비단잉어', '래이니북스'];
+                    const ia = order.indexOf(a.publisher), ib = order.indexOf(b.publisher);
+                    const pa = ia === -1 ? order.length : ia, pb = ib === -1 ? order.length : ib;
+                    if (pa !== pb) return pa - pb;
+                    if (pa === order.length) { const pc = (a.publisher || '').localeCompare(b.publisher || '', 'ko'); if (pc !== 0) return pc; }
+                    // 같은 출판사 안에서는 출간날짜 순 (출간예정/날짜없음은 뒤로, 동일하면 제목순)
+                    const dA = sortKeyDate(a);
+                    const dB = sortKeyDate(b);
+                    if (dA !== dB) return dA.localeCompare(dB);
+                    return a.title.localeCompare(b.title, 'ko');
+                }
+                if (currentGenreTab === '웹툰') {
+                    // 1) 출간일 순(없으면 뒤로) > 2) 계약일 순 > 3) 제목
+                    const dA = sortKeyDate(a);
+                    const dB = sortKeyDate(b);
+                    if (dA !== dB) return dA < dB ? -1 : 1;
+                    const cA = a.contractDate || '9999-12-31', cB = b.contractDate || '9999-12-31';
+                    if (cA !== cB) return cA < cB ? -1 : 1;
+                    return a.title.localeCompare(b.title, 'ko');
+                }
+                const dateA = sortKeyDate(a), dateB = sortKeyDate(b); if (dateA !== dateB) return (dateA < dateB) ? -1 : (dateA > dateB ? 1 : 0); return a.title.localeCompare(b.title, 'ko');
+            });
+            const getStickyHeader = () => { if (currentYear === 'total') return `<th class="sticky-col text-center px-6">${currentGenreTab === '종합' ? '장르 구분' : '작품 정보'}</th>`; return `<th class="sticky-col text-center px-6"><div class="flex items-center justify-center gap-2"><span class="bg-slate-600 text-white text-sm px-2.5 py-0.5 rounded-md font-bold font-mono shadow-sm tracking-tight">${currentYear}</span><span class="text-slate-600">${currentGenreTab === '종합' ? '장르 구분' : '작품 정보'}</span></div></th>`; };
+            if (currentYear === 'total') {
+                if (currentGenreTab === '종합') {
+                    const section = document.createElement('div'); section.innerHTML = `<h4 class="text-sm font-bold text-slate-500 mb-4 pl-2 border-l-4" style="border-color:var(--primary)">전체 기간 장르별 정산 요약</h4>`;
+                    let html = `<div class="sheet-wrapper"><div class="spreadsheet-container"><table class="sheet-table"><thead><tr>${getStickyHeader()}<th style="min-width:130px; font-weight:700; font-size:0.85rem;" class="grand-total-cell">누적 수익</th><th style="min-width:120px; font-weight:700; font-size:0.85rem;" class="grand-total-cell">추정 매출</th>` + years.map(y => `<th class="text-center">${y}년</th>`).join('') + `</tr></thead><tbody>`;
+                    let grandTotal = 0, grandSales = 0, yearTotals = {}; years.forEach(y => yearTotals[y] = 0);
+                    genreList.forEach(gObj => {
+                        const isWebtoonG = gObj.name && gObj.name.includes('웹툰');
+                        let gCumulative = 0, gSales = 0, gYearly = {}; years.forEach(y => gYearly[y] = 0);
+                        masterWorks.filter(w => w.genre === gObj.name).forEach(w => { let wCum = 0; years.forEach(y => { for(let m=1; m<=12; m++) { const val = (monthlyData[`${y}-${String(m).padStart(2,'0')}`] || {})[w.id] || 0; gYearly[y] += val; gCumulative += val; wCum += val; } }); if (!isWebtoonG) gSales += calculateGrossSales(wCum, w.rate); });
+                        grandTotal += gCumulative; if (!isWebtoonG) grandSales += gSales; years.forEach(y => yearTotals[y] += gYearly[y]);
+                        const salesCellG = isWebtoonG ? `<td class="text-right pr-2 text-slate-400 text-sm" style="background:#fafafa;">-</td>` : `<td class="text-right pr-2 text-slate-500 text-sm" style="background:#fafafa;">${currencySymbol}${formatCurrency(gSales)}</td>`;
+                        html += `<tr><td class="sticky-col pl-6 font-bold text-slate-700">${gObj.name}</td><td class="text-center font-bold text-[0.85rem] grand-total-cell" style="background:#f1f5f9; border-color:#e2e8f0;">${currencySymbol}${formatCurrency(gCumulative)}</td>${salesCellG}` + years.map(y => `<td class="text-right pr-2 text-slate-500 text-sm">${currencySymbol}${formatCurrency(gYearly[y])}</td>`).join('') + `</tr>`;
+                    });
+                    html += `</tbody></table></div></div><div class="sheet-footer-outer"><div class="sheet-footer-inner"><table class="sheet-table"><tbody><tr class="bg-slate-100/50"><td class="sticky-col text-center font-bold text-slate-600 text-sm">총합</td><td class="text-center font-bold text-[0.85rem] grand-total-cell">${currencySymbol}${formatCurrency(grandTotal)}</td><td class="text-right pr-2 font-bold grand-total-cell">${currencySymbol}${formatCurrency(grandSales)}</td>` + years.map(y => `<td class="text-right pr-2 font-bold grand-total-cell">${currencySymbol}${formatCurrency(yearTotals[y])}</td>`).join('') + `</tr></tbody></table></div></div>`;
+                    section.innerHTML += html; container.appendChild(section);
+                } else {
+                    const genre = currentGenreTab, gWorks = sortedWorks(masterWorks.filter(w => w.genre === genre && !w.contractBroken && w.title.toLowerCase().includes(searchTerm)));
+                    const section = document.createElement('div'); section.innerHTML = `<h4 class="text-sm font-bold text-slate-500 mb-4 pl-2 border-l-4" style="border-color:var(--primary)">${genre} 연도별 상세 (전체 기간)</h4>`;
+                    // 웹툰 탭에는 추정 매출 칸을 넣지 않음
+                    const showSalesCol = !(currentGenreTab && currentGenreTab.includes('웹툰'));
+                    const salesHeaderTotal = showSalesCol ? `<th style="min-width:120px; font-weight:700;" class="grand-total-cell">추정 매출</th>` : '';
+                    // 총합계 뷰: 작품 정보 칸 너비를 기존(약 260px)의 60% 수준(156px)으로 축소
+                    let html = `<div class="sheet-wrapper"><div class="spreadsheet-container"><table class="sheet-table"><thead><tr><th class="sticky-col text-center px-6" style="width:156px;min-width:156px;">작품 정보</th><th style="min-width:130px; font-weight:700;" class="grand-total-cell">누적 수익</th>${salesHeaderTotal}` + years.map(y => `<th class="text-center">${y}년</th>`).join('') + `</tr></thead><tbody>`;
+                    let totalCumulative = 0, totalSalesAll = 0, totalYearly = {}; years.forEach(y => totalYearly[y] = 0);
+                    gWorks.forEach(w => {
+                        let wCumulative = 0, wYearly = {}; years.forEach(y => { wYearly[y] = 0; for(let m=1; m<=12; m++) { const val = (monthlyData[`${y}-${String(m).padStart(2,'0')}`] || {})[w.id] || 0; wYearly[y] += val; } wCumulative += wYearly[y]; });
+                        totalCumulative += wCumulative; years.forEach(y => totalYearly[y] += wYearly[y]);
+                        const dateDisplay = getDateDisplay(w);
+                        const advAmt = w.advanceAmount ? Number(w.advanceAmount).toLocaleString()+'만원' : '';
+                        const advHtml = advAmt ? `<span class="sheet-adv-badge" style="color:#16a34a;font-size:12px;font-weight:400;margin-left:auto;padding-left:6px;white-space:nowrap;flex-shrink:0;">선인세 ${advAmt}</span>` : '';
+                        const rateTxt = (currentGenreTab !== '웹툰' && w.rate) ? ` | ${w.rate}%` : '';
+                        const wSales = calculateGrossSales(wCumulative, w.rate); totalSalesAll += wSales;
+                        const salesCell = showSalesCol ? `<td class="text-right pr-2 text-slate-500 text-sm" style="background:#fafafa;">${currencySymbol}${formatCurrency(wSales)}</td>` : '';
+                        html += `<tr><td class="sticky-col pl-6" style="min-width:156px;overflow:hidden;"><div class="font-bold text-slate-700 text-sm truncate w-full mb-1" title="${w.title}">${w.title}</div><div class="text-[11px] text-slate-400 flex items-center"><span class="sheet-pub-name">${(currentGenreTab === '웹툰' ? (w.studio || '-') : w.publisher)}${rateTxt} | </span>${dateDisplay}${advHtml}</div></td><td class="text-center font-bold text-[0.85rem] grand-total-cell" style="background:#f1f5f9; border-color:#e2e8f0;">${currencySymbol}${formatCurrency(wCumulative)}</td>${salesCell}` + years.map(y => `<td class="text-right pr-2 text-slate-600 text-sm">${currencySymbol}${formatCurrency(wYearly[y])}</td>`).join('') + `</tr>`;
+                    });
+                    // 계약 파기 작품은 줄로는 안 보이지만 총합에는 들어간다
+                    masterWorks.filter(w => w.genre === genre && w.contractBroken).forEach(w => {
+                        let wCum = 0;
+                        years.forEach(y => { for (let m = 1; m <= 12; m++) { const val = (monthlyData[`${y}-${String(m).padStart(2,'0')}`] || {})[w.id] || 0; totalYearly[y] += val; wCum += val; } });
+                        totalCumulative += wCum; totalSalesAll += calculateGrossSales(wCum, w.rate);
+                    });
+                    const salesFootTotal = showSalesCol ? `<td class="text-right pr-2 font-bold grand-total-cell">${currencySymbol}${formatCurrency(totalSalesAll)}</td>` : '';
+                    html += `</tbody></table></div></div><div class="sheet-footer-outer"><div class="sheet-footer-inner"><table class="sheet-table"><tbody><tr class="bg-slate-100/50"><td class="sticky-col text-center font-bold text-slate-600 text-sm" style="width:156px;min-width:156px;">총합</td><td class="text-center font-bold grand-total-cell">${currencySymbol}${formatCurrency(totalCumulative)}</td>${salesFootTotal}` + years.map(y => `<td class="text-right pr-2 font-bold grand-total-cell">${currencySymbol}${formatCurrency(totalYearly[y])}</td>`).join('') + `</tr></tbody></table></div></div>`;
+                    html += brokenWorksNoteHTML(genre, null);
+                    section.innerHTML += html; container.appendChild(section);
+                }
+            } else {
+                const months = Array.from({length: 12}, (_, i) => `${currentYear}-${String(i+1).padStart(2, '0')}`);
+                if (currentGenreTab === '종합') {
+                    const section = document.createElement('div'); section.innerHTML = `<h4 class="text-sm font-bold text-slate-500 mb-4 pl-2 border-l-4" style="border-color:var(--primary)">연간 장르별 정산 요약</h4>`;
+                    let html = `<div class="sheet-wrapper"><div class="spreadsheet-container"><table class="sheet-table"><thead><tr>${getStickyHeader()}` + months.map(m => `<th class="text-center">${parseInt(m.split('-')[1])}월</th>`).join('') + `<th class="genre-total-row text-center" style="min-width:135px;">연간 합계</th></tr></thead><tbody>`;
+                    let grandTotal = 0, monthlyTotals = Array(12).fill(0);
+                    genreList.forEach(gObj => {
+                        let rowTotal = 0; html += `<tr><td class="sticky-col pl-6 font-bold text-slate-700">${gObj.name}</td>`;
+                        months.forEach((m, idx) => {
+                            let mSum = 0; masterWorks.filter(w => w.genre === gObj.name).forEach(w => mSum += (monthlyData[m] || {})[w.id] || 0);
+                            html += `<td class="text-right pr-2 text-slate-500 text-sm">${currencySymbol}${formatCurrency(mSum)}</td>`; rowTotal += mSum; monthlyTotals[idx] += mSum;
+                        });
+                        html += `<td class="genre-total-row pr-4" style="min-width:135px;">${currencySymbol}${formatCurrency(rowTotal)}</td></tr>`; grandTotal += rowTotal;
+                    });
+                    html += `</tbody></table></div></div><div class="sheet-footer-outer"><div class="sheet-footer-inner"><table class="sheet-table"><tbody><tr class="bg-slate-100/50"><td class="sticky-col text-center font-bold text-slate-600 text-sm">월별 총합</td>` + monthlyTotals.map(val => `<td class="text-right pr-2 font-bold grand-total-cell">${currencySymbol}${formatCurrency(val)}</td>`).join('') + `<td class="text-right pr-4 font-bold grand-total-cell" style="min-width:135px;">${currencySymbol}${formatCurrency(grandTotal)}</td></tr></tbody></table></div></div>`;
+                    section.innerHTML += html; container.appendChild(section);
+                } else {
+                    const gWorks = sortedWorks(masterWorks.filter(w => w.genre === currentGenreTab && !w.contractBroken && w.title.toLowerCase().includes(searchTerm)));
+                    const section = document.createElement('div'); section.innerHTML = `<h4 class="text-sm font-bold text-slate-500 mb-4 pl-2 border-l-4" style="border-color:var(--primary)">${currentGenreTab} 상세 입력 <span class="text-slate-400 font-normal">(${gWorks.length})</span></h4>`;
+                    let html = `<div class="sheet-wrapper"><div class="spreadsheet-container"><table class="sheet-table"><thead><tr>${getStickyHeader()}` + months.map(m => `<th class="text-center">${parseInt(m.split('-')[1])}월</th>`).join('') + `<th class="genre-total-row text-center" style="min-width:135px;">합계</th></tr></thead><tbody>`;
+                    gWorks.forEach(w => {
+                        const dateDisplay = getDateDisplay(w);
+                        const advAmt2 = w.advanceAmount ? Number(w.advanceAmount).toLocaleString()+'만원' : '';
+                        const advHtml2 = advAmt2 ? `<span class="sheet-adv-badge" style="color:#16a34a;font-size:12px;font-weight:400;margin-left:auto;padding-left:6px;white-space:nowrap;flex-shrink:0;">선인세 ${advAmt2}</span>` : '';
+                        const rateTxt2 = (currentGenreTab !== '웹툰' && w.rate) ? ` | ${w.rate}%` : '';
+                        html += `<tr><td class="sticky-col pl-6"><div class="font-bold text-slate-700 text-sm truncate w-[240px] mb-1">${w.title}</div><div class="text-[11px] text-slate-400 flex items-center"><span class="sheet-pub-name">${(currentGenreTab === '웹툰' ? (w.studio || '-') : w.publisher)}${rateTxt2} | </span>${dateDisplay}${advHtml2}</div></td>`;
+                        const advSums = advanceMonthSums(getWorkAdvances(w));
+                        months.forEach(m => {
+                            const val = (monthlyData[m] || {})[w.id] || 0;
+                            // 선인세가 들어온 달은 칸 숫자를 테마색으로 (선인세 입금 내역에서 자동으로 채워진 금액)
+                            const advAttr = advSums[m] ? `style="color:color-mix(in srgb, var(--primary) 82%, #000)" title="선인세 ₩ ${formatCurrency(advSums[m])} 포함 — 선인세는 작품 관리/웹툰 관리의 '선인세 입금 내역'에서 고쳐주세요"` : '';
+                            html += `<td><input type="text" class="cell-input" value="₩ ${formatCurrency(val)}" ${advAttr} ${readonlyAttr} onchange="updateRoyalty('${m}', '${w.id}', this.value)" onfocus="this.value = this.value.replace(/[^0-9]/g, ''); this.select();" onblur="this.value = '₩ ' + formatCurrency(this.value.replace(/[^0-9]/g, ''))"></td>`;
+                        });
+                        html += `<td id="work-total-${w.id}" class="genre-total-row pr-4" style="min-width:135px;">0</td></tr>`;
+                    });
+                    html += `</tbody></table></div></div><div class="sheet-footer-outer"><div class="sheet-footer-inner"><table class="sheet-table"><tbody><tr class="bg-slate-100/50"><td class="sticky-col text-center font-bold text-slate-600 text-sm">월별 총합</td>` + months.map(m => `<td id="genre-month-total-${currentGenreTab}-${m}" class="text-right pr-2 font-bold grand-total-cell">0</td>`).join('') + `<td id="genre-total-all-${currentGenreTab}" class="text-right pr-4 font-bold grand-total-cell" style="min-width:135px;">0</td></tr></tbody></table></div></div>`;
+                    html += brokenWorksNoteHTML(currentGenreTab, months);
+                    section.innerHTML += html; container.appendChild(section);
+                    setTimeout(updateSheetTotals, 0);
+                }
+            }
+            requestAnimationFrame(fitSpreadsheetHeight);
+            requestAnimationFrame(syncSheetFooters);
+        }
+        // 표 바깥(페이지) 스크롤이 절대 생기지 않도록, 표의 실제 남은 세로 공간을 계산해서
+        // .spreadsheet-container의 max-height를 매번 정확히 맞춰준다.
+        function fitSpreadsheetHeight() {
+            const el = document.querySelector('#genre-sheets-container .spreadsheet-container');
+            if (!el) return;
+            el.style.maxHeight = 'none'; // 표 아래 실제 여백을 재기 위해 잠시 제한 해제
+            const top = el.getBoundingClientRect().top;
+            const afterSpace = document.documentElement.scrollHeight - (el.getBoundingClientRect().bottom + window.scrollY);
+            const h = window.innerHeight - top - afterSpace;
+            el.style.maxHeight = Math.max(h, 200) + 'px';
+        }
+        window.addEventListener('resize', () => {
+            const recordsTab = document.getElementById('tab-records');
+            if (recordsTab && recordsTab.classList.contains('active')) fitSpreadsheetHeight();
+        });
+        // 스크롤되는 표(.spreadsheet-container)와 그 아래 항상 보이는 총합 바(.sheet-footer-inner)의
+        // 세로 스크롤바 너비 차이를 보정하고, 가로 스크롤 위치를 서로 맞춰준다.
+        function syncSheetFooters() {
+            document.querySelectorAll('.sheet-wrapper').forEach(wrapper => {
+                const body = wrapper.querySelector('.spreadsheet-container');
+                const footerOuter = wrapper.nextElementSibling && wrapper.nextElementSibling.classList.contains('sheet-footer-outer') ? wrapper.nextElementSibling : null;
+                const footerInner = footerOuter ? footerOuter.querySelector('.sheet-footer-inner') : null;
+                if (!body || !footerOuter || !footerInner) return;
+                const scrollbarW = body.offsetWidth - body.clientWidth;
+                footerOuter.style.paddingRight = scrollbarW + 'px';
+                footerInner.scrollLeft = body.scrollLeft;
+                if (!body.dataset.footerSynced) {
+                    body.dataset.footerSynced = '1';
+                    body.addEventListener('scroll', () => { footerInner.scrollLeft = body.scrollLeft; });
+                }
+            });
+        }
+        window.addEventListener('resize', () => requestAnimationFrame(syncSheetFooters));
+        // 월별 정산 표 아래 안내: 줄에서 빠진 계약 파기 작품 금액이 총합에 들어가 있다는 것
+        // months를 주면 그 달들만, 안 주면 전체 기간 기준.
+        function brokenWorksNoteHTML(genre, months) {
+            const broken = masterWorks.filter(w => w.genre === genre && w.contractBroken);
+            if (!broken.length) return '';
+            let sum = 0, count = 0;
+            broken.forEach(w => {
+                let ws = 0;
+                Object.entries(monthlyData).forEach(([ym, d]) => { if (!months || months.includes(ym)) ws += Number(d[w.id]) || 0; });
+                if (ws) { sum += ws; count++; }
+            });
+            if (!count) return '';
+            const text = `※ 총합에는 목록에 안 보이는 계약 파기 작품 ${count}개 금액 ₩ ${formatCurrency(sum)}이 포함돼 있어요.`;
+            return `<p class="text-[11px] text-slate-400 mt-2 pl-2">${text}</p>`;
+        }
+        function updateSheetTotals() {
+            if (currentGenreTab === '종합' || currentYear === 'total') return;
+            const months = Array.from({length: 12}, (_, i) => `${currentYear}-${String(i+1).padStart(2, '0')}`);
+            const genre = currentGenreTab; let genreYearSum = 0; const gWorks = masterWorks.filter(w => w.genre === genre);
+            months.forEach(m => {
+                let mSum = 0; if(monthlyData[m]) gWorks.forEach(w => mSum += (monthlyData[m][w.id] || 0));
+                const el = document.getElementById(`genre-month-total-${genre}-${m}`); if(el) el.innerText = `₩ ${formatCurrency(mSum)}`; genreYearSum += mSum;
+            });
+            const gTotalEl = document.getElementById(`genre-total-all-${genre}`); if(gTotalEl) gTotalEl.innerText = `₩ ${formatCurrency(genreYearSum)}`;
+            gWorks.forEach(w => {
+                let wSum = 0; months.forEach(m => wSum += (monthlyData[m] || {})[w.id] || 0);
+                const el = document.getElementById('work-total-' + w.id); if (el) el.innerText = `₩ ${formatCurrency(wSum)}`;
+            });
+        }
+        function renderMasterWorksList() {
+            const container = document.getElementById('master-works-by-genre-container'), tabsContainer = document.getElementById('library-tabs'), badge = document.getElementById('total-works-badge');             const tabs = ['전체', ...genreList.map(g => g.name)];
+            tabsContainer.innerHTML = tabs.map(t => `<button onclick="switchLibraryTab('${t}')" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all mb-1 ${currentLibraryTab === t ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}">${t}</button>`).join('');
+            container.innerHTML = ""; let worksToShow = currentLibraryTab === '전체' ? [...masterWorks] : masterWorks.filter(w => w.genre === currentLibraryTab);
+            const sortOrder = ['BL 장편', '현로 장편', '현로 초단', 'BL 초단', '웹툰'];
+            worksToShow.sort((a,b) => {
+                const idxA = sortOrder.indexOf(a.genre), idxB = sortOrder.indexOf(b.genre);
+                const valA = idxA === -1 ? 999 : idxA, valB = idxB === -1 ? 999 : idxB;
+                if (valA !== valB) return valA - valB;
+                const dA = sortKeyDate(a), dB = sortKeyDate(b);
+                if (dA !== dB) return dA < dB ? -1 : 1;
+                if (a.genre && a.genre.includes('웹툰')) {
+                    const cA = a.contractDate || '9999-12-31', cB = b.contractDate || '9999-12-31';
+                    if (cA !== cB) return cA < cB ? -1 : 1;
+                }
+                return a.title.localeCompare(b.title, 'ko');
+            });
+            if (badge) {
+                badge.innerText = worksToShow.length;
+                // 웹툰 제외 전체 권수 = 본편 volumes + 외전 수
+                const nonWebtoon = worksToShow.filter(w => !(w.genre && w.genre.includes('웹툰')));
+                if (nonWebtoon.length > 0) {
+                    const totalVols = nonWebtoon.reduce((sum, w) => {
+                        const vols = parseInt(w.volumes) || 1;
+                        const extras = (w.extras || []).length;
+                        return sum + vols + extras;
+                    }, 0);
+                    const volBadge = document.getElementById('total-volumes-badge');
+                    if (volBadge) { volBadge.textContent = `(총 ${totalVols}권)`; volBadge.classList.remove('hidden'); }
+                } else {
+                    const volBadge = document.getElementById('total-volumes-badge');
+                    if (volBadge) volBadge.classList.add('hidden');
+                }
+            }
+            if(worksToShow.length === 0) { container.innerHTML = `<div class="col-span-full text-center py-20 text-slate-400">작품 없음</div>`; return; }
+            const editingId = document.getElementById('work-editing-id')?.value || '';
+            worksToShow.forEach(w => {
+                const genreColor = getGenreColor(w.genre), badgeBg = hexToRgba(genreColor, genreBadgeOpacity);
+                const isEditing = editingId === w.id;
+                const isSelected = currentViewWorkId === w.id;
+                const cardClass = isSelected
+                    ? 'border border-[var(--primary)] shadow-sm'
+                    : 'bg-white border border-slate-200 hover:shadow-lg hover:border-slate-300';
+                const cardBgStyle = isSelected
+                    ? 'style="background:color-mix(in srgb, var(--primary) 10%, white)"'
+                    : '';
+                let rateBadgeClass = "bg-emerald-50 text-emerald-700";
+                if(w.rate == 75) rateBadgeClass = "bg-blue-100 text-blue-600";
+                if(w.rate == 80) rateBadgeClass = "bg-purple-100 text-purple-600";
+                if(w.rate >= 85) rateBadgeClass = "bg-pink-100 text-pink-600";
+                // 웹툰: 노란 배지 (RS나 비율 둘 중 하나라도 있으면, 또는 webtoon 장르)
+                const isWebtoonWork = w.genre && w.genre.includes('웹툰');
+                if (isWebtoonWork) rateBadgeClass = "bg-yellow-50 text-yellow-700";
+                
+                let rateLabel;
+                if (isWebtoonWork) {
+                    if (w.rs && w.webtoonRate) rateLabel = `RS ${w.rs} (비율 ${w.webtoonRate})`;
+                    else if (w.rs) rateLabel = `RS ${w.rs}`;
+                    else if (w.webtoonRate) rateLabel = `비율 ${w.webtoonRate}`;
+                    else rateLabel = '';
+                } else {
+                    rateLabel = `${w.rate}%`;
+                }
+                const dateDisplay = getDateDisplay(w);
+                const studioVal = w.studio && w.studio !== '-' && w.studio !== 'undefined' ? w.studio : '';
+                let studioRow = ''; if (studioVal) studioRow = `<div class="flex items-center text-[10px] text-pink-500 mt-0.5 truncate"><i class="fa-solid fa-display mr-1.5 shrink-0 w-3 text-center"></i><span class="truncate">${studioVal}</span></div>`;
+                const extrasNames = (w.extras && w.extras.length > 0) 
+                    ? w.extras.map(e => e.name).join(', ')
+                    : '';
+                const extrasRow = `<div class="text-[12px] font-normal text-slate-500 truncate min-h-[16px]" title="${extrasNames}">${extrasNames}</div>`;
+                const editingBorder = cardClass;
+                container.innerHTML += `<div class="rounded-xl p-3.5 transition-all group flex flex-col gap-2 relative overflow-hidden cursor-pointer ${cardClass}" ${cardBgStyle} onclick="viewWork('${w.id}')">
+                    ${isSelected ? '<div class="absolute top-0 left-0 w-full h-0.5" style="background:var(--primary)"></div>' : ''}
+                    <div class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 bg-white/90 backdrop-blur-sm rounded-bl-xl z-10">
+                        <button onclick="event.stopPropagation();deleteWork('${w.id}')" class="text-slate-400 hover:text-red-600 text-xs" title="삭제"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                    <div class="flex items-start justify-between">
+                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px]" style="background-color:${badgeBg}; color:#334155">${w.genre}</span>
+                        <div class="flex items-center gap-1">
+                            ${rateLabel ? `<span class="text-[10px] font-bold ${rateBadgeClass} px-1.5 py-0.5 rounded">${rateLabel}</span>` : ''}
+                        </div>
+                    </div>
+                    <h4 class="text-slate-800 text-sm font-medium truncate" title="${w.title}">${w.title}</h4>
+                    ${extrasRow}
+                    <div class="mt-auto pt-2 border-t border-slate-100 flex flex-col justify-center min-h-[28px]">
+                        <div class="flex items-center justify-between text-[10px] text-slate-400">
+                            <div class="flex items-center truncate mr-1" title="${w.publisher}"><i class="fa-regular fa-building mr-1 shrink-0"></i><span class="truncate">${w.publisher}</span></div>
+                            <div class="whitespace-nowrap shrink-0 pl-1 border-l border-slate-200 ml-1">${dateDisplay}</div>
+                        </div>${studioRow}
+                    </div>
+                </div>`;
+            });
+            requestAnimationFrame(fitWorksPanelsHeight);
+        }
+        // 작품 등록 탭: 왼쪽 폼 카드 / 오른쪽 목록 카드의 높이를 실제 남은 뷰포트 공간에 맞춰
+        // 정확히 계산해서 페이지 전체 스크롤이 생기지 않도록 한다.
+        function fitWorksPanelsHeight() {
+            // 폰(좁은 화면)에서는 폼/목록이 세로로 쌓이는 레이아웃이라 좌우 높이를 맞출 필요가 없고,
+            // 오히려 이 높이 강제 지정이 목록 영역을 안 보이게 만들어서 모바일에서는 건너뛴다
+            if (window.innerWidth <= 640) return;
+            const leftCard = document.getElementById('work-form-card');
+            const rightPanel = document.getElementById('works-right-panel');
+            const rightCard = rightPanel ? rightPanel.querySelector('.glass-card') : null;
+            if (!leftCard || !rightPanel) return;
+            const tab = document.getElementById('tab-works');
+            if (!tab || !tab.classList.contains('active')) return;
+            const listScroller = document.querySelector('#master-works-by-genre-container')?.parentElement;
+            const savedScroll = listScroller ? listScroller.scrollTop : 0;
+            leftCard.style.height = 'auto';
+            rightPanel.style.height = 'auto';
+            if (rightCard) rightCard.style.height = 'auto';
+            // 카드 위쪽(뷰포트 기준)부터 화면 맨 아래까지 남는 공간에서 살짝 여유(20px)만 빼서 높이 확정
+            const top = leftCard.getBoundingClientRect().top;
+            const h = Math.max(Math.floor(window.innerHeight - top - 20), 300);
+            leftCard.style.height = h + 'px';
+            rightPanel.style.height = h + 'px';
+            if (rightCard) rightCard.style.height = h + 'px';
+            if (listScroller) listScroller.scrollTop = savedScroll;
+        }
+        window.addEventListener('resize', () => {
+            const worksTab = document.getElementById('tab-works');
+            if (worksTab && worksTab.classList.contains('active')) fitWorksPanelsHeight();
+        });
+        function deleteWork(id) { 
+            if(confirm("삭제하시겠습니까?")) { 
+                // 본편 + 외전의 자동 태스크 모두 제거
+                const w = masterWorks.find(x => x.id === id);
+                const extraIds = (w?.extras || []).map(e => e.id);
+                Object.keys(taskSchedules).forEach(date => {
+                    taskSchedules[date] = taskSchedules[date].filter(t => {
+                        if (t.workId === id && t.isAutoManuscript) return false;
+                        if (t.extraId && extraIds.includes(t.extraId)) return false;
+                        return true;
+                    });
+                    if (taskSchedules[date].length === 0) delete taskSchedules[date];
+                });
+                masterWorks = masterWorks.filter(w => w.id !== id); 
+                purgeOrphanSchedules();   // 집필 관리 글자수 등 작품과 연결된 일정도 함께 제거
+                if (webtoonManage[id]) delete webtoonManage[id];   // 웹툰 관리 카드 데이터도 함께 제거
+                save(); updateUI(); 
+            } 
+        }
+        function openGenreManager() { renderGenreManagerList(); document.getElementById('genre-manager-modal').classList.add('open'); }
+        function closeGenreManager() { document.getElementById('genre-manager-modal').classList.remove('open'); editingGenreIndex = null; document.getElementById('new-genre-input').value = ''; document.getElementById('new-genre-color').value = '#cbd5e1'; document.getElementById('btn-add-update-genre').innerText = '추가'; document.getElementById('btn-add-update-genre').onclick = addNewGenre; }
+        function updateBadgeOpacity(val) { genreBadgeOpacity = val / 100; document.getElementById('badge-opacity-value').innerText = val + '%'; save(true); renderMasterWorksList(); }
+        function renderGenreManagerList() { const list = document.getElementById('genre-manager-list'); if(!list) return; list.innerHTML = genreList.map((g, idx) => `<tr class="draggable-genre cursor-move hover:bg-slate-50" draggable="true" data-index="${idx}"><td class="px-4 py-3 text-center text-slate-300"><i class="fa-solid fa-grip-vertical"></i></td><td class="px-4 py-3 font-medium">${g.name}</td><td class="px-2 py-3 text-center"><div class="w-6 h-6 rounded-full mx-auto" style="background-color: ${g.color}"></div></td><td class="px-4 py-3 text-center flex justify-center gap-2"><button onclick="editGenre(${idx})" class="text-slate-400 hover:text-blue-500 text-xs"><i class="fa-solid fa-pen"></i></button><button onclick="removeGenre(${idx})" class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button></td></tr>`).join(''); addGenreDragEvents(); }
+        function addGenreDragEvents() { let dragSrcGenre = null; document.querySelectorAll('.draggable-genre').forEach(row => { row.addEventListener('dragstart', e => { dragSrcGenre = row; row.classList.add('opacity-50'); }); row.addEventListener('dragover', e => e.preventDefault()); row.addEventListener('drop', e => { e.preventDefault(); if (dragSrcGenre !== row) { const allRows = [...document.querySelectorAll('.draggable-genre')]; const srcIdx = allRows.indexOf(dragSrcGenre), dstIdx = allRows.indexOf(row); const movedItem = genreList.splice(srcIdx, 1)[0]; genreList.splice(dstIdx, 0, movedItem); save(); renderGenreManagerList(); updateUI(); } }); row.addEventListener('dragend', () => row.classList.remove('opacity-50')); }); }
+        function editGenre(idx) { editingGenreIndex = idx; const g = genreList[idx]; document.getElementById('new-genre-input').value = g.name; document.getElementById('new-genre-color').value = g.color; const btn = document.getElementById('btn-add-update-genre'); btn.innerText = '수정'; btn.onclick = updateGenre; }
+        function updateGenre() { 
+            if (editingGenreIndex === null) return; 
+            const name = document.getElementById('new-genre-input').value.trim(), color = document.getElementById('new-genre-color').value; 
+            if (name) { 
+                genreList[editingGenreIndex] = { name, type: 'long', color }; 
+                save(); renderGenreManagerList(); updateUI(); 
+                // 모달은 그대로 두고 입력 폼만 초기화
+                editingGenreIndex = null;
+                document.getElementById('new-genre-input').value = '';
+                document.getElementById('new-genre-color').value = '#cbd5e1';
+                const btn = document.getElementById('btn-add-update-genre');
+                btn.innerText = '추가';
+                btn.onclick = addNewGenre;
+            } 
+        }
+        function addNewGenre() { const name = document.getElementById('new-genre-input').value.trim(), color = document.getElementById('new-genre-color').value; if(name) { genreList.push({name, type: 'long', color}); save(); renderGenreManagerList(); updateUI(); } }
+        function removeGenre(idx) { if(confirm("삭제하시겠습니까?")) { genreList.splice(idx, 1); save(); renderGenreManagerList(); updateUI(); } }
+        function switchPublisherTab(tabName) {
+            currentPublisherTab = tabName;
+            const btnPub = document.getElementById('pub-tab-publishers'),
+                  btnStu = document.getElementById('pub-tab-studios'),
+                  btnCon = document.getElementById('pub-tab-contacts'),
+                  btnSub = document.getElementById('pub-tab-submissions'),
+                  btnWSub = document.getElementById('pub-tab-webtoon-subs');
+            const activeCls = "px-4 py-1.5 text-sm font-bold rounded-md bg-white text-slate-700 shadow-sm transition-all";
+            const inactiveCls = "px-4 py-1.5 text-sm font-bold rounded-md text-slate-400 hover:bg-white/50 transition-all";
+            btnPub.className = tabName === 'publishers' ? activeCls : inactiveCls;
+            btnStu.className = tabName === 'studios' ? activeCls : inactiveCls;
+            if (btnCon) btnCon.className = tabName === 'contacts' ? activeCls : inactiveCls;
+            if (btnSub) btnSub.className = tabName === 'submissions' ? activeCls : inactiveCls;
+            if (btnWSub) btnWSub.className = tabName === 'webtoon-subs' ? activeCls : inactiveCls;
+            const titleEl = document.getElementById('publisher-tab-title');
+            if (titleEl) {
+                const titles = { publishers: '계약 출판사 현황', studios: '계약 스튜디오 현황', contacts: '컨택 관리', submissions: '투고처 관리', 'webtoon-subs': '웹툰 투고 관리' };
+                titleEl.textContent = titles[tabName] || '';
+            }
+            updatePubViewToggleUI();
+            renderPublisherTab();
+        }
+        // [NEW] 줄로 보기 / 카드로 보기 토글 버튼 표시 및 활성 상태 갱신
+        function updatePubViewToggleUI() {
+            const toggle = document.getElementById('pub-view-toggle');
+            if (!toggle) return;
+            const showToggle = currentPublisherTab === 'publishers' || currentPublisherTab === 'studios';
+            toggle.style.display = showToggle ? 'flex' : 'none';
+            if (!showToggle) return;
+            const mode = publisherViewMode[currentPublisherTab] || 'list';
+            const listBtn = document.getElementById('pub-view-list-btn'), cardBtn = document.getElementById('pub-view-card-btn');
+            const activeCls = 'w-7 h-7 flex items-center justify-center rounded-lg transition-all text-white';
+            const inactiveCls = 'w-7 h-7 flex items-center justify-center rounded-lg transition-all text-slate-400 hover:bg-slate-100';
+            if (listBtn) { listBtn.className = mode === 'list' ? activeCls : inactiveCls; listBtn.style.background = mode === 'list' ? 'var(--primary)' : ''; }
+            if (cardBtn) { cardBtn.className = mode === 'card' ? activeCls : inactiveCls; cardBtn.style.background = mode === 'card' ? 'var(--primary)' : ''; }
+        }
+        function setPublisherViewMode(mode) {
+            publisherViewMode[currentPublisherTab] = mode;
+            save(true);
+            updatePubViewToggleUI();
+            renderPublisherTab();
+        }
+        // ── 웹툰 관리 탭 ──────────────────────────────────────────
+        // webtoonViewFilter, webtoonSortMode는 스크립트 상단에서 선언됨 (로딩 순서 버그 방지)
+        const WEBTOON_PEN_ORDER = [];
+        // 스케줄 관리(taskSchedules)에 등록된 '웹툰 캐릭터 가이드 전달' 일정 중 가장 빠른 날짜를 가져옴 (자동 연동)
+        function getWebtoonCharGuideDate(workId) {
+            let found = null;
+            Object.keys(taskSchedules).sort().forEach(date => {
+                (taskSchedules[date] || []).forEach(t => {
+                    if (t.workId === workId && t.category === '웹툰 캐릭터 가이드 전달' && !found) found = date;
+                });
+            });
+            return found;
+        }
+        // 출간 완료 여부 (출간일이 오늘 이전이고 출간예정 체크가 아닌 경우)
+        function isWebtoonPublished(w) {
+            const today = new Date().toISOString().slice(0, 10);
+            return !w.isPending && !!w.publishDate && w.publishDate <= today;
+        }
+        // 웹툰 카드 전용 출간일 표시: 출간 완료는 초록, 출간 예정은 핑크, 둘 다 굵기 없음
+        function webtoonDateDisplayHTML(w) {
+            if (isWebtoonPublished(w)) {
+                return `<span style="color:#475569;font-weight:500;">${w.publishDate} 런칭</span>`;
+            }
+            let label;
+            if (w.isPending && w.pendingMonth) {
+                const [y, m] = w.pendingMonth.split('-');
+                label = `${y.slice(2)}-${m} 런칭예정`;
+            }
+            else if (w.isPending) { label = '런칭 예정'; }
+            else if (w.publishDate) { label = w.publishDate; } // 확정된 미래 출간일
+            else { label = '런칭 예정'; }
+            return `<span style="color:#ec4899;font-weight:500;">${label}</span>`;
+        }
+        function setWebtoonViewFilter(mode) {
+            webtoonViewFilter = mode;
+            save(true);
+            renderWebtoonManage();
+        }
+        function setWebtoonSortMode(mode) {
+            webtoonSortMode = mode;
+            save(true);
+            renderWebtoonManage();
+        }
+        function updateWebtoonViewTabsUI() {
+            const modes = { all: 'wtvf-all', published: 'wtvf-published', upcoming: 'wtvf-upcoming', pen: 'wtvf-pen', broken: 'wtvf-broken' };
+            Object.keys(modes).forEach(m => {
+                const btn = document.getElementById(modes[m]);
+                if (!btn) return;
+                if (m === webtoonViewFilter) { btn.style.background = m === 'broken' ? '#94a3b8' : 'var(--primary)'; btn.style.color = '#fff'; btn.classList.add('shadow-sm'); }
+                else { btn.style.background = '#f1f5f9'; btn.style.color = '#64748b'; btn.classList.remove('shadow-sm'); }
+                btn.classList.toggle('vt-off', m !== webtoonViewFilter);
+            });
+        }
+        // 정렬 버튼 줄 (카드 목록 바로 위, 컨택 관리 탭과 동일한 스타일) — '필명 별로 보기'에서는 표시하지 않음
+        function webtoonSortRowHTML() {
+            if (webtoonViewFilter === 'pen') return '';
+            const btnCls = (active) => `px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${active ? 'text-white shadow-sm' : 'text-slate-500 bg-slate-100 hover:bg-slate-200'}`;
+            const btnStyle = (active) => active ? 'background:var(--primary)' : '';
+            return `<div id="webtoon-sort-row" class="flex items-center gap-2 mb-4 px-1 flex-wrap">
+                <button onclick="setWebtoonSortMode('date')" class="${btnCls(webtoonSortMode === 'date')}" style="${btnStyle(webtoonSortMode === 'date')}">출간일 정렬</button>
+                <button onclick="setWebtoonSortMode('pen')" class="${btnCls(webtoonSortMode === 'pen')}" style="${btnStyle(webtoonSortMode === 'pen')}">필명 정렬</button>
+            </div>`;
+        }
+        // 정렬: 'date'는 출간일 순(출간완료 먼저) / 'pen'은 고정 필명 순서 → 같은 필명이면 출간일 순
+        function sortWebtoonWorks(list) {
+            if (webtoonSortMode === 'pen') {
+                return [...list].sort((a, b) => {
+                    const pa = (webtoonManage[a.id] || {}).penName || '';
+                    const pb = (webtoonManage[b.id] || {}).penName || '';
+                    const ia = WEBTOON_PEN_ORDER.indexOf(pa), ib = WEBTOON_PEN_ORDER.indexOf(pb);
+                    const oa = ia === -1 ? 999 : ia, ob = ib === -1 ? 999 : ib;
+                    if (oa !== ob) return oa - ob;
+                    return sortKeyDate(a).localeCompare(sortKeyDate(b));
+                });
+            }
+            return [...list].sort((a, b) => sortKeyDate(a).localeCompare(sortKeyDate(b)));
+        }
+        function webtoonFieldValueHTML(dateVal, doneFlag, emptyText, forceDash) {
+            if (doneFlag) return 'ㅡ';
+            if (dateVal) return dateVal;
+            if (forceDash) return 'ㅡ';
+            return emptyText || '';
+        }
+        // 이 작품에 월별 정산(monthlyData)에 금액이 처음 찍힌 달을 'YY.MM' 형식으로 반환 (MG 입금월 표시용)
+        // → 정산 관리에서 실제로 금액을 입력한 달을 기준으로 표시 (수동 입력한 advanceDate는 표시에 사용하지 않음)
+        function getMgDepositLabel(workId) {
+            const months = Object.keys(monthlyData)
+                .filter(k => monthlyData[k] && monthlyData[k][workId] && Number(monthlyData[k][workId]) !== 0)
+                .sort();
+            if (months.length === 0) return '';
+            const [y, m] = months[0].split('-');
+            return ` <span class="font-normal" style="color:#94a3b8">(${y.slice(2)}.${m})</span>`;
+        }
+        function webtoonCardHTML(w) {
+            const info = webtoonManage[w.id] || {};
+            const charGuideDate = getWebtoonCharGuideDate(w.id);
+            let rsRateText = '';
+            if (w.rs && w.webtoonRate) rsRateText = `RS ${w.rs} (비율 ${w.webtoonRate})`;
+            else if (w.rs) rsRateText = `RS ${w.rs}`;
+            else if (w.webtoonRate) rsRateText = `비율 ${w.webtoonRate}`;
+            const websiteHref = info.website ? (info.website.startsWith('http') ? info.website : 'https://' + info.website) : '';
+            const launchHref = info.launchUrl ? (info.launchUrl.startsWith('http') ? info.launchUrl : 'https://' + info.launchUrl) : '';
+            const penColor = info.penName ? getPenColor(info.penName) : null;
+            const penName = info.penName ? `<span style="font-size:13.5px;font-weight:500;color:#334155">${info.penName}</span>` : '<span></span>';
+            const penRowBg = (info.penName && penColor) ? hexToRgba(penColor, genreBadgeOpacity) : 'transparent';
+            const heartIcon = websiteHref
+                ? `<i onclick="event.stopPropagation(); window.open('${websiteHref}', '_blank')" class="fa-solid fa-heart text-[10px] ml-1.5 cursor-pointer hover:opacity-70 transition-opacity" style="color:var(--primary)" title="웹사이트 열기"></i>`
+                : '';
+            const launchInline = info.launchPlatform
+                ? `<span onclick="event.stopPropagation(); ${launchHref ? `window.open('${launchHref}', '_blank')` : ''}" class="${launchHref ? 'hover:underline cursor-pointer' : ''}" style="color:var(--primary);font-weight:500;">${info.launchPlatform}</span><span class="text-slate-300 mx-1">·</span>`
+                : '';
+            const bodyBg = (webtoonCardSettings.differentiatePublished && isWebtoonPublished(w)) ? webtoonCardSettings.publishedColor : '#ffffff';
+            const barStyle = webtoonCardSettings.penBarStyle || 'rounded';
+            const penDateRow = `<div class="flex items-center justify-between gap-2">
+                            ${penName}
+                            <div class="text-[13px] whitespace-nowrap shrink-0">${launchInline}${webtoonDateDisplayHTML(w)}</div>
+                        </div>`;
+            let headerBlock;
+            if (barStyle === 'full') {
+                headerBlock = `<div class="mb-1 pb-1.5 -mx-4 -mt-4 px-4 pt-4 rounded-t-xl" style="background-color:${penRowBg}">
+                        <h4 class="text-slate-700 text-[15px] truncate mb-1" style="font-weight:650" title="${w.title}">${w.title}</h4>
+                        ${penDateRow}
+                    </div>`;
+            } else {
+                const penRowClass = barStyle === 'square' ? '-mx-2 px-2' : '-mx-2 px-2 rounded-lg';
+                headerBlock = `<h4 class="text-slate-700 text-[15px] truncate mb-1.5" style="font-weight:650" title="${w.title}">${w.title}</h4>
+                    <div class="mb-1 py-1.5 ${penRowClass}" style="background-color:${penRowBg}">
+                        ${penDateRow}
+                    </div>`;
+            }
+            // 스튜디오 옆에 출판사를 괄호로 함께 표기
+            const studioName = (w.studio && w.studio !== '-' && w.studio !== 'undefined') ? w.studio : '';
+            const pubName = (w.publisher && w.publisher !== '-' && w.publisher !== 'undefined') ? w.publisher : '';
+            const studioText = studioName
+                ? (pubName ? `${studioName} (${pubName})` : studioName)
+                : (pubName ? `(${pubName})` : '');
+
+            return `<div onclick="openWebtoonManageModal('${w.id}')" style="background-color:#ffffff; --pen:${penColor || '#E3D5B5'}" class="rounded-xl border border-slate-200 p-4 cursor-pointer hover:shadow-md hover:border-emerald-300 transition-all relative group overflow-hidden">
+                    ${headerBlock}
+                    <div style="background-color:${bodyBg}" class="-mx-4 -mb-4 px-4 pb-4 pt-2.5 mt-1.5 rounded-b-xl">
+                    <div class="space-y-1.5 text-[13px]">
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor1}">웹툰 스튜디오</span><span style="color:${webtoonCardSettings.valueColors.studio}">${studioText}</span></div>
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor1}">계약일</span><span style="color:${webtoonCardSettings.valueColors.contract}">${w.contractDate || ''}</span></div>
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor1}">RS / 비율</span><span style="color:${webtoonCardSettings.valueColors.rsrate}">${rsRateText}</span></div>
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor1}">MG</span><span style="color:${webtoonCardSettings.valueColors.mg}">${w.advanceAmount ? Number(w.advanceAmount).toLocaleString() + '만원' : ''}${getMgDepositLabel(w.id)}</span></div>
+                    </div>
+                    <div class="border-t border-slate-100 my-2"></div>
+                    <div class="space-y-1.5 text-[13px]">
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor2}">캐릭터 가이드</span><span class="font-medium" style="color:${webtoonCardSettings.valueColors.charguide}">${webtoonFieldValueHTML(charGuideDate, info.charGuideDone, '', isWebtoonPublished(w))}</span></div>
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor2}">캐시트</span><span style="color:${webtoonCardSettings.valueColors.cashsheet}">${webtoonFieldValueHTML(info.cashsheetDate, info.cashsheetDone, '', isWebtoonPublished(w))}</span></div>
+                        <div class="flex gap-2"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor2}">1화 &amp; 콘티</span><span style="color:${webtoonCardSettings.valueColors.ep1conti}">${webtoonFieldValueHTML(info.ep1ContiDate, info.ep1ContiDone, '', isWebtoonPublished(w))}</span></div>
+                        <div class="flex gap-2 items-center"><span class="w-[86px] shrink-0" style="color:${webtoonCardSettings.labelColor2}">작화가</span><span style="color:${webtoonCardSettings.valueColors.illustrator}">${info.illustrator || ''}</span>${heartIcon}</div>
+                    </div>
+                    </div>
+                </div>`;
+        }
+        function renderWebtoonManage() {
+            const container = document.getElementById('webtoon-manage-list');
+            if (!container) return;
+            updateWebtoonViewTabsUI();
+            // 계약 파기한 작품은 '계약 파기' 보기에서만 보인다 (전체 보기·필명 별로 보기 등에서는 빠짐)
+            const brokenWorks = masterWorks.filter(w => w.genre && w.genre.includes('웹툰') && w.contractBroken);
+            const allWebtoonWorks = masterWorks.filter(w => w.genre && w.genre.includes('웹툰') && !w.contractBroken);
+            const totalBadge = document.getElementById('webtoon-total-count');
+            if (totalBadge) totalBadge.textContent = allWebtoonWorks.length;
+            const brokenBtn = document.getElementById('wtvf-broken');
+            if (brokenBtn) brokenBtn.textContent = brokenWorks.length ? `계약 파기 (${brokenWorks.length})` : '계약 파기';
+            if (webtoonViewFilter === 'broken') {
+                container.innerHTML = brokenWorks.length === 0
+                    ? `<div class="text-center py-20 text-slate-400">계약 파기한 웹툰이 없습니다.</div>`
+                    : `<div class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">${sortWebtoonWorks(brokenWorks).map(w => `<div style="filter:grayscale(1); opacity:.75;">${webtoonCardHTML(w)}</div>`).join('')}</div>`;
+                return;
+            }
+
+            if (allWebtoonWorks.length === 0) {
+                container.innerHTML = `<div class="text-center py-20 text-slate-400">‘작품 등록’에 등록된 웹툰 작품이 없습니다.</div>`;
+                return;
+            }
+
+            const gridOpen = `<div class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">`;
+            const gridClose = `</div>`;
+
+            if (webtoonViewFilter === 'pen') {
+                const groups = {};
+                allWebtoonWorks.forEach(w => {
+                    const pen = (webtoonManage[w.id] || {}).penName || '미지정';
+                    if (!groups[pen]) groups[pen] = [];
+                    groups[pen].push(w);
+                });
+                Object.keys(groups).forEach(pen => { groups[pen].sort((a, b) => sortKeyDate(a).localeCompare(sortKeyDate(b))); });
+                const penOrder = Object.keys(groups).sort((a, b) => {
+                    const ia = WEBTOON_PEN_ORDER.indexOf(a), ib = WEBTOON_PEN_ORDER.indexOf(b);
+                    if (ia !== -1 && ib !== -1) return ia - ib;
+                    if (ia !== -1) return -1;
+                    if (ib !== -1) return 1;
+                    if (a === '미지정') return 1;
+                    if (b === '미지정') return -1;
+                    return a.localeCompare(b, 'ko');
+                });
+                container.innerHTML = penOrder.map(pen => {
+                    const cards = groups[pen].map(webtoonCardHTML).join('');
+                    const heartColor = WEBTOON_PEN_HEART_COLORS[pen] || '#94a3b8';
+                    return `<div class="mb-6">
+                    <h4 class="text-base font-bold text-slate-500 mb-2 flex items-center gap-1.5 px-1"><i class="fa-solid fa-heart" style="color:${heartColor}"></i> ${pen} <span class="text-sm font-semibold text-slate-400">(${groups[pen].length})</span></h4>
+                        ${gridOpen}${cards}${gridClose}
+                    </div>`;
+                }).join('');
+                return;
+            }
+
+            let filtered = allWebtoonWorks;
+            if (webtoonViewFilter === 'published') filtered = allWebtoonWorks.filter(isWebtoonPublished);
+            else if (webtoonViewFilter === 'upcoming') filtered = allWebtoonWorks.filter(w => !isWebtoonPublished(w));
+            filtered = sortWebtoonWorks(filtered);
+
+            const sortRow = webtoonSortRowHTML();
+            if (filtered.length === 0) {
+                container.innerHTML = sortRow + `<div class="text-center py-20 text-slate-400">해당하는 웹툰 작품이 없습니다.</div>`;
+                return;
+            }
+            container.innerHTML = sortRow + gridOpen + filtered.map(webtoonCardHTML).join('') + gridClose;
+        }
+        // 웹툰 관리 카드에서 캐릭터 가이드 전달 예정일을 바꾸면 스케줄 관리(taskSchedules) 쪽에도 반영 (쌍방 연동)
+        function setWebtoonCharGuideDate(workId, newDate) {
+            let foundDate = null, foundEntry = null;
+            const dates = Object.keys(taskSchedules).sort();
+            for (const d of dates) {
+                const entry = (taskSchedules[d] || []).find(t => t.workId === workId && t.category === '웹툰 캐릭터 가이드 전달');
+                if (entry) { foundDate = d; foundEntry = entry; break; }
+            }
+            if (!newDate) {
+                // 날짜를 비우면 스케줄 관리의 해당 일정도 삭제
+                if (foundDate && foundEntry) {
+                    taskSchedules[foundDate] = taskSchedules[foundDate].filter(t => t.id !== foundEntry.id);
+                    if (taskSchedules[foundDate].length === 0) delete taskSchedules[foundDate];
+                }
+            } else if (foundEntry) {
+                // 기존 일정을 새 날짜로 이동
+                if (foundDate !== newDate) {
+                    taskSchedules[foundDate] = taskSchedules[foundDate].filter(t => t.id !== foundEntry.id);
+                    if (taskSchedules[foundDate].length === 0) delete taskSchedules[foundDate];
+                    foundEntry.date = newDate;
+                    if (!taskSchedules[newDate]) taskSchedules[newDate] = [];
+                    taskSchedules[newDate].push(foundEntry);
+                }
+            } else {
+                // 기존 일정이 없으면 새로 생성
+                if (!taskSchedules[newDate]) taskSchedules[newDate] = [];
+                taskSchedules[newDate].push({ id: 'ts_charguide_' + Date.now(), date: newDate, workId, category: '웹툰 캐릭터 가이드 전달', memo: '', isCompleted: false });
+            }
+            try { if (typeof renderTaskCalendar === 'function') renderTaskCalendar(); } catch(e) {}
+        }
+        // 카드 클릭 → 수정 모달 열기
+        let currentWebtoonManageWorkId = null;
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 계약서 PDF를 읽어서 계약일·기간·요율 등을 메모로 정리
+        //   ※ 주민번호·계좌번호 등 민감정보는 일부러 추출하지 않는다.
+        // ════════════════════════════════════════════════════════
+
+        // pdf.js를 처음 쓸 때 한 번만 불러온다
+        function loadPdfJs() { return Promise.reject(new Error('이 버전에서는 PDF 자동 읽기를 지원하지 않아요')); }
+
+        // PDF에서 글자만 뽑아낸다
+        async function extractPdfText(file) {
+            const lib = await loadPdfJs();
+            const buf = await file.arrayBuffer();
+            const pdf = await lib.getDocument({ data: buf }).promise;
+            let text = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map(it => it.str).join(' ') + '\n';
+            }
+            return text;
+        }
+
+        // "2026년 9월 1일" → "2026-09-01"
+        function parseKoreanDate(y, m, d) {
+            return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        }
+
+        // 계약서 본문에서 필요한 항목만 골라낸다
+        function parseContractText(raw) {
+            const t = raw.replace(/\s+/g, ' ');
+            const out = {};
+            const dateRe = /(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/g;
+
+            // 이용허락/계약 기간: "~부터 ~까지"
+            const period = t.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*부터\s*(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*까지/);
+            if (period) {
+                out.periodStart = parseKoreanDate(period[1], period[2], period[3]);
+                out.periodEnd   = parseKoreanDate(period[4], period[5], period[6]);
+            }
+
+            // 계약 체결일: 보통 서명란 위에 마지막으로 적힌 날짜
+            const allDates = [...t.matchAll(dateRe)].map(m => parseKoreanDate(m[1], m[2], m[3]));
+            if (allDates.length) out.contractDate = allDates[allDates.length - 1];
+
+            // 자료 인도일: "~까지 ... 인도"
+            const deliver = t.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*까지[^.]{0,40}?인도/);
+            if (deliver) out.deliveryDate = parseKoreanDate(deliver[1], deliver[2], deliver[3]);
+
+            // 수익 배분 요율: "순매출의 70%" 같은 표현
+            const rate = t.match(/(순매출|매출액|수익|정산금)[^%]{0,20}?(\d{1,3})\s*%/) || t.match(/(\d{1,3})\s*%\s*를?\s*권리자/);
+            if (rate) out.rate = parseInt(rate[2] || rate[1]);
+
+            // 선급금(MG)
+            const mg = t.match(/(?:선급금|선인세|계약금|MG)[^0-9]{0,20}([0-9,]+)\s*(만원|원)/);
+            if (mg) {
+                const v = parseInt(mg[1].replace(/,/g, ''));
+                if (mg[2] === '만원') { out.mgManwon = v; out.mgText = `${v.toLocaleString()}만원`; }
+                else { out.mgManwon = Math.round(v / 10000); out.mgText = `${v.toLocaleString()}원`; }
+            }
+
+            // 대상 저작물 제목: '저작물 OOO (이하 "대상저작물"...)' 형태에서 제목만
+            const title = t.match(/저작물\s+(.{1,40}?)\s*\(?\s*이하\s*[“”"']?\s*대상저작물/)
+                       || t.match(/[“”"']?대상저작물[“”"']?\s*[:은는]\s*(.{1,40}?)\s*(?:이며|이고|로 한다|\.)/);
+            if (title) out.workTitle = title[1].replace(/["“”']/g, '').trim();
+
+            // 계약 상대 회사
+            const company = t.match(/((?:주식회사|㈜)\s*[^\s(,]{1,20})/);
+            if (company) out.company = company[1].replace(/\s+/g, ' ').trim();
+
+            // 독점 여부
+            if (/독점적으로\s*이용|독점적\s*이용권/.test(t)) out.exclusive = true;
+
+            // 계약 종류
+            if (/2차적\s*저작물/.test(t)) out.kind = '2차적 저작물 작성 이용허락';
+            else if (/출판권/.test(t)) out.kind = '출판권 설정';
+            else if (/전송권|배타적발행권/.test(t)) out.kind = '배타적발행권';
+
+            return out;
+        }
+
+        // 뽑아낸 내용을 보기 좋은 메모로 만든다
+        function buildContractMemo(info, fileName) {
+            const today = getYYYYMMDD(new Date());
+            const L = [];
+            L.push(`📄 계약서 정리 (${today} 기준)`);
+            if (info.kind) L.push(`· 계약 종류: ${info.kind}${info.exclusive ? ' (독점)' : ''}`);
+            if (info.workTitle) L.push(`· 대상 저작물: ${info.workTitle}`);
+            if (info.company) L.push(`· 계약 상대: ${info.company}`);
+            if (info.contractDate) L.push(`· 계약 체결일: ${info.contractDate}`);
+            if (info.periodStart && info.periodEnd) {
+                const d1 = new Date(info.periodStart), d2 = new Date(info.periodEnd);
+                const years = ((d2 - d1) / (1000*60*60*24*365.25)).toFixed(1).replace(/\.0$/, '');
+                L.push(`· 계약 기간: ${info.periodStart} ~ ${info.periodEnd} (약 ${years}년)`);
+            }
+            if (info.rate) L.push(`· 수익 배분: 순매출의 ${info.rate}% (작가)`);
+            if (info.mgText) L.push(`· 선급금: ${info.mgText}`);
+            if (fileName) L.push(`· 원본 파일: ${fileName}`);
+            return L.join('\n');
+        }
+
+        // 계약서 PDF는 웹툰 관리 / 작품 관리 두 곳에서 같은 방식으로 쓴다
+        const CONTRACT_UI = {
+            webtoon: { prefix: 'wtm', label: '웹툰', store: () => webtoonManage, workId: () => currentWebtoonManageWorkId },
+            work:    { prefix: 'wmm', label: '작품', store: () => workManage,    workId: () => currentWorkManageWorkId }
+        };
+        let currentContractFile = { webtoon: '', work: '' };
+
+        function contractEl(mode, suffix) {
+            return document.getElementById(`${CONTRACT_UI[mode].prefix}-${suffix}`);
+        }
+        // 열기/삭제 버튼 노출 상태 갱신
+        function refreshContractButtons(mode) {
+            const has = !!currentContractFile[mode];
+            contractEl(mode, 'pdf-open')?.classList.toggle('hidden', !has);
+            contractEl(mode, 'pdf-delete')?.classList.toggle('hidden', !has);
+        }
+
+        async function openSavedContract(mode) {
+            const f = currentContractFile[mode];
+            if (!f) return;
+            if (!window.electronAPI?.openContractFile) { alert('앱에서만 열 수 있어요.'); return; }
+            const r = await window.electronAPI.openContractFile(f);
+            if (!r?.ok) alert('계약서를 열지 못했습니다. ' + (r?.error || ''));
+        }
+
+        // 잘못 올린 PDF 삭제 (원본 파일까지 지운다)
+        const CONTRACT_MEMO_HEAD = '📄 계약서 정리';
+        const CONTRACT_MEMO_SEP = '― 기존 메모 ―';
+
+        // PDF를 지우면 그 PDF로 만들어진 메모도 같이 지운다.
+        // 단, 원래 직접 적어두셨던 메모('― 기존 메모 ―' 아래쪽)는 살려둔다.
+        function stripAutoContractMemo(text) {
+            const t = (text || '').trim();
+            if (!t.startsWith(CONTRACT_MEMO_HEAD)) return t;   // 직접 쓴 메모면 손대지 않음
+            const i = t.indexOf(CONTRACT_MEMO_SEP);
+            return i === -1 ? '' : t.slice(i + CONTRACT_MEMO_SEP.length).trim();
+        }
+
+        async function deleteSavedContract(mode) {
+            const f = currentContractFile[mode];
+            if (!f) return;
+            if (!confirm(`보관된 계약서 파일과 정리된 메모를 삭제할까요?\n\n${f}\n\n(직접 적어두신 메모는 남습니다)`)) return;
+            if (window.electronAPI?.deleteContractFile) {
+                const r = await window.electronAPI.deleteContractFile(f);
+                if (!r?.ok) { alert('파일을 지우지 못했습니다. ' + (r?.error || '')); return; }
+            }
+            currentContractFile[mode] = '';
+            refreshContractButtons(mode);
+
+            const memoEl = contractEl(mode, 'memo');
+            if (memoEl) memoEl.value = stripAutoContractMemo(memoEl.value);
+
+            const st = contractEl(mode, 'pdf-status');
+            if (st) { st.textContent = '계약서와 정리 메모를 삭제했어요'; st.className = 'text-[11px] text-slate-400'; }
+        }
+
+        // ── 계약서 PDF 끌어다 놓기
+        function contractDragOver(e, mode) {
+            if (!e.dataTransfer?.types?.includes('Files')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            contractEl(mode, 'drop-hint')?.classList.remove('hidden');
+        }
+        function contractDragLeave(e, mode) {
+            // 자식 요소로 옮겨가는 중이면 무시 (깜빡임 방지)
+            const box = contractEl(mode, 'drop');
+            if (box && e.relatedTarget && box.contains(e.relatedTarget)) return;
+            contractEl(mode, 'drop-hint')?.classList.add('hidden');
+        }
+        function contractDrop(e, mode) {
+            e.preventDefault();
+            contractEl(mode, 'drop-hint')?.classList.add('hidden');
+            const file = e.dataTransfer?.files?.[0];
+            if (!file) return;
+            if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+                alert('PDF 파일만 넣을 수 있어요.');
+                return;
+            }
+            // 파일 선택으로 넣은 것과 똑같이 처리
+            handleContractPdf({ files: [file], value: '' }, mode);
+        }
+
+        async function handleContractPdf(input, mode) {
+            const file = input.files && input.files[0];
+            if (!file) return;
+            const conf = CONTRACT_UI[mode];
+            const statusEl = contractEl(mode, 'pdf-status');
+            statusEl.textContent = '읽는 중...';
+            statusEl.className = 'text-[11px] text-slate-400';
+            try {
+                const text = await extractPdfText(file);
+                const info = parseContractText(text);
+                const memo = buildContractMemo(info, file.name);
+
+                const memoEl = contractEl(mode, 'memo');
+                memoEl.value = memoEl.value.trim() ? (memo + '\n\n― 기존 메모 ―\n' + memoEl.value.trim()) : memo;
+
+                // 계약서에서 찾은 값으로 위쪽 칸을 덮어쓴다 (이전 값이 있어도 계약서 기준으로 맞춤)
+                const changed = [];
+                const setVal = (id, val, label) => {
+                    const el = document.getElementById(id);
+                    if (!el || val == null || val === '') return;
+                    if (String(el.value) === String(val)) return;
+                    el.value = val;
+                    changed.push(label);
+                };
+                // 비율은 계약서마다 적는 기준이 달라서(웹툰 7% vs 출판 70%) 자동으로 바꾸지 않는다.
+                // 메모에만 적어두고, 칸은 직접 확인해서 넣도록 남겨둔다.
+                if (mode === 'webtoon') {
+                    setVal('wtm-contract-date', info.contractDate, '계약일');
+                    if (info.mgManwon) setVal('wtm-mg', info.mgManwon, 'MG');
+                } else {
+                    setVal('wmm-contract-date', info.contractDate, '계약일');
+                    setVal('wmm-mg', info.mgManwon, '선인세');      // 만원 단위
+                }
+

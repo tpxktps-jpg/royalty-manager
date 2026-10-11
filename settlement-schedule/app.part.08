@@ -1,0 +1,2333 @@
+                    <input type="number" step="0.001" id="cc-ratio" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-[var(--primary)]" oninput="ccCompute()">
+                    <button onclick="ccAutoRatio()" class="w-full mt-2 py-1.5 rounded-lg text-[11px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">현재 값으로 계산</button>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-100 mt-5 pt-4">
+                <p class="text-xs font-bold text-slate-400 uppercase mb-2">결과</p>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">공미 → 공포 배수</p>
+                        <p id="cc-out-multiplier" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">전체 편수 (예상)</p>
+                        <p id="cc-out-total-eps" class="font-bold text-slate-700">-</p>
+                        <p id="cc-out-total-eps-note" class="text-[10px] text-slate-400 mt-0.5">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">현재 공미</p>
+                        <p id="cc-out-cur-nospace" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">현재 공포</p>
+                        <p id="cc-out-cur-space" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">목표 공미</p>
+                        <p id="cc-out-goal-nospace" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">목표 공포</p>
+                        <p id="cc-out-goal-space" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">남은 공미</p>
+                        <p id="cc-out-left-nospace" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3">
+                        <p class="text-[11px] text-slate-400 mb-0.5">남은 공포</p>
+                        <p id="cc-out-left-space" class="font-bold text-slate-700">-</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-xl p-3 col-span-2">
+                        <p class="text-[11px] text-slate-400 mb-0.5">남은 편수 (예상)</p>
+                        <p id="cc-out-left-eps" class="font-bold text-slate-700">-</p>
+                        <p id="cc-out-left-eps-note" class="text-[10px] text-slate-400 mt-0.5">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 mt-5">
+                <button onclick="ccSwap()" class="py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">스왑</button>
+                <button onclick="ccReset()" class="py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">초기화</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 작가 정산 금액 계산기 (매출 시뮬레이터) -->
+    <div id="revenue-calc-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:1400px;">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-coins text-slate-500"></i> 작가 정산 금액 계산기</h3>
+                <button onclick="closeRevenueCalc()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 custom-scrollbar" style="max-height:78vh; overflow-y:auto;">
+
+                <!-- 1. 매출 정보 입력 -->
+                <div class="bg-slate-50 rounded-2xl border border-slate-200 p-5 flex flex-col">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="font-bold text-sm text-slate-700 flex items-center gap-2"><i class="fa-solid fa-won-sign text-slate-400"></i> 1. 매출 정보 입력</h4>
+                        <button onclick="rcResetAll()" class="text-xs text-slate-400 hover:text-rose-500 flex items-center gap-1"><i class="fa-solid fa-arrow-rotate-left"></i> 초기화</button>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 block mb-1">A. 총 매출액</label>
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <input type="text" id="rc-salesInput" placeholder="0" inputmode="numeric" class="w-full text-right font-bold p-3 pr-9 bg-white border border-slate-200 rounded-xl outline-none focus:border-[var(--primary)]" oninput="rcFormatCurrency(this)" onkeydown="if(event.key==='Enter') rcApplyDirect()">
+                                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">원</span>
+                            </div>
+                            <button onclick="rcApplyDirect()" class="px-4 rounded-xl font-bold text-white shrink-0" style="background:var(--primary)">적용</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 my-3">
+                        <div class="flex-1 h-px bg-slate-200"></div>
+                        <span class="text-[11px] text-slate-400 shrink-0">또는 상세 계산</span>
+                        <div class="flex-1 h-px bg-slate-200"></div>
+                    </div>
+                    <div class="bg-white rounded-xl p-4 border border-slate-200">
+                        <p class="text-xs font-bold text-slate-500 mb-3">B~D 판매 상세 설정</p>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <div>
+                                <label class="text-[11px] text-slate-400 block mb-1">B. 1세트(권) 가격</label>
+                                <input type="text" id="rc-bookPrice" placeholder="0" inputmode="numeric" class="w-full text-right font-bold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm" oninput="rcFormatCurrency(this); rcCalcSimPreview();" onkeydown="if(event.key==='Enter') rcApplySim()">
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-slate-400 block mb-1">판매 수량</label>
+                                <input type="text" id="rc-bookCount" placeholder="0" inputmode="numeric" class="w-full text-right font-bold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm" oninput="rcFormatCurrency(this); rcCalcSimPreview();" onkeydown="if(event.key==='Enter') rcApplySim()">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mb-3">
+                            <div>
+                                <label class="text-[11px] text-slate-400 block mb-1">C. 할인율(%)</label>
+                                <input type="number" id="rc-discountRate" placeholder="0" min="0" max="100" class="w-full text-right font-bold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm" oninput="rcCalcSimPreview()" onkeydown="if(event.key==='Enter') rcApplySim()">
+                            </div>
+                            <div>
+                                <label class="text-[11px] text-slate-400 block mb-1">D. 추가 할인(%)</label>
+                                <input type="number" id="rc-additionalDiscount" placeholder="0" min="0" max="100" class="w-full text-right font-bold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none text-sm" oninput="rcCalcSimPreview()" onkeydown="if(event.key==='Enter') rcApplySim()">
+                            </div>
+                        </div>
+                        <div class="flex justify-between items-center text-xs mb-2">
+                            <span class="font-bold" style="color:var(--primary)">예상 합계</span>
+                            <span id="rc-simTotalPreview" class="font-bold" style="color:var(--primary)">0원</span>
+                        </div>
+                        <button onclick="rcApplySim()" class="w-full py-2.5 rounded-lg text-sm font-bold border transition-all hover:text-white" style="border-color:var(--primary); color:var(--primary);" onmouseover="this.style.background='var(--primary)'" onmouseout="this.style.background=''">위 금액으로 적용하기</button>
+                    </div>
+                </div>
+
+                <!-- 2. 정산 설정 및 결과 -->
+                <div class="bg-slate-50 rounded-2xl border border-slate-200 p-5 flex flex-col">
+                    <h4 class="font-bold text-sm text-slate-700 flex items-center gap-2 mb-3"><i class="fa-solid fa-calculator text-slate-400"></i> 2. 정산 설정 및 결과</h4>
+                    <div class="mb-3">
+                        <label class="text-xs font-bold text-slate-500 block mb-1.5">플랫폼 수수료</label>
+                        <div class="grid grid-cols-4 gap-1.5">
+                            <button type="button" class="rc-platform-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="30" onclick="rcSelectPlatform(30)">30%</button>
+                            <button type="button" class="rc-platform-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="35" onclick="rcSelectPlatform(35)">35%</button>
+                            <button type="button" class="rc-platform-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="40" onclick="rcSelectPlatform(40)">40%</button>
+                            <input type="number" id="rc-customPlatformInput" placeholder="직접%" min="0" max="100" class="p-2 text-center bg-white border border-slate-200 rounded-lg text-xs outline-none" oninput="rcSetCustomPlatform(this)">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-xs font-bold text-slate-500 block mb-1.5">작가 정산 비율</label>
+                        <div class="grid grid-cols-3 gap-1.5 mb-1.5">
+                            <button type="button" class="rc-ratio-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="70" onclick="rcSelectRatio(70)">70%</button>
+                            <button type="button" class="rc-ratio-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="75" onclick="rcSelectRatio(75)">75%</button>
+                            <button type="button" class="rc-ratio-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="80" onclick="rcSelectRatio(80)">80%</button>
+                        </div>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <button type="button" class="rc-ratio-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="85" onclick="rcSelectRatio(85)">85%</button>
+                            <button type="button" class="rc-ratio-btn py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-600" data-value="90" onclick="rcSelectRatio(90)">90%</button>
+                            <input type="number" id="rc-customRatioInput" placeholder="직접%" min="0" max="100" class="p-2 text-center bg-white border border-slate-200 rounded-lg text-xs outline-none" oninput="rcSetCustomRatio(this)">
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl p-3.5 space-y-2 text-xs border border-slate-200">
+                        <div class="flex justify-between"><span class="text-slate-400">플랫폼 수수료 (<span id="rc-platformFeePercent">0</span>%)</span><span class="text-slate-500 font-medium">- <span id="rc-platformFeeAmount">0</span>원</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">수수료 제외 매출</span><span class="text-slate-600 font-medium"><span id="rc-netSalesAmount">0</span>원</span></div>
+                        <div class="flex justify-between pt-2 border-t border-slate-100"><span class="text-slate-400">작가 정산금(세전)</span><span class="font-bold" style="color:var(--primary)"><span id="rc-grossIncome">0</span>원</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">사업소득세 (3.3%)</span><span class="text-slate-500 font-medium">- <span id="rc-taxAmount">0</span>원</span></div>
+                    </div>
+                    <div class="rounded-xl p-5 text-white text-center mt-3" style="background:var(--primary)">
+                        <p class="text-white/80 text-xs font-bold mb-1">최종 실수령액</p>
+                        <h2 class="text-2xl font-black" id="rc-finalAmount">0원</h2>
+                        <div class="mt-3 pt-3 border-t border-white/20 grid grid-cols-2 gap-2">
+                            <button onclick="rcCopyResult()" class="text-[11px] bg-white/20 hover:bg-white/30 py-2 rounded-lg flex justify-center items-center gap-1"><i class="fa-solid fa-copy"></i> 결과 복사</button>
+                            <button onclick="rcAddToComparison()" class="text-[11px] bg-white text-slate-700 font-bold py-2 rounded-lg flex justify-center items-center gap-1"><i class="fa-solid fa-circle-plus"></i> 비교함 담기</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 정산 결과 비교 -->
+                <div class="bg-slate-50 rounded-2xl border border-slate-200 p-5 flex flex-col" style="max-height:660px;">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="font-bold text-sm text-slate-700 flex items-center gap-2"><i class="fa-solid fa-list-ol text-slate-400"></i> 3. 정산 결과 비교</h4>
+                        <button onclick="rcClearComparison()" class="text-xs text-slate-400 hover:text-rose-500">전체 비우기</button>
+                    </div>
+                    <div id="rc-comparisonEmpty" class="flex-1 flex flex-col items-center justify-center text-slate-300 text-center py-8">
+                        <i class="fa-regular fa-inbox text-3xl mb-2"></i>
+                        <p class="text-xs">계산 후 '비교함 담기'를 눌러<br>결과를 저장해보세요.</p>
+                    </div>
+                    <div id="rc-comparisonList" class="hidden flex-1 overflow-y-auto custom-scrollbar space-y-2"></div>
+                </div>
+
+                <!-- 4. 글자당 금액 계산 -->
+                <div class="bg-slate-50 rounded-2xl border border-slate-200 p-5 flex flex-col" style="max-height:660px;">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 class="font-bold text-sm text-slate-700 flex items-center gap-2"><i class="fa-solid fa-font text-slate-400"></i> 4. 글자당 금액 계산</h4>
+                        <button onclick="rcClearCharComparison()" class="text-xs text-slate-400 hover:text-rose-500">전체 비우기</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">공백 미포함 글자수</label>
+                            <input type="text" id="rc-charCountExc" placeholder="0" inputmode="numeric" class="w-full text-right font-bold p-2 bg-white border border-slate-200 rounded-lg outline-none text-sm" oninput="rcFormatCurrency(this); rcCalculatePerChar();">
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">1권 가격</label>
+                            <input type="text" id="rc-perCharPrice" placeholder="0" inputmode="numeric" class="w-full text-right font-bold p-2 bg-white border border-slate-200 rounded-lg outline-none text-sm" oninput="rcFormatCurrency(this); rcCalculatePerChar();">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-[11px] text-slate-400 block mb-1">정산 비율 <span class="text-slate-300">(플랫폼 수수료 30% 고정 반영)</span></label>
+                        <div class="grid grid-cols-5 gap-1">
+                            <button type="button" class="rc-char-ratio-btn py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600" data-value="70" onclick="rcSelectCharRatio(70)">70%</button>
+                            <button type="button" class="rc-char-ratio-btn py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600" data-value="75" onclick="rcSelectCharRatio(75)">75%</button>
+                            <button type="button" class="rc-char-ratio-btn py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600" data-value="80" onclick="rcSelectCharRatio(80)">80%</button>
+                            <button type="button" class="rc-char-ratio-btn py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600" data-value="85" onclick="rcSelectCharRatio(85)">85%</button>
+                            <button type="button" class="rc-char-ratio-btn py-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-bold text-slate-600" data-value="90" onclick="rcSelectCharRatio(90)">90%</button>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl p-3 border border-slate-200 mb-2">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[11px] text-slate-500">1,000부 정산금 <span class="text-slate-300">(수수료 30% 제외)</span></span>
+                            <span class="font-bold text-slate-700"><span id="rc-resultRevenue1000">0</span>원</span>
+                        </div>
+                        <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+                            <span class="text-[11px] text-slate-500">1글자당 가치</span>
+                            <span class="font-bold" style="color:var(--primary)"><span id="rc-resultPerOneInc">0</span>원</span>
+                        </div>
+                    </div>
+                    <button onclick="rcAddToCharComparison()" class="w-full py-2 rounded-lg text-xs font-bold border mb-3" style="border-color:var(--primary); color:var(--primary)">비교함 담기</button>
+                    <div id="rc-charComparisonList" class="flex-1 overflow-y-auto custom-scrollbar space-y-2">
+                        <p class="text-[11px] text-slate-300 text-center mt-4" id="rc-charListEmpty">비교할 결과가 없습니다.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- [NEW] 컨택 카드 - 메일 전문 미리보기 팝업 -->
+    <div id="email-preview-modal" class="modal-overlay">
+        <div class="modal-content max-w-2xl w-full h-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="email-preview-title" class="text-base font-bold text-slate-700 flex items-center gap-2"><i class="fa-regular fa-envelope text-emerald-500"></i></h3>
+                <button onclick="document.getElementById('email-preview-modal').classList.remove('open')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div id="email-preview-body" class="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed max-h-[60vh] overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- [NEW] 출판사/스튜디오 이름 클릭 시 뜨는 카드 모달 -->
+    <div id="pub-card-modal" class="modal-overlay">
+        <div class="modal-content max-w-3xl w-full h-auto">
+            <div class="flex justify-between items-center mb-5">
+                <h3 id="pub-card-title" class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-building text-emerald-500"></i></h3>
+                <button onclick="closePublisherCard()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div id="pub-card-body"></div>
+        </div>
+    </div>
+
+    <div id="overseas-modal" class="modal-overlay">
+        <div class="modal-content h-[500px]">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700">해외 정산 메모</h3>
+                <button onclick="document.getElementById('overseas-modal').classList.remove('open')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <textarea id="overseas-memo-area" class="w-full h-full p-4 bg-slate-50 border border-slate-200 rounded-xl resize-none outline-none focus:border-emerald-400" placeholder="해외 정산 관련 내용을 자유롭게 기록하세요."></textarea>
+            <div class="mt-4 flex justify-end">
+                <button onclick="saveOverseasMemo()" class="px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="credentials-modal" class="modal-overlay">
+        <div class="modal-content h-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700">정산 사이트 정보</h3>
+                <button onclick="document.getElementById('credentials-modal').classList.remove('open')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 mb-1 block">정산 사이트 URL</label>
+                    <input type="text" id="cred-site-url" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100" placeholder="https://...">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 mb-1 block">아이디 (ID)</label>
+                    <input type="text" id="cred-login-id" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 ml-1 mb-1 block">비밀번호 (PW)</label>
+                    <input type="text" id="cred-login-pw" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end">
+                <button onclick="saveCredentials()" class="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700">저장하기</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-options-modal" class="modal-overlay">
+        <div class="modal-content flex flex-col h-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700">보기 옵션 설정</h3>
+                <button onclick="closeViewOptions()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="space-y-6">
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <h4 class="text-sm font-bold text-slate-600 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-crosshairs text-emerald-500"></i> 십자 강조 표시
+                    </h4>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-slate-500 font-medium">기능 사용</span>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="crosshair-toggle" class="sr-only peer" onchange="toggleCrosshair(this.checked)">
+                                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                            </label>
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">강조 색상</label>
+                            <div class="flex items-center gap-3">
+                                <input type="color" id="crosshair-color-picker" class="w-10 h-10 p-1 rounded-lg border bg-white cursor-pointer" oninput="updateCrosshairColor(this.value)">
+                                <span class="text-xs text-slate-400">선택한 색상으로 가로/세로 줄이 강조됩니다.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="table-style-settings-modal" class="modal-overlay">
+        <div class="modal-content flex flex-col h-auto max-h-[85vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700">테이블 스타일 설정</h3>
+                <button onclick="closeTableStyleSettings()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><span class="w-2 h-4 bg-blue-400 rounded-sm"></span> 월별 입력값 설정</h4>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div><label class="text-[11px] text-slate-400 block mb-1">크기(rem)</label><input type="number" id="set-cell-size" step="0.05" class="w-full p-2 rounded-lg border text-sm" onchange="applyTableStyles()"></div>
+                        <div><label class="text-[11px] text-slate-400 block mb-1">색상</label><input type="color" id="set-cell-color" class="w-full h-9 p-1 rounded-lg border" oninput="applyTableStyles()"></div>
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">굵기</label>
+                            <select id="set-cell-weight" class="w-full p-2 rounded-lg border text-sm" onchange="applyTableStyles()">
+                                <option value="300">얇게</option>
+                                <option value="400">보통</option>
+                                <option value="500">중간</option>
+                                <option value="600">약간 굵게</option>
+                                <option value="700">굵게</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><span class="w-2 h-4 bg-purple-400 rounded-sm"></span> 연간 합계 설정 (우측)</h4>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div><label class="text-[11px] text-slate-400 block mb-1">크기(rem)</label><input type="number" id="set-total-size" step="0.05" class="w-full p-2 rounded-lg border text-sm" onchange="applyTableStyles()"></div>
+                        <div><label class="text-[11px] text-slate-400 block mb-1">색상</label><input type="color" id="set-total-color" class="w-full h-9 p-1 rounded-lg border" oninput="applyTableStyles()"></div>
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">굵기</label>
+                            <select id="set-total-weight" class="w-full p-2 rounded-lg border text-sm" onchange="applyTableStyles()">
+                                <option value="300">얇게</option>
+                                <option value="400">보통</option>
+                                <option value="500">중간</option>
+                                <option value="600">약간 굵게</option>
+                                <option value="700">굵게</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><span class="w-2 h-4 bg-emerald-600 rounded-sm"></span> 총합 설정 (우측 하단)</h4>
+                    <div class="grid grid-cols-3 gap-3">
+                        <div><label class="text-[11px] text-slate-400 block mb-1">크기(rem)</label><input type="number" id="set-grand-size" step="0.05" class="w-full p-2 rounded-lg border text-sm" onchange="applyTableStyles()"></div>
+                        <div><label class="text-[11px] text-slate-400 block mb-1">색상</label><input type="color" id="set-grand-color" class="w-full h-9 p-1 rounded-lg border" oninput="applyTableStyles()"></div>
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">굵기</label>
+                            <select id="set-grand-weight" class="w-full p-2 rounded-lg border text-sm" onchange="applyTableStyles()">
+                                <option value="300">얇게</option>
+                                <option value="400">보통</option>
+                                <option value="500">중간</option>
+                                <option value="600">약간 굵게</option>
+                                <option value="700">굵게</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="writer-bulk-month-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-pen text-emerald-500"></i> 이번 달 글자수 일괄 입력</h3>
+                <button onclick="closeWriterBulkMonthModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <p class="text-xs text-slate-400 mb-4">상세입력을 못 채운 달의 글자수를 한 번에 입력할 수 있어요. 입력한 총 글자수는 그 달의 날짜 수로 균등하게 나눠서 매일 기록돼요.</p>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1" id="writer-bulk-month-label">대상 월</label>
+                    <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-sm text-slate-600" id="writer-bulk-month-display"></div>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 block mb-1">이 달에 쓴 총 글자수</label>
+                    <div class="flex items-center gap-2">
+                        <input id="writer-bulk-month-chars" type="text" placeholder="예: 200,000" oninput="formatBulkMonthInput(this)" class="flex-1 p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-sm text-right outline-none focus:ring-2 focus:ring-[var(--primary)]">
+                        <span class="text-xs text-slate-400">자</span>
+                    </div>
+                    <p id="writer-bulk-month-preview" class="text-[11px] text-slate-400 mt-1.5"></p>
+                </div>
+            </div>
+            <div class="flex gap-2 mt-5">
+                <button onclick="closeWriterBulkMonthModal()" class="flex-1 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold transition-all">취소</button>
+                <button onclick="saveWriterBulkMonth()" class="flex-1 py-2.5 rounded-lg text-white text-sm font-bold transition-all" style="background:var(--primary)">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="year-summary-modal" class="modal-overlay">
+        <div class="modal-content modal-lg flex flex-col" style="max-width:880px;">
+            <div class="flex justify-between items-center mb-4 no-print">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-chart-pie text-blue-500"></i> 연말 결산 요약</h3>
+                <div class="flex items-center gap-2">
+                    <button onclick="printYearSummaryReport()" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold transition-all"><i class="fa-solid fa-print mr-1"></i> 인쇄</button>
+                    <button onclick="closeYearSummaryReport()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+                </div>
+            </div>
+            <div id="year-summary-content" class="overflow-y-auto pr-2 custom-scrollbar"></div>
+        </div>
+    </div>
+
+    <div id="work-memo-modal" class="modal-overlay">
+        <div class="modal-content modal-lg flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-regular fa-note-sticky text-yellow-400"></i> <span id="memo-work-title">작품 메모</span>
+                </h3>
+                <button onclick="closeWorkMemo()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            
+            <div class="hidden bg-slate-50 border border-slate-200 rounded-xl p-3 mb-4 overflow-x-auto">
+                <div class="flex items-center gap-4 min-w-max">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400 font-bold flex-shrink-0">비율</span>
+                        <div class="text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1.5 flex items-center">
+                            <i class="fa-solid fa-percent text-emerald-500 mr-1.5 text-xs"></i>
+                            <span id="memo-rate-display">-</span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400 font-bold flex-shrink-0">출간</span>
+                        <div class="text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg px-2 py-1.5 flex items-center">
+                            <i class="fa-regular fa-calendar text-blue-500 mr-1.5 text-xs"></i>
+                            <span id="memo-date-display">-</span>
+                        </div>
+                    </div>
+
+                    <div class="w-[1px] h-8 bg-slate-200"></div>
+
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-slate-400 font-bold flex-shrink-0">계약</label>
+                        <select id="memo-contract-term" onchange="meAutoSave()" class="w-20 p-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">선택</option>
+                            <option value="1년">1년</option>
+                            <option value="2년">2년</option>
+                            <option value="3년">3년</option>
+                            <option value="5년">5년</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-slate-400 font-bold flex-shrink-0">연장</label>
+                        <select id="memo-extension-term" onchange="meAutoSave()" class="w-20 p-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">선택</option>
+                            <option value="1년">1년</option>
+                            <option value="2년">2년</option>
+                            <option value="3년">3년</option>
+                            <option value="4년">4년</option>
+                            <option value="5년">5년</option>
+                        </select>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="flex-1 bg-white border border-slate-200 rounded-xl mb-4 relative flex flex-col" style="min-height:0">
+                <div class="editor-toolbar">
+                    <button class="toolbar-btn" onmousedown="event.preventDefault();meCmd('bold')" title="굵게"><i class="fa-solid fa-bold"></i></button>
+                    <button class="toolbar-btn" onmousedown="event.preventDefault();meCmd('italic')" title="기울임"><i class="fa-solid fa-italic"></i></button>
+                    <button class="toolbar-btn" onmousedown="event.preventDefault();meCmd('underline')" title="밑줄"><i class="fa-solid fa-underline"></i></button>
+                    <div class="h-4 w-[1px] bg-slate-200 mx-1"></div>
+                    <div class="relative" id="be-fg-wrap">
+                        <button class="toolbar-btn gap-1 px-2 w-auto" onmousedown="event.preventDefault();beTogglePalette('fg')" title="글자색">
+                            <i class="fa-solid fa-font" id="be-fg-icon" style="color:#334155"></i>
+                            <i class="fa-solid fa-caret-down text-[9px] text-slate-400"></i>
+                        </button>
+                        <div id="be-fg-palette" class="be-palette" style="display:none"></div>
+                    </div>
+                    <div class="relative" id="be-bg-wrap">
+                        <button class="toolbar-btn gap-1 px-2 w-auto" onmousedown="event.preventDefault();beTogglePalette('bg')" title="배경색">
+                            <i class="fa-solid fa-highlighter" id="be-bg-icon" style="color:#fef08a;-webkit-text-stroke:0.5px #cbd5e1"></i>
+                            <i class="fa-solid fa-caret-down text-[9px] text-slate-400"></i>
+                        </button>
+                        <div id="be-bg-palette" class="be-palette" style="display:none"></div>
+                    </div>
+                    <div class="h-4 w-[1px] bg-slate-200 mx-1"></div>
+                    <label class="toolbar-btn cursor-pointer" title="이미지 삽입">
+                        <i class="fa-solid fa-image text-slate-400"></i>
+                        <input type="file" class="hidden" accept="image/*" onchange="meInsertImageFile(this)">
+                    </label>
+                </div>
+                <div id="memo-editor" class="memo-editor custom-scrollbar" contenteditable="true" spellcheck="false"></div>
+                <div class="absolute bottom-2 right-4 text-[10px] text-slate-400 pointer-events-none">이미지 Ctrl+V 지원</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="genre-manager-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700">장르 및 태그 관리</h3>
+                <button onclick="closeGenreManager()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            
+            <div class="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
+                <div class="grid grid-cols-4 gap-2 mb-3">
+                    <div class="col-span-2">
+                        <label class="text-[10px] font-bold text-slate-400 ml-1 mb-1 block">장르명</label>
+                        <input type="text" id="new-genre-input" class="w-full p-2 rounded-lg border text-sm outline-none focus:border-emerald-400" placeholder="예: 로판 단편">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-400 ml-1 mb-1 block">색상</label>
+                        <input type="color" id="new-genre-color" class="w-full h-[38px] p-1 rounded-lg border bg-white cursor-pointer" value="#cbd5e1">
+                    </div>
+                    <div class="flex items-end">
+                        <button id="btn-add-update-genre" onclick="addNewGenre()" class="w-full h-[38px] bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 shadow-sm transition-all">추가</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-y-auto flex-1 custom-scrollbar border border-slate-100 rounded-xl">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-50 text-slate-500 font-bold text-xs sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2 w-10 text-center">이동</th>
+                            <th class="px-4 py-2">이름</th>
+                            <th class="px-2 py-2 text-center w-16">색상</th>
+                            <th class="px-4 py-2 w-20 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="genre-manager-list" class="divide-y divide-slate-50"></tbody>
+                </table>
+            </div>
+
+            <div class="mt-6 pt-4 border-t border-slate-100">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs font-bold text-slate-500">리스트 배지 투명도</span>
+                    <span id="badge-opacity-value" class="text-xs font-bold text-emerald-600">25%</span>
+                </div>
+                <input type="range" min="10" max="100" value="25" class="w-full accent-emerald-500 cursor-pointer" oninput="updateBadgeOpacity(this.value)">
+            </div>
+        </div>
+    </div>
+
+    <!-- [NEW] 집필 관리 스케줄 모달 -->
+    <div id="write-schedule-modal" class="modal-overlay">
+      <div id="write-schedule-modal-group">
+        <div id="write-workinfo-panel" class="modal-content" style="max-width:280px; margin-right:16px; visibility:hidden; padding:0; overflow:hidden;">
+            <div id="wwi-header" class="px-5 pt-5 pb-4">
+                <p class="text-[10px] font-bold uppercase tracking-widest mb-1.5" style="color:var(--primary)"><i class="fa-solid fa-book-open mr-1"></i> 작품 정보</p>
+                <h4 id="wwi-title" class="text-lg font-extrabold text-slate-800 leading-snug break-keep">-</h4>
+                <span id="wwi-genre-badge" class="inline-block mt-2 text-[10px] font-bold px-2.5 py-1 rounded-full">-</span>
+            </div>
+
+            <div class="px-5 py-4 space-y-3">
+                <div class="flex items-center gap-3 text-sm">
+                    <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-building text-xs"></i></div>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] text-slate-400">출판사</p>
+                        <p id="wwi-publisher" class="font-bold text-slate-700 truncate">-</p>
+                    </div>
+                </div>
+                <div id="wwi-dates-row" class="flex items-start gap-3">
+                    <div class="flex items-center gap-3 text-sm flex-1 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-rocket text-xs"></i></div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] text-slate-400 mb-1">출간 예정일</p>
+                            <div class="flex items-center gap-1.5">
+                                <input type="date" id="wwi-publish-date" onchange="wwiUpdatePublishDate()" class="flex-1 min-w-0 p-1.5 bg-slate-50 rounded-lg border border-transparent text-xs outline-none focus:border-emerald-300 focus:bg-white transition-colors">
+                                <input type="month" id="wwi-pending-month" onchange="wwiUpdatePublishDate()" class="hidden flex-1 min-w-0 p-1.5 bg-slate-50 rounded-lg border border-transparent text-xs outline-none focus:border-emerald-300 focus:bg-white transition-colors">
+                                <label class="flex items-center shrink-0 cursor-pointer" title="출간 예정(날짜 미정)">
+                                    <input type="checkbox" id="wwi-pending" onchange="wwiTogglePending(this)" class="accent-emerald-500 w-3.5 h-3.5">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 text-sm flex-1 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-file-signature text-xs"></i></div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] text-slate-400 mb-1">완고 입고일</p>
+                            <input type="date" id="wwi-manuscript-date" onchange="wwiUpdateManuscriptDate()" class="w-full p-1.5 bg-slate-50 rounded-lg border border-transparent text-xs outline-none focus:border-emerald-300 focus:bg-white transition-colors">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="wwi-divider" class="mx-5 border-t border-slate-100"></div>
+
+            <div id="wwi-goal-section" class="px-5 py-4">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1"><i class="fa-solid fa-bullseye"></i> 목표 글자수 <span class="font-normal normal-case text-slate-300">(수정 가능)</span></p>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl pl-3 pr-2 py-2">
+                        <span class="text-xs font-bold text-slate-500">공포</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="wwi-goal-withspace" onchange="wwiUpdateGoal('withspace')" class="w-20 bg-transparent text-right font-bold text-slate-700 text-sm outline-none">
+                            <span class="text-xs text-slate-400 shrink-0">자</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl pl-3 pr-2 py-2">
+                        <span class="text-xs font-bold text-slate-500">공미</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="wwi-goal-nospace" onchange="wwiUpdateGoal('nospace')" class="w-20 bg-transparent text-right font-bold text-slate-700 text-sm outline-none">
+                            <span class="text-xs text-slate-400 shrink-0">자</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mx-5 border-t border-slate-100"></div>
+
+            <div id="wwi-progress-section" class="px-5 py-4">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1"><i class="fa-solid fa-pen-nib"></i> 현재 집필 정보</p>
+                <div id="wwi-progress-body" class="space-y-2"></div>
+            </div>
+        </div>
+        <div id="write-main-modal" class="modal-content h-auto max-h-[95vh]" style="overflow-y:auto;">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700" id="write-modal-title">✍️ 집필 목표 추가</h3>
+                <button onclick="closeWriteModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            
+            <p id="write-modal-date" class="text-sm font-bold text-emerald-600 mb-4 bg-emerald-50 px-3 py-1.5 rounded-lg inline-block"></p>
+            <input type="hidden" id="write-modal-date-input">
+            <input type="hidden" id="write-modal-id-input">
+
+            <button type="button" id="write-open-span-btn" onclick="openWriteSpanModal(null, currentEditWriteDate)" class="w-full mb-4 py-2.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-sm font-bold hover:bg-amber-100 transition-colors">
+                <i class="fa-solid fa-arrows-left-right-to-line mr-1.5"></i>기간 일정 만들기 (여러 날 걸치는 긴 일정)
+            </button>
+
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-sm font-bold text-slate-600">작품 선택</label>
+                        <div id="write-modal-genre-tabs" class="flex gap-1 overflow-x-auto custom-scrollbar pb-1"></div>
+                    </div>
+                    <select id="write-work-select" onchange="renderWriteVolumeSelect(''); updateWriteWorkInfoPanel();" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400 transition-all"></select>
+                </div>
+                
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-sm font-bold text-slate-600">분류 선택</label>
+                        <button type="button" onclick="openWriteCategoryManager()" title="분류 항목 설정" class="text-slate-400 hover:text-emerald-500 transition-colors px-1"><i class="fa-solid fa-gear"></i></button>
+                    </div>
+                    <select id="write-category-select" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400" onchange="toggleWriteType(this.value)">
+                        <option value="">✏️ 집필 목표</option>
+                    </select>
+                </div>
+
+                <div id="write-goal-container">
+                    <label class="text-sm font-bold text-slate-600 block mb-1">목표 분량 (자)</label>
+                    <div id="write-goal-preset-group" class="grid grid-cols-4 gap-1 mb-2">
+                        <button type="button" data-goal="4000" onclick="selectWriteGoalPreset(4000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">4,000자</button>
+                        <button type="button" data-goal="5000" onclick="selectWriteGoalPreset(5000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">5,000자</button>
+                        <button type="button" data-goal="6000" onclick="selectWriteGoalPreset(6000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">6,000자</button>
+                        <button type="button" data-goal="8000" onclick="selectWriteGoalPreset(8000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">8,000자</button>
+                        <button type="button" data-goal="10000" onclick="selectWriteGoalPreset(10000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">1만자</button>
+                        <button type="button" data-goal="12000" onclick="selectWriteGoalPreset(12000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">12,000자</button>
+                        <button type="button" data-goal="15000" onclick="selectWriteGoalPreset(15000)" class="write-goal-preset-btn px-0.5 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-600 hover:border-emerald-300 transition-colors">15,000자</button>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <input type="number" id="write-goal-input" value="4000" oninput="syncWriteGoalPresetHighlight()" class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400">
+                        <button type="button" data-goal="custom" onclick="selectWriteGoalPreset('custom')" class="write-goal-preset-btn shrink-0 px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 hover:border-emerald-300 transition-colors">직접입력</button>
+                    </div>
+                    <button type="button" id="write-goal-bulk-btn" onclick="bulkUpdateGoalFromHere()" class="hidden mt-2 w-full py-2 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-xl text-xs font-bold hover:bg-emerald-100 transition-colors">
+                        <i class="fa-solid fa-arrow-down-1-9 mr-1"></i>이 카드부터 이후 전부 위 글자수로 일괄 변경
+                    </button>
+                    <button type="button" id="write-delete-bulk-btn" onclick="bulkDeleteFromHere()" class="hidden mt-2 w-full py-2 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl text-xs font-bold hover:bg-rose-100 transition-colors">
+                        <i class="fa-solid fa-trash-can mr-1"></i>이 카드부터 이후 전부 삭제
+                    </button>
+                </div>
+
+                <div id="write-memo-container" class="hidden">
+                    <label id="write-memo-label" class="text-sm font-bold text-slate-600 block mb-1">분류 메모 (선택)</label>
+                    <input type="text" id="write-memo-input" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-emerald-400" placeholder="수정 사항이나 내용을 메모하세요">
+                </div>
+
+                <div id="write-checklist-container" class="hidden">
+                    <label class="text-sm font-bold text-slate-600 block mb-1">오늘 할 일 체크리스트 <span class="font-normal text-slate-400 text-xs">(한 줄씩 체크할 수 있어요)</span></label>
+                    <div id="write-checklist-rows" class="space-y-1.5"></div>
+                    <button type="button" onclick="addWriteChecklistRow('', false, true)" class="w-full mt-2 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors">
+                        <i class="fa-solid fa-plus mr-1"></i>항목 추가
+                    </button>
+                </div>
+
+                <div id="write-volume-container" class="mt-4 pt-4 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-bold text-slate-600">권 선택 <span class="font-normal text-slate-400 text-xs">(선택)</span></label>
+                        <button type="button" onclick="openWriteVolumeModal()" class="text-xs font-bold text-amber-600 hover:text-amber-700">
+                            <i class="fa-solid fa-gear mr-1"></i>권 관리
+                        </button>
+                    </div>
+                    <select id="write-volume-select" onchange="updateWriteVolumeInfo()" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400"></select>
+                    <div id="write-volume-info" class="text-[11px] text-slate-500 leading-relaxed mt-1.5"></div>
+                    <div id="write-volume-apply" class="hidden grid grid-cols-2 gap-2 mt-2">
+                        <button type="button" onclick="applyVolumeToRange('before')" class="py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-[11px] font-bold hover:bg-amber-100 transition-colors">
+                            <i class="fa-solid fa-arrow-up mr-1"></i>이 카드 앞 전부 이 권으로
+                        </button>
+                        <button type="button" onclick="applyVolumeToRange('after')" class="py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-[11px] font-bold hover:bg-amber-100 transition-colors">
+                            <i class="fa-solid fa-arrow-down mr-1"></i>이 카드 뒤 전부 이 권으로
+                        </button>
+                    </div>
+                </div>
+
+                <div id="write-complete-container" class="hidden mt-4 pt-4 border-t border-slate-100">
+                     <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="write-is-completed" class="w-5 h-5 accent-emerald-500">
+                        <span id="write-complete-text" class="text-sm font-bold text-emerald-600">완료 처리</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-between gap-3">
+                <button id="write-delete-btn" onclick="deleteWriteSchedule()" class="hidden px-4 py-2.5 bg-rose-50 text-rose-500 rounded-xl font-bold hover:bg-rose-100">삭제</button>
+                <div class="flex gap-2 ml-auto">
+                    <button onclick="closeWriteModal()" class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">취소</button>
+                    <button onclick="saveWriteSchedule()" class="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700">저장</button>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🟢 [NEW] 권(卷) 관리 모달 -->
+    <div id="write-volume-modal" class="modal-overlay" style="z-index:1100;">
+        <div class="modal-content modal-tall" style="max-width:560px;">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <h3 class="text-lg font-bold text-slate-700">📚 권 관리 <span id="volume-modal-work" class="text-sm font-normal text-slate-400"></span></h3>
+                <button onclick="closeWriteVolumeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+
+            <div class="modal-scroll-body custom-scrollbar pr-1.5">
+                <p class="text-[11px] text-slate-400 mb-2">권을 만들어 두면 집필 카드마다 어느 권인지 고를 수 있어요. 달력 누적 숫자는 권 안에서만 세고, 분모는 그 권의 목표가 됩니다.</p>
+                <div id="volume-list" class="space-y-2"></div>
+                <button type="button" onclick="addWriteVolumeRow()" class="w-full mt-2 py-2 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl text-xs font-bold hover:bg-amber-100 transition-colors">
+                    <i class="fa-solid fa-plus mr-1"></i>권 추가
+                </button>
+                <div id="volume-summary" class="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 leading-relaxed"></div>
+            </div>
+
+            <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center gap-2 shrink-0">
+                <button onclick="mergeWriteVolumes()" class="px-4 py-2.5 bg-rose-50 text-rose-500 border border-rose-200 rounded-xl font-bold text-sm hover:bg-rose-100">
+                    <i class="fa-solid fa-object-group mr-1"></i>전체 통합
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="closeWriteVolumeModal()" class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">취소</button>
+                    <button onclick="saveWriteVolumes()" class="px-6 py-2.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🟢 [NEW] 3.3% 공제 계산기 -->
+    <div id="withholding-calc-modal" class="modal-overlay">
+        <div class="modal-content modal-tall" style="max-width: 560px;">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <h3 class="text-lg font-bold text-slate-700"><i class="fa-solid fa-calculator mr-1.5" style="color:var(--primary)"></i>3.3% 공제 계산기</h3>
+                <button onclick="closeWithholdingCalcModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+
+            <div class="modal-scroll-body custom-scrollbar pr-1.5">
+                <div class="wc-card">
+                    <label>금액 입력 (텍스트 또는 정산서 이미지 붙여넣기)</label>
+                    <div style="position:relative;">
+                        <textarea id="wc-amounts" oninput="wcCalculate()" ondragover="wcHandleDragOver(event)" ondragleave="wcHandleDragLeave(event)" ondrop="wcHandleDrop(event)" placeholder="금액을 입력하거나, 정산서 이미지를 이곳에 Ctrl+V 하세요."></textarea>
+                        <div id="wc-loading-overlay" class="wc-loading-overlay">
+                            <div class="wc-spinner"></div>
+                            <div id="wc-loading-text">이미지 분석 준비 중...</div>
+                        </div>
+                    </div>
+
+                    <label class="flex items-center gap-2 mt-3 mb-0 cursor-pointer" style="font-size:12px; color:#475569; font-weight:600;">
+                        <input type="checkbox" id="wc-advanced-mode" style="width:auto;" onchange="wcToggleAdvanced()">
+                        매출 모드 (플랫폼 수수료 + 정산 비율 적용)
+                    </label>
+
+                    <div id="wc-advanced-controls" class="hidden grid grid-cols-2 gap-2 mt-2">
+                        <div>
+                            <label>플랫폼 수수료</label>
+                            <select id="wc-fee-rate" onchange="wcHandleFeeRateChange()">
+                                <option value="0">없음(0%)</option>
+                                <option value="30" selected>30%</option>
+                                <option value="40">40%</option>
+                                <option value="custom">직접입력</option>
+                            </select>
+                            <input type="number" id="wc-fee-rate-custom" oninput="wcCalculate()" placeholder="수수료 % 입력" class="hidden mt-1.5" min="0" max="100" step="0.1">
+                        </div>
+                        <div>
+                            <label>정산 비율</label>
+                            <select id="wc-payout-ratio" onchange="wcHandlePayoutRatioChange()">
+                                <option value="70" selected>70%</option>
+                                <option value="75">75%</option>
+                                <option value="80">80%</option>
+                                <option value="85">85%</option>
+                                <option value="90">90%</option>
+                                <option value="custom">직접입력</option>
+                            </select>
+                            <input type="number" id="wc-payout-ratio-custom" oninput="wcCalculate()" placeholder="정산비율 % 입력" class="hidden mt-1.5" min="0" max="100" step="0.1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="wc-card">
+                    <div class="wc-kpi" id="wc-kpi-grid">
+                        <div class="wc-box wc-clickable" id="wc-gross-box" onclick="wcCopyToClipboard('wc-gross','wc-gross-title','총합(세전) 📋')">
+                            <div class="wc-t" id="wc-gross-title">총합(세전) 📋</div>
+                            <div class="wc-v wc-mono" id="wc-gross">-</div>
+                        </div>
+                        <div class="wc-box hidden" id="wc-pretax-box">
+                            <div class="wc-t">정산 순수금액(세전)</div>
+                            <div class="wc-v wc-mono" id="wc-pretax">-</div>
+                        </div>
+                        <div class="wc-box">
+                            <div class="wc-t">공제액(세금)</div>
+                            <div class="wc-v wc-mono" id="wc-withheld">-</div>
+                        </div>
+                        <div class="wc-box wc-clickable wc-net-box" id="wc-net-box" onclick="wcCopyToClipboard('wc-net','wc-net-title','총 실수령액 📋')">
+                            <div class="wc-t" id="wc-net-title">총 실수령액 📋</div>
+                            <div class="wc-v wc-mono" id="wc-net">-</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
+                        <div class="wc-badge">항목 수: <span class="wc-mono" id="wc-count" style="margin-left:4px; font-weight:600; color:#334155;">0</span></div>
+                        <div class="wc-badge">종합 배수: <span class="wc-mono" id="wc-mult" style="margin-left:4px; font-weight:600; color:#334155;">0.967</span></div>
+                    </div>
+
+                    <div class="mt-3">
+                        <label>추출된 항목 리스트 (클릭 시 복사)</label>
+                        <div style="max-height:260px; overflow-y:auto; border-radius:12px; border:1px solid #e2e8f0;" class="custom-scrollbar">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width:36px; text-align:center;">#</th>
+                                        <th style="text-align:right; width:40%;">세전 금액</th>
+                                        <th style="text-align:right;">실수령액 (클릭 복사)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="wc-rows">
+                                    <tr><td colspan="3" class="wc-mono" style="text-align:center; color:#94a3b8; padding:20px;">계산 결과가 여기에 표시돼요</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="wc-hint hidden" id="wc-err"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🟢 [NEW] 연간 타임라인 모달 -->
+    <div id="year-timeline-modal" class="modal-overlay">
+        <div id="year-timeline-content" class="modal-content modal-lg" style="max-width: 2100px; width: 96%; height: auto; max-height: calc(100vh - 48px);">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <div class="flex items-center gap-3">
+                    <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-timeline text-amber-500"></i> 연간 집필 일정</h3>
+                    <div class="flex items-center bg-slate-100 rounded-lg p-1">
+                        <button onclick="changeTimelineYear(-1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-left"></i></button>
+                        <span id="timeline-year-label" class="px-4 font-bold text-slate-700 w-24 text-center">2027년</span>
+                        <button onclick="changeTimelineYear(1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div id="timeline-summary" class="text-sm text-slate-500 mr-2"></div>
+                    <button onclick="closeYearTimeline()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+                </div>
+            </div>
+
+            <div id="year-timeline-body" class="flex-1 overflow-y-auto overflow-x-hidden scroll-invisible"></div>
+
+            <div class="mt-3 pt-3 border-t border-slate-100 flex items-center gap-4 text-xs text-slate-400 shrink-0">
+                <span><i class="fa-solid fa-square text-emerald-300 mr-1"></i>집필 일정 (달력 카드 기준)</span>
+                <span><i class="fa-solid fa-square text-amber-300 mr-1"></i>기간 일정</span>
+                <span><i class="fa-solid fa-square text-slate-200 mr-1"></i>일정 없는 기간 (쉬는 구간)</span>
+                <span class="text-slate-300">초단편(현로 초단 · BL 초단)은 제외</span>
+                <button onclick="printYearTimeline()" id="timeline-print-btn" title="이 일정표만 인쇄"
+                        class="ml-auto flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors">
+                    <i class="fa-solid fa-print"></i> 인쇄
+                </button>
+                <button onclick="exportYearTimelineImage()" id="timeline-export-btn" title="이 해의 일정을 이미지로 저장"
+                        class="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors shadow-sm">
+                    <i class="fa-solid fa-image"></i> 이미지로 저장
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 🟢 [NEW] 글자수 관리 연간 통계 모달 -->
+    <div id="writer-year-stats-modal" class="modal-overlay">
+        <div class="modal-content h-auto" style="max-width: 1700px; width: 96%; max-height: calc(100vh - 48px);">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <div class="flex items-center gap-3">
+                    <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-chart-column text-emerald-500"></i> 연간 글자수 통계</h3>
+                    <div class="flex items-center bg-slate-100 rounded-lg p-0.5">
+                        <button onclick="changeWriterYearStats(-1)" class="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-left"></i></button>
+                        <span id="writer-year-stats-label" class="px-2 font-bold text-slate-700 text-sm text-center whitespace-nowrap">2026년</span>
+                        <button onclick="changeWriterYearStats(1)" class="w-6 h-6 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+                <button onclick="closeWriterYearStats()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div id="writer-year-stats-body" class="flex-1 overflow-y-auto scroll-invisible space-y-4"></div>
+        </div>
+    </div>
+
+    <!-- 🟢 [NEW] 기간 일정(긴 일정) 모달 -->
+    <div id="write-span-modal" class="modal-overlay">
+      <div id="write-span-modal-group">
+        <div id="span-workinfo-panel" class="modal-content" style="max-width:280px; margin-right:16px; visibility:hidden; padding:0; overflow:hidden;">
+            <div id="swi-header" class="px-5 pt-5 pb-4">
+                <p class="text-[10px] font-bold uppercase tracking-widest mb-1.5" style="color:var(--primary)"><i class="fa-solid fa-book-open mr-1"></i> 작품 정보</p>
+                <h4 id="swi-title" class="text-lg font-extrabold text-slate-800 leading-snug break-keep">-</h4>
+                <span id="swi-genre-badge" class="inline-block mt-2 text-[10px] font-bold px-2.5 py-1 rounded-full">-</span>
+            </div>
+            <div class="px-5 py-4 space-y-3">
+                <div class="flex items-center gap-3 text-sm">
+                    <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-building text-xs"></i></div>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] text-slate-400">출판사</p>
+                        <p id="swi-publisher" class="font-bold text-slate-700 truncate">-</p>
+                    </div>
+                </div>
+                <div id="swi-dates-row" class="flex items-start gap-3">
+                    <div class="flex items-center gap-3 text-sm flex-1 min-w-0">
+                        <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-rocket text-xs"></i></div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] text-slate-400 mb-1">출간 예정일</p>
+                            <div class="flex items-center gap-1.5">
+                                <input type="date" id="swi-publish-date" onchange="swiUpdatePublishDate()" class="flex-1 min-w-0 p-1.5 bg-slate-50 rounded-lg border border-transparent text-xs outline-none focus:border-amber-300 focus:bg-white transition-colors">
+                                <input type="month" id="swi-pending-month" onchange="swiUpdatePublishDate()" class="hidden flex-1 min-w-0 p-1.5 bg-slate-50 rounded-lg border border-transparent text-xs outline-none focus:border-amber-300 focus:bg-white transition-colors">
+                                <label class="flex items-center shrink-0 cursor-pointer" title="출간 예정(날짜 미정)">
+                                    <input type="checkbox" id="swi-pending" onchange="swiTogglePending(this)" class="accent-amber-500 w-3.5 h-3.5">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 text-sm">
+                    <div class="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0"><i class="fa-solid fa-file-signature text-xs"></i></div>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] text-slate-400 mb-1">완고 입고일</p>
+                        <input type="date" id="swi-manuscript-date" onchange="swiUpdateManuscriptDate()" class="w-full p-1.5 bg-slate-50 rounded-lg border border-transparent text-xs outline-none focus:border-amber-300 focus:bg-white transition-colors">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mx-5 border-t border-slate-100"></div>
+
+            <div class="px-5 py-4">
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1"><i class="fa-solid fa-bullseye"></i> 목표 글자수 <span class="font-normal normal-case text-slate-300">(수정 가능)</span></p>
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl pl-3 pr-2 py-2">
+                        <span class="text-xs font-bold text-slate-500">공포</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="swi-goal-withspace" onchange="swiUpdateGoal('withspace')" class="w-20 bg-transparent text-right font-bold text-slate-700 text-sm outline-none">
+                            <span class="text-xs text-slate-400 shrink-0">자</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl pl-3 pr-2 py-2">
+                        <span class="text-xs font-bold text-slate-500">공미</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" id="swi-goal-nospace" onchange="swiUpdateGoal('nospace')" class="w-20 bg-transparent text-right font-bold text-slate-700 text-sm outline-none">
+                            <span class="text-xs text-slate-400 shrink-0">자</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-content modal-tall">
+            <div class="flex justify-between items-center mb-3 shrink-0">
+                <h3 class="text-lg font-bold text-slate-700" id="write-span-modal-title">📏 기간 일정 추가</h3>
+                <button onclick="closeWriteSpanModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+
+            <div class="modal-scroll-body custom-scrollbar pr-1.5">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-bold text-slate-600 block mb-1">일정 제목</label>
+                        <input type="text" id="span-title-input" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400" placeholder="예) 텐시안 배너 연재분 집필">
+                    </div>
+                    <div>
+                        <label class="text-sm font-bold text-slate-600 block mb-1">작품 연결 (선택)</label>
+                        <select id="span-work-select" onchange="updateSpanConfirmBtn(); updateSpanWorkInfoPanel();" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400"></select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1.5">일정 종류</label>
+                    <div id="span-type-group" class="grid grid-cols-3 gap-1.5"></div>
+                    <p id="span-type-hint" class="text-[11px] text-slate-400 mt-1.5"></p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-bold text-slate-600 block mb-1">시작일</label>
+                        <input type="date" id="span-start-input" oninput="updateSpanPreview()" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400">
+                    </div>
+                    <div>
+                        <label class="text-sm font-bold text-slate-600 block mb-1">종료일</label>
+                        <input type="date" id="span-end-input" oninput="updateSpanPreview()" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400">
+                    </div>
+                </div>
+
+                <div id="span-daily-wrap">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-sm font-bold text-slate-600">하루 집필량</label>
+                        <div class="flex items-center gap-1.5">
+                            <input type="number" id="span-daily-input" value="8000" min="0" step="500" oninput="syncSpanDailyHighlight()" class="w-28 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm text-right outline-none focus:border-amber-400">
+                            <span class="text-sm text-slate-500 shrink-0">자</span>
+                        </div>
+                    </div>
+                    <div id="span-daily-preset-group" class="grid grid-cols-8 gap-1.5"></div>
+                    <div class="mt-2">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold text-slate-500">구간별 하루 글자수 <span class="font-normal text-slate-400">(이 날짜들만 다르게)</span></span>
+                            <button type="button" onclick="addSpanDailyRangeRow()" class="text-[11px] font-bold text-amber-600 hover:text-amber-700">+ 구간 추가</button>
+                        </div>
+                        <div id="span-dailyrange-list" class="space-y-1.5"></div>
+                    </div>
+                </div>
+
+                <div id="span-rest-section">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-sm font-bold text-slate-600">쉬는 날</label>
+                        <div class="flex items-center bg-slate-100 rounded-lg p-0.5">
+                            <button type="button" id="span-rest-mode-count" onclick="setSpanRestMode('count')" class="px-3 py-1 text-xs font-bold rounded-md transition-all">주 N회</button>
+                            <button type="button" id="span-rest-mode-days" onclick="setSpanRestMode('days')" class="px-3 py-1 text-xs font-bold rounded-md transition-all">요일 지정</button>
+                        </div>
+                    </div>
+
+                    <div id="span-rest-count-box" class="flex items-center gap-2">
+                        <span class="text-sm text-slate-500 shrink-0">일주일에</span>
+                        <input type="number" id="span-rest-input" value="1" min="0" max="7" oninput="updateSpanPreview()" class="w-24 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400">
+                        <span class="text-sm text-slate-500 shrink-0">번 쉬기</span>
+                    </div>
+
+                    <div id="span-rest-days-box" class="hidden">
+                        <div id="span-weekday-group" class="grid grid-cols-7 gap-1.5"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">막대 색상</label>
+                    <div id="span-color-group" class="grid gap-1.5" style="grid-template-columns: repeat(12, minmax(0, 1fr));">
+                        <button type="button" data-color="#f0e0a8" onclick="selectSpanColor('#f0e0a8')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#f0e0a8"></button>
+                        <button type="button" data-color="#b8dcc8" onclick="selectSpanColor('#b8dcc8')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#b8dcc8"></button>
+                        <button type="button" data-color="#b8d0f0" onclick="selectSpanColor('#b8d0f0')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#b8d0f0"></button>
+                        <button type="button" data-color="#C5B3D3" onclick="selectSpanColor('#C5B3D3')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#C5B3D3"></button>
+                        <button type="button" data-color="#dcdcdc" onclick="selectSpanColor('#dcdcdc')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#dcdcdc"></button>
+                        <button type="button" data-color="#cddba4" onclick="selectSpanColor('#cddba4')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#cddba4"></button>
+                        <button type="button" data-color="#FFD6E0" onclick="selectSpanColor('#FFD6E0')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#FFD6E0"></button>
+                        <button type="button" data-color="#FFCA95" onclick="selectSpanColor('#FFCA95')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:#FFCA95"></button>
+                        <button type="button" data-color="linear-gradient(135deg, #f6d365, #fda085)" onclick="selectSpanColor('linear-gradient(135deg, #f6d365, #fda085)')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:linear-gradient(135deg, #f6d365, #fda085)"></button>
+                        <button type="button" data-color="linear-gradient(135deg, #a1c4fd, #c2e9fb)" onclick="selectSpanColor('linear-gradient(135deg, #a1c4fd, #c2e9fb)')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:linear-gradient(135deg, #a1c4fd, #c2e9fb)"></button>
+                        <button type="button" data-color="linear-gradient(135deg, #d4fc79, #96e6a1)" onclick="selectSpanColor('linear-gradient(135deg, #d4fc79, #96e6a1)')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:linear-gradient(135deg, #d4fc79, #96e6a1)"></button>
+                        <button type="button" data-color="linear-gradient(135deg, #fbc2eb, #a6c1ee)" onclick="selectSpanColor('linear-gradient(135deg, #fbc2eb, #a6c1ee)')" class="span-color-btn w-full h-7 rounded-lg border-2 border-transparent" style="background:linear-gradient(135deg, #fbc2eb, #a6c1ee)"></button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">메모 (선택)</label>
+                    <input type="text" id="span-memo-input" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-amber-400" placeholder="자유롭게 입력하세요">
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-sm font-bold text-slate-600">확정 시 하루 카드 개수</label>
+                        <div class="flex items-center gap-1.5">
+                            <input type="number" id="span-split-input" value="1" min="1" max="10" oninput="updateSpanPreview()" class="w-16 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm text-right outline-none focus:border-amber-400">
+                            <span class="text-sm text-slate-500 shrink-0">개</span>
+                        </div>
+                    </div>
+                    <p id="span-split-hint" class="text-[11px] text-slate-400">카드 1개당 8,000자</p>
+                </div>
+                </div>
+
+                <div id="span-preview" class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-slate-600 leading-relaxed" style="min-height:74px;"></div>
+            </div>
+
+            <div class="mt-3 pt-3 border-t border-slate-100 flex justify-between gap-3 shrink-0">
+                <button id="span-delete-btn" onclick="deleteWriteSpan()" class="hidden px-4 py-2.5 bg-rose-50 text-rose-500 rounded-xl font-bold hover:bg-rose-100">삭제</button>
+                <div class="flex items-center gap-2 ml-auto">
+                    <div id="span-confirm-split-group" class="hidden items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                        <button type="button" onclick="setSpanConfirmSplit(1)" id="span-confirm-split-1" class="px-2.5 py-1.5 text-xs font-bold rounded-md transition-all">1장씩</button>
+                        <button type="button" onclick="setSpanConfirmSplit(2)" id="span-confirm-split-2" class="px-2.5 py-1.5 text-xs font-bold rounded-md transition-all">2장씩</button>
+                    </div>
+                    <button id="span-confirm-btn" onclick="confirmWriteSpan()" title="이 기간의 집필 카드를 날짜별로 만들어요" class="hidden px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-xl font-bold hover:bg-emerald-100 border border-emerald-200">✅ 확정 (카드 만들기)</button>
+                    <button onclick="closeWriteSpanModal()" class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">취소</button>
+                    <button onclick="saveWriteSpan()" class="px-6 py-2.5 bg-amber-500 text-white rounded-xl font-bold hover:bg-amber-600">저장</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="span-midbreak-panel" class="modal-content" style="max-width:380px; margin-left:16px; visibility:hidden; padding:0; overflow:hidden;">
+            <div class="px-5 pt-5 pb-4" style="background:linear-gradient(135deg, #fdf1de, #fff8ee);">
+                <p class="text-sm font-bold text-amber-600"><i class="fa-solid fa-mug-hot mr-1"></i> 중간 휴식 기간</p>
+            </div>
+            <div class="px-5 py-4">
+                <div id="span-midbreak-list" class="space-y-1.5"></div>
+                <button type="button" onclick="addSpanMidBreakRow()" class="mt-2 w-full py-2 text-xs font-bold text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors">+ 휴식 기간 추가</button>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- [NEW] 스케줄 태스크 모달 -->
+    <div id="task-schedule-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-h-[85vh]">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700" id="task-modal-title">📅 세부 일정 추가</h3>
+                <button onclick="closeTaskModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            
+            <p id="task-modal-date" class="text-sm font-bold text-indigo-600 mb-4 bg-indigo-50 px-3 py-1.5 rounded-lg inline-block"></p>
+            <input type="hidden" id="task-modal-date-input">
+            <input type="hidden" id="task-modal-id-input">
+
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-sm font-bold text-slate-600">작품 선택</label>
+                        <div id="task-modal-genre-tabs" class="flex gap-1 overflow-x-auto custom-scrollbar pb-1"></div>
+                    </div>
+                    <select id="task-work-select" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400 transition-all"></select>
+                </div>
+                
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="text-sm font-bold text-slate-600">분류 선택</label>
+                        <button type="button" onclick="openTaskCategoryManager()" title="분류 항목 설정" class="text-slate-400 hover:text-indigo-500 transition-colors px-1"><i class="fa-solid fa-gear"></i></button>
+                    </div>
+                    <select id="task-category-select" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400"></select>
+                </div>
+
+                <div>
+                    <label class="text-sm font-bold text-slate-600 block mb-1">메모 (선택)</label>
+                    <input type="text" id="task-memo-input" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:border-indigo-400" placeholder="자유롭게 입력하세요">
+                </div>
+
+                 <div id="task-complete-container" class="hidden mt-4 pt-4 border-t border-slate-100">
+                     <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="task-is-completed" class="w-5 h-5 accent-indigo-500">
+                        <span class="text-sm font-bold text-indigo-600">완료 처리</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-between gap-3">
+                <button id="task-delete-btn" onclick="deleteTaskSchedule()" class="hidden px-4 py-2.5 bg-rose-50 text-rose-500 rounded-xl font-bold hover:bg-rose-100">삭제</button>
+                <div class="flex gap-2 ml-auto">
+                    <button onclick="closeTaskModal()" class="px-5 py-2.5 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200">취소</button>
+                    <button onclick="saveTaskSchedule()" class="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- [NEW] 스케줄 분류 항목 관리 모달 -->
+    <div id="task-category-manager-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700">분류 항목 관리</h3>
+                <button onclick="closeTaskCategoryManager()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+
+            <div class="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
+                <div class="grid grid-cols-4 gap-2">
+                    <div class="col-span-3">
+                        <label class="text-[10px] font-bold text-slate-400 ml-1 mb-1 block">분류명</label>
+                        <input type="text" id="new-task-category-input" class="w-full p-2 rounded-lg border text-sm outline-none focus:border-indigo-400" placeholder="예: 표지 시안 전달">
+                    </div>
+                    <div class="flex items-end">
+                        <button id="btn-add-update-task-category" onclick="addNewTaskCategory()" class="w-full h-[38px] bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm transition-all">추가</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-y-auto flex-1 custom-scrollbar border border-slate-100 rounded-xl">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-50 text-slate-500 font-bold text-xs sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2 w-10 text-center">이동</th>
+                            <th class="px-4 py-2">이름</th>
+                            <th class="px-4 py-2 w-20 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="task-category-manager-list" class="divide-y divide-slate-50"></tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">※ 순서를 드래그로 바꿀 수 있어요. 이름을 바꾸면 해당 분류로 저장된 기존 일정도 자동으로 함께 변경돼요.</p>
+        </div>
+    </div>
+
+    <!-- [NEW] 집필 관리 분류 항목 관리 모달 (스케줄 관리와 동일한 방식이지만 독립적으로 연동됨) -->
+    <div id="write-category-manager-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-h-[85vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700">집필 분류 항목 관리</h3>
+                <button onclick="closeWriteCategoryManager()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+
+            <div class="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
+                <div class="grid grid-cols-4 gap-2">
+                    <div class="col-span-3">
+                        <label class="text-[10px] font-bold text-slate-400 ml-1 mb-1 block">분류명</label>
+                        <input type="text" id="new-write-category-input" class="w-full p-2 rounded-lg border text-sm outline-none focus:border-emerald-400" placeholder="예: 표지 시안 확인">
+                    </div>
+                    <div class="flex items-end">
+                        <button id="btn-add-update-write-category" onclick="addNewWriteCategory()" class="w-full h-[38px] bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 shadow-sm transition-all">추가</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-y-auto flex-1 custom-scrollbar border border-slate-100 rounded-xl">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-slate-50 text-slate-500 font-bold text-xs sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2 w-10 text-center">이동</th>
+                            <th class="px-4 py-2">이름</th>
+                            <th class="px-4 py-2 w-20 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="write-category-manager-list" class="divide-y divide-slate-50"></tbody>
+                </table>
+            </div>
+            <p class="text-xs text-slate-400 mt-3">※ 순서를 드래그로 바꿀 수 있어요. 이름을 바꾸면 해당 분류로 저장된 기존 집필 기록도 자동으로 함께 변경돼요. 이 분류는 스케줄 관리의 분류와는 별개로 관리돼요.</p>
+        </div>
+    </div>
+
+    <!-- 🟢 [NEW] 작품별 '작업 완료' 수동 표시 — 출간일 전이라도 집필/스케줄 작품 목록에서 숨기기 -->
+    <div id="work-done-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-h-[85vh] flex flex-col" style="max-width:760px;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700">작품 완료 상태 수정</h3>
+                <button onclick="closeWorkDoneModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <p class="text-xs text-slate-400 mb-3">체크하면 출간일이 안 지났어도 집필/스케줄 작품 목록에서 숨겨져요. "출간완료" 버튼을 켜면 숨긴 작품도 다시 보여요.</p>
+            <div id="work-done-list" class="overflow-y-auto flex-1 custom-scrollbar grid grid-cols-2 gap-3 content-start"></div>
+        </div>
+    </div>
+
+    <input type="file" id="cover-upload-input" accept="image/*" class="hidden" onchange="processCoverImage(this)">
+
+    <div id="cover-crop-modal" class="modal-overlay">
+        <div class="modal-content" style="max-width:420px;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-crop text-emerald-500"></i> 표지 자르기</h3>
+                <button onclick="closeCoverCropModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div id="cover-crop-viewport" class="relative mx-auto bg-slate-900 rounded-xl overflow-hidden select-none" style="width:260px; height:390px; touch-action:none; cursor:grab;">
+                <img id="cover-crop-img" draggable="false" style="position:absolute; left:0; top:0; transform-origin:0 0; user-select:none; -webkit-user-drag:none;">
+            </div>
+            <div class="flex items-center gap-3 mt-4">
+                <i class="fa-solid fa-magnifying-glass-minus text-slate-400 text-xs"></i>
+                <input id="cover-crop-zoom" type="range" min="100" max="400" value="100" oninput="updateCoverCropZoom(this.value)" class="flex-1">
+                <i class="fa-solid fa-magnifying-glass-plus text-slate-400 text-xs"></i>
+            </div>
+            <p class="text-[11px] text-slate-400 text-center mt-2">이미지를 드래그해서 위치를 맞추고, 슬라이더로 확대/축소해보세요.</p>
+            <div class="flex gap-2 mt-4">
+                <button onclick="closeCoverCropModal()" class="flex-1 py-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold transition-all">취소</button>
+                <button onclick="applyCoverCrop()" class="flex-1 py-2.5 rounded-lg text-white text-sm font-bold transition-all" style="background:var(--primary)">적용</button>
+            </div>
+        </div>
+    </div>
+
+    <script id="app-src" type="text/plain">
+        // 🟢 변수 선언 영역
+        let fs, path, os, dataFilePath, targetFilePath;
+        let isNodeEnvironment = false;
+        let ipcRenderer = null;
+        const TARGET_DIR = '';
+        document.body.classList.add('sidebar-web');
+
+        // 기존 데이터 구조
+        let masterWorks = [], monthlyData = {}, years = [2024, 2025, 2026], publisherData = {}, analysisData = {}, publisherSortOrder = [], genreList = [], editingGenreIndex = null, genreBadgeOpacity = 0.25, taskCategoryList = [], editingTaskCategoryIndex = null, writeCategoryList = [], editingWriteCategoryIndex = null, isSheetLocked = false, contacts = [], penNames = [], submissions = [], webtoonSubs = {}, webtoonSubOrder = [], incomeGoals = {}, taxSettings = {}, taxGoalMemos = {}, charGoals = {}, taxGoalItems = {}, webtoonManage = {};
+        let webtoonCardSettings = { differentiatePublished: true, publishedColor: '#f7f5f0', penBarStyle: 'rounded', labelColor1: '#64748b', labelColor2: '#64748b', valueColors: { studio: '#1e293b', contract: '#1e293b', rsrate: '#1e293b', mg: '#1e293b', charguide: '#1e293b', cashsheet: '#1e293b', ep1conti: '#1e293b', illustrator: '#1e293b' } };
+        let penNameColorOverrides = {};
+        let webtoonViewFilter = 'all'; // 'all' | 'published' | 'upcoming' | 'pen'
+        let webtoonSortMode = 'date'; // 'date' | 'pen'
+        let workManage = {};
+        let workManageCardSettings = { differentiatePublished: true, publishedColor: '#f7f5f0', penBarStyle: 'rounded', labelColor1: '#64748b', labelColor2: '#64748b', valueColors: { studio: '#1e293b', contract: '#1e293b', rate: '#1e293b', mg: '#1e293b', charcount: '#1e293b', promotion: '#1e293b', charguide: '#1e293b', cashsheet: '#1e293b', ep1conti: '#1e293b' } };
+        let workManageViewFilter = 'all'; // 'all' | 'published' | 'upcoming' | 'genre'
+        let workManageSortMode = 'date'; // 'date' | 'genre'
+        let publisherViewMode = { publishers: 'list', studios: 'list' }; // [NEW] 출판사/스튜디오 줄로 보기 · 카드로 보기
+        let publisherCardSortOrder = []; // [NEW] 카드 보기 전용 순서 (줄 보기 순서와 별도 저장)
+        let taxViewYear = new Date().getFullYear();
+        let modalDesign = 'cozy';   // 팝업창 디자인(코지 테마): cozy | label | polaroid | postcard | fountain
+        let ddayCardFonts = { pub: 'auto', task: 'auto' };   // 목록 카드 글씨체: auto | sans | serif | hand | pen | ink
+        let ddayCardDesigns = { pub: 'heart', task: 'heart' };   // 출간 예정 / 스케줄 목록 카드 디자인 (코지, 각자): heart | polaroid | postcard | fountain
+        let widgetSettingsData = {
+            bgHex: '#ffffff', opacity: 0.92,
+            textHex: '#1e1e28', textOpacity: 0.92,
+            sectionHex: '#64748b', sectionOpacity: 0.85,
+            textSize: 13, textWeight: '500',
+            locked: false, width: 250, height: 400
+        };
+        let tableFontSettings = { 
+            cell: { size: 0.85, color: '#475569', weight: '400' }, 
+            total: { size: 0.85, color: '#334155', weight: '700' },
+            grand: { size: 0.85, color: '#15803d', weight: '700' }
+        };
+        let crosshairSettings = { enabled: true, color: '#ffe4e6' };
+        
+        // [WRITER] 집필 기록 데이터
+        let writerWorks = [], writerDailyData = {}, writerGlobalDailyGoal = 5000;        const WRITER_BULK_UNASSIGNED_KEY = '__unassigned__'; // 작품 미지정 월간 글자수 일괄 입력용 고정 키
+        let writerViewDate = new Date(), writerCalDate = new Date();
+        let writerJumpToDate = false; // [NEW] 글자수 관리 달력에서 날짜를 클릭해 이동할 때, 오늘 날짜로 리셋되지 않도록 하는 플래그
+        let writerJumpToWorkKey = null; // [NEW] 글자수 관리 달력에서 날짜를 클릭했을 때, 그 날짜에 기록된 작품으로 자동 선택하기 위한 플래그
+        const WRITER_HOURS = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0];   // 아침 6시 ~ 밤 12시(자정)
+        // 예전에 새벽 1~2시에 적어둔 기록도 계속 읽을 수 있게 (표에는 안 보이지만 글자수 계산엔 반영)
+        const WRITER_HOURS_SCAN = [...WRITER_HOURS, 1, 2];
+        let writerDebounceTimer;
+        let writerLastWorkKey = localStorage.getItem('writerLastWorkKey_v6') || '';
+        let writerLastFocusedHour = null, writerLastFocusedField = 'prev';
+
+        // [NEW] 집필/스케줄 데이터 구조
+        let writeSchedules = {};
+        // 🟢 [NEW] 작품별 권(卷) 목록 — { workId: [{id, name, goal}] }
+        // 카드마다 어느 권인지 지정하면, 그 권 안에서만 누적을 세고 권 목표를 분모로 쓴다.
+        let writeVolumes = {};
+        // 🟢 [NEW] 권을 나눴다가 전부 합친(통합한) 적 있는 작품 — { workId: true }
+        // 권이 있던 작품은 원고 위치가 권마다 0자부터 다시 세어져 있어서, 합친 뒤엔 위치 대신
+        // 실제 글자수(diff) 합산으로 진행률을 계산해야 한다. 애초에 권을 나눈 적 없는 작품은
+        // 그대로 원고 위치 방식을 쓴다 (동작 변경 없음).
+        let writeMergedVolumeWorks = {};
+
+        // 🟢 [NEW] 기간 일정(긴 일정) — 집필 달력 위에 여러 날에 걸쳐 길게 표시되는 막대.
+        // { id, title, workId, startDate, endDate, restPerWeek, dailyChars, color, memo }
+        let writeSpans = [];
+        let taskSchedules = {};
+        // [NEW] 집필 카운터 초기화 기준점 — storageKey별로 "이 값까지는 카운터에서 뺀다"를 저장.
+        // 실제 글자수 기록(writerDailyData)은 그대로 두고, 진행률/카운터 표시만 0부터 다시 세게 하기 위함.
+        let writeCounterBase = {};
+        // [NEW] 카운터 리셋 시점의 날짜 — storageKey별로 저장. 집필관리 달력의 누적 목표 블록(cumulativeGoalMap)
+        // 계산 시, 이 날짜 이전에 등록된 목표 블록은 누적에서 제외해서 리셋 시점부터 0자로 다시 쌓이게 함.
+        let writeCounterResetDate = {};
+
+        // UI 상태
+        let activeTheme = 'cozy';
+        // lilac/peach/구버전 lavender는 팔레트에서 빠졌으니 기본 테마로 되돌린다
+        let chartViewYear = new Date().getFullYear();
+        let genreChartViewYear = 'total';
+        let topWorksYear = new Date().getFullYear();
+        let dashYearOffset = 0;
+        let dashMonthOffset = 0;
+        let currentPublisherTab = 'publishers', currentEditingPublisher = null, currentVisualLibTab = '전체', uploadingWorkId = null, memoEditingWorkId = null, tempContractFile = null;
+        let currentYear = new Date().getFullYear();
+        const DEFAULT_COLORS = { 'BL 장편': '#94B4C1', '현로 장편': '#F5D2D2', '현로 초단': '#F6F0D7', 'BL 초단': '#DCE4C9', '웹툰': '#DDAED3', '로판 장편': '#fbbf24' };
+
+        // [NEW] 집필/스케줄 UI 상태
+        let writeCalDate = new Date();
+        // [FIX] contactSortMode를 원래 있던 자리(스크립트 훨씬 아래쪽)보다 훨씬 앞으로 옮김.
+        // 원래 위치에 있으면, 초기 데이터 로딩(hydrateFromParsed)이 이 변수를 아직 선언되기도 전에
+        // 참조하게 되어 "ReferenceError: Cannot access 'contactSortMode' before initialization"로
+        // 매번 로딩이 중간에 멈춰버리고, 그 이후 항목(집필 일정/글자수 기록/장르 목록/연락처 등)이
+        // 전부 빈 기본값으로 남아버리는 문제가 있었음. 선언을 로딩 코드보다 앞으로 옮겨서 해결.
+        // 'date'/'penName' 버튼을 누르면 그 기준으로 한 번 정렬해서 배열 순서 자체를 바꿔두고,
+        // 그 뒤로는 화면에서 매번 다시 정렬하지 않고 배열 순서 그대로 보여준다.
+        // 그래서 버튼을 누른 다음 카드를 자유롭게 드래그해도(순서가 배열에 바로 반영됨) 흐트러지지 않는다.
+        // contactSortMode는 지금 어느 버튼이 눌려있는지 표시용으로만 쓰고, 정렬 로직에는 안 쓴다.
+        let contactSortMode = 'date'; // 'date' or 'penName'
+        let taskCalDate = new Date();
+        let writeGenreFilter = '전체';
+        let taskGenreFilter = '전체';
+
+        // 집필/스케줄 카드 설정
+        let writeCardSettings = {
+            fontSize: 12,
+            fillOpacity: 0.25,
+            colorDefault: '#F9F8F6',
+            emptyDayChars: 6000
+        };
+        let taskCardSettings = {
+            fontSize: 12,
+            colorDefault: '#F9F8F6'
+        };
+        
+        // 카테고리 색상
+        const TASK_COLORS = {
+            "완고 입고": "#ef4444", "서지 정보 전달": "#f97316", "시놉시스 짜기": "#8b5cf6", 
+            "작교본 전달": "#3b82f6", "가필 전달": "#10b981", "심사고 전달": "#f59e0b", 
+            "표지 제안서 전달": "#ec4899", "분절본 전달": "#06b6d4", "웹툰 캐릭터 가이드 전달": "#14b8a6", "기타": "#64748b"
+        };
+        // [NEW] 웹툰 관리 탭과 이름으로 자동 연동되는 특수 분류 — 이름을 바꾸거나 삭제하면 연동이 끊어짐
+        const PROTECTED_TASK_CATEGORIES = ['웹툰 캐릭터 가이드 전달', '표지 제안서 전달'];
+
+        // [NEW] 집필 관리 분류 색상 (스케줄 관리와는 독립적으로 관리됨)
+        const WRITE_COLORS = { "작교": "#FBC3C1", "시놉시스": "#BBD5DA", "기타": "#F2EAE0" };
+
+        // ── 회전 백업: 덮어쓰기 직전 현재 파일을 스냅샷으로 보관 (12시간에 한 번, 최근 10개 유지) ──
+        // 백업 위치: 로컬 홈 폴더 + 구글드라이브 백업 폴더
+        let _backupDoneThisSession = false;
+        const BACKUP_PREFIX = 'RoyaltyData_v6.backup.';
+        const GDRIVE_BACKUP_PREFIX = '인세_자동백업_';
+        function rotateBackup() {
+            if (!isNodeEnvironment) return;
+            try {
+                if (!fs.existsSync(dataFilePath)) return;
+
+                const now = Date.now();
+                const d = new Date();
+                const stamp = d.getFullYear() + '-' +
+                    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(d.getDate()).padStart(2, '0') + '_' +
+                    String(d.getHours()).padStart(2, '0') +
+                    String(d.getMinutes()).padStart(2, '0');
+
+                // ── 로컬 회전 백업 (10개) ──
+                const localDir = path.dirname(dataFilePath);
+                const listLocalBackups = () => fs.readdirSync(localDir)
+                    .filter(f => f.startsWith(BACKUP_PREFIX) && f.endsWith('.json'))
+                    .sort();
+                let localExisting = listLocalBackups();
+                // 앱을 몇 번 켜든 새 사본은 12시간에 한 번만 (예전엔 켤 때마다 23MB 사본이 하나씩 생겼음)
+                if (localExisting.length > 0) {
+                    const newest = localExisting[localExisting.length - 1];
+                    const m = fs.statSync(path.join(localDir, newest)).mtimeMs;
+                    if ((now - m) < 12 * 3600 * 1000) {
+                        // 로컬 스킵 — 구글드라이브도 같이 스킵
+                        return;
+                    }
+                }
+                // 백업을 실제로 만들 차례일 때만: 현재 디스크 파일이 온전한지 검사 (빈/깨진 파일은 백업하지 않음 → 백업 오염 방지)
+                // (예전엔 저장할 때마다 큰 파일을 읽어서 검사해서 입력이 밀렸음)
+                let cur;
+                try { cur = JSON.parse(fs.readFileSync(dataFilePath, 'utf-8')); }
+                catch (e) { return; }
+                if (!cur || !Array.isArray(cur.masterWorks) || cur.masterWorks.length === 0) return;
+                const localBackupPath = path.join(localDir, BACKUP_PREFIX + stamp + '.json');
+                if (!fs.existsSync(localBackupPath)) fs.copyFileSync(dataFilePath, localBackupPath);
+                localExisting = listLocalBackups();
+                while (localExisting.length > 10) {
+                    try { fs.unlinkSync(path.join(localDir, localExisting.shift())); } catch (e) {}
+                }
+
+                // ── 구글드라이브 회전 백업 (10개) ──
+                if (fs.existsSync(TARGET_DIR)) {
+                    try {
+                        const listGdriveBackups = () => fs.readdirSync(TARGET_DIR)
+                            .filter(f => f.startsWith(GDRIVE_BACKUP_PREFIX) && f.endsWith('.json'))
+                            .sort();
+                        const gdriveBackupPath = path.join(TARGET_DIR, GDRIVE_BACKUP_PREFIX + stamp + '.json');
+                        if (!fs.existsSync(gdriveBackupPath)) fs.copyFileSync(dataFilePath, gdriveBackupPath);
+                        let gdriveExisting = listGdriveBackups();
+                        while (gdriveExisting.length > 10) {
+                            try { fs.unlinkSync(path.join(TARGET_DIR, gdriveExisting.shift())); } catch (e) {}
+                        }
+                    } catch (e) { console.error('구글드라이브 회전 백업 실패', e); }
+                }
+
+                _backupDoneThisSession = true;
+            } catch (e) { console.error('회전 백업 실패', e); }
+        }
+
+        // 구글드라이브 사본 쓰기 — 화면 스레드를 막지 않게 비동기로. 쓰는 중에 또 저장되면 마지막 내용만 이어서 쓴다
+        let _gdriveWriting = false, _gdrivePending = null;
+        function writeGdriveCopyAsync(text) {
+            if (_gdriveWriting) { _gdrivePending = text; return; }
+            _gdriveWriting = true;
+            fs.writeFile(targetFilePath, text, 'utf-8', (err) => {
+                if (err) console.error('구글드라이브 사본 저장 실패', err);
+                _gdriveWriting = false;
+                if (_gdrivePending !== null) { const t = _gdrivePending; _gdrivePending = null; writeGdriveCopyAsync(t); }
+            });
+        }
+
+        let saveTimeout = null;
+        function save(silent = false) { 
+            if (saveTimeout) clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                try {
+                    try { localStorage.setItem('lastModified_v6', new Date().toISOString()); } catch(e) {}
+                    const dataToSave = { 
+                        masterWorks, monthlyData, years, publisherData, analysisData, 
+                        publisherSortOrder, publisherCardSortOrder, publisherViewMode, genreList, genreBadgeOpacity, tableFontSettings, crosshairSettings,
+                        writeSchedules, writeSpans, writeVolumes, writeMergedVolumeWorks, taskSchedules, contacts, penNames, widgetSettingsData, ddayCardDesigns, ddayCardFonts, modalDesign, writeCardSettings, taskCardSettings, taskColors: TASK_COLORS, taskCategoryList, writeColors: WRITE_COLORS, writeCategoryList,
+                        writerWorks, writerDailyData, writerGlobalDailyGoal, writeCounterBase, writeCounterResetDate, submissions, webtoonSubs, webtoonSubOrder, incomeGoals, taxSettings, taxGoalMemos, charGoals, writerLastWorkKey, taxGoalItems, contactSortMode, webtoonManage, webtoonCardSettings, penNameColorOverrides, webtoonViewFilter, webtoonSortMode, workManage, workManageCardSettings, workManageViewFilter, workManageSortMode
+                    };
+                    const jsonStr = JSON.stringify(dataToSave);
+
+                    if (isNodeEnvironment) {
+                        rotateBackup();
+                        fs.writeFileSync(dataFilePath, jsonStr, 'utf-8');
+                        if (!fs.existsSync(TARGET_DIR)) { try { fs.mkdirSync(TARGET_DIR, { recursive: true }); } catch(e) {} }
+                        if (fs.existsSync(TARGET_DIR)) {
+                            writeGdriveCopyAsync(jsonStr);
+                            if (!silent) showSaveIndicator('gdrive');
+                        } else {
+                            if (!silent) showSaveIndicator('local');
+                        }
+                    }
+
+                    localStorage.setItem('theme_v6', activeTheme);
+                    if (typeof window.cloudSave === 'function') window.cloudSave(dataToSave);
+                    window.__liteSave(jsonStr);
+                    const bgMain = document.documentElement.style.getPropertyValue('--bg-main');
+                    if(bgMain) localStorage.setItem('bg_main_v6', bgMain);
+
+                } catch (e) { console.error("Save failed", e); } 
+            }, 1000);
+        }
+
+        function showSaveIndicator(type) {
+            const ind = document.getElementById('save-status');
+            const txt = document.getElementById('save-status-text');
+            if(!ind || !txt) return;
+            ind.classList.remove('opacity-0');
+            
+            if (type === 'gdrive') {
+                ind.innerHTML = '<i class="fa-solid fa-cloud-check mr-1"></i> <span>G드라이브 동기화 완료</span>';
+            } else {
+                ind.innerHTML = '<i class="fa-solid fa-hard-drive mr-1"></i> <span>로컬 임시 저장됨</span>';
+            }
+            setTimeout(() => ind.classList.add('opacity-0'), 2500);
+        }
+
+        // 저장된 객체로 전역 상태 채우기 (로컬 파일/클라우드 공용)
+        function hydrateFromParsed(parsed) {
+            if (!parsed) return;
+            masterWorks = parsed.masterWorks || [];
+            monthlyData = parsed.monthlyData || {};
+            years = parsed.years || [2024, 2025, 2026];
+            publisherData = parsed.publisherData || {};
+            analysisData = parsed.analysisData || {};
+            publisherSortOrder = parsed.publisherSortOrder || [];
+            publisherCardSortOrder = parsed.publisherCardSortOrder || [];
+            if (parsed.publisherViewMode) Object.assign(publisherViewMode, parsed.publisherViewMode);
+            if (parsed.contactSortMode) contactSortMode = parsed.contactSortMode;
+            if (parsed.webtoonViewFilter) webtoonViewFilter = parsed.webtoonViewFilter;
+            if (parsed.webtoonSortMode) webtoonSortMode = parsed.webtoonSortMode;
+            genreList = parsed.genreList || [];
+            genreBadgeOpacity = parsed.genreBadgeOpacity || 0.25;
+            if (parsed.tableFontSettings) tableFontSettings = parsed.tableFontSettings;
+            if (parsed.crosshairSettings) crosshairSettings = parsed.crosshairSettings;
+            writeSchedules = parsed.writeSchedules || {};
+            writeSpans = parsed.writeSpans || [];
+            writeVolumes = parsed.writeVolumes || {};
+            writeMergedVolumeWorks = parsed.writeMergedVolumeWorks || {};
+            migrateWriteResetToVolumes();   // 예전 '새 구간 시작' 표시를 권으로 옮긴다
+            migrateCounterBaseToPosition(); // '지금부터 카운터' 기준점을 원고 위치 기준으로 다시 계산
+            taskSchedules = parsed.taskSchedules || {};
+            contacts = parsed.contacts || [];
+            sortContactsInPlace(contactSortMode); // 불러온 순서가 예전 자동 정렬 결과와 같게, 최초 1회만 정렬
+            penNames = parsed.penNames || [];
+            submissions = parsed.submissions || [];
+            webtoonSubs = parsed.webtoonSubs || {};
+            console.log('[Hydrate] webtoonSubs __mail__:', !!webtoonSubs['__mail__'], 'keys:', Object.keys(webtoonSubs));
+            webtoonSubOrder = parsed.webtoonSubOrder || [];
+            incomeGoals = parsed.incomeGoals || {};
+            taxSettings = parsed.taxSettings || {};
+            taxGoalMemos = parsed.taxGoalMemos || {};
+            taxGoalItems = parsed.taxGoalItems || {};
+            charGoals = parsed.charGoals || {};
+            webtoonManage = parsed.webtoonManage || {};
+            penNameColorOverrides = parsed.penNameColorOverrides || {};
+            if (parsed.webtoonCardSettings) Object.assign(webtoonCardSettings, parsed.webtoonCardSettings);
+            workManage = parsed.workManage || {};
+            if (parsed.workManageCardSettings) Object.assign(workManageCardSettings, parsed.workManageCardSettings);
+            if (parsed.workManageViewFilter) workManageViewFilter = parsed.workManageViewFilter;
+            if (parsed.workManageSortMode) workManageSortMode = parsed.workManageSortMode;
+            if (parsed.widgetSettingsData) widgetSettingsData = parsed.widgetSettingsData;
+            if (parsed.modalDesign) modalDesign = parsed.modalDesign;
+            if (parsed.ddayCardFonts) Object.assign(ddayCardFonts, parsed.ddayCardFonts);
+            if (parsed.ddayCardDesigns) Object.assign(ddayCardDesigns, parsed.ddayCardDesigns);
+            else if (parsed.ddayCardDesign) { ddayCardDesigns.pub = parsed.ddayCardDesign; ddayCardDesigns.task = parsed.ddayCardDesign; }   // 예전 단일 설정 이어받기
+            if (parsed.writeCardSettings) Object.assign(writeCardSettings, parsed.writeCardSettings);
+            if (parsed.taskCardSettings) Object.assign(taskCardSettings, parsed.taskCardSettings);
+            if (parsed.taskColors) Object.assign(TASK_COLORS, parsed.taskColors);
+            taskCategoryList = parsed.taskCategoryList || [];
+            if (parsed.writeColors) Object.assign(WRITE_COLORS, parsed.writeColors);
+            writeCategoryList = parsed.writeCategoryList || [];
+            if (parsed.writerWorks) writerWorks = parsed.writerWorks;
+            if (parsed.writerDailyData) writerDailyData = parsed.writerDailyData;
+            if (parsed.writerGlobalDailyGoal) writerGlobalDailyGoal = parsed.writerGlobalDailyGoal;
+            writeCounterBase = parsed.writeCounterBase || {};
+            writeCounterResetDate = parsed.writeCounterResetDate || {};
+            if (parsed.writerLastWorkKey !== undefined && parsed.writerLastWorkKey !== null) {
+                writerLastWorkKey = parsed.writerLastWorkKey;
+                try { localStorage.setItem('writerLastWorkKey_v6', writerLastWorkKey); } catch(e) {}
+            }
+
+            // 과거에 작품을 삭제했을 때 남아버린 집필/스케줄 일정 정리 (작품이 하나라도 있을 때만)
+            if (Array.isArray(masterWorks) && masterWorks.length > 0) {
+                try { purgeOrphanSchedules(); } catch(e) {}
+            }
+        }
+
+        try {
+            let fileData = null;
+            if (isNodeEnvironment) {
+                if (fs.existsSync(dataFilePath)) fileData = fs.readFileSync(dataFilePath, 'utf-8');
+                else if (fs.existsSync(targetFilePath)) fileData = fs.readFileSync(targetFilePath, 'utf-8');
+            }
+            if (!fileData) fileData = window.__LITE_DATA__ || localStorage.getItem('RoyaltyData_v6_Backup');
+
+            if (fileData) {
+                hydrateFromParsed(JSON.parse(fileData));
+            }
+        } catch(e) { console.error("데이터 로딩 중 에러 발생:", e); }
+
+        // [NEW] 예전 이름으로 저장된 분류를 새 고정 이름으로 자동 이전 (기존 웹툰 연동 유지)
+        function migrateTaskCategoryName(oldName, newName) {
+            if (oldName === newName) return;
+            let changed = false;
+            const idx = taskCategoryList.indexOf(oldName);
+            if (idx > -1) {
+                if (!taskCategoryList.includes(newName)) taskCategoryList[idx] = newName;
+                else taskCategoryList.splice(idx, 1);
+                changed = true;
+            }
+            if (TASK_COLORS[oldName] !== undefined) {
+                if (TASK_COLORS[newName] === undefined) TASK_COLORS[newName] = TASK_COLORS[oldName];
+                delete TASK_COLORS[oldName];
+                changed = true;
+            }
+            Object.keys(taskSchedules).forEach(dateStr => {
+                (taskSchedules[dateStr] || []).forEach(t => { if (t.category === oldName) { t.category = newName; changed = true; } });
+            });
+            if (changed) save(true);
+        }
+        migrateTaskCategoryName('캐릭터 가이드 전달', '웹툰 캐릭터 가이드 전달');
+        migrateTaskCategoryName('표지제안서 전달', '표지 제안서 전달');
+        migrateTaskCategoryName('표지 가이드 전달', '표지 제안서 전달');
+        migrateTaskCategoryName('캐시트 전달', '웹툰 캐릭터 가이드 전달');
+
+        // [NEW] 예전 방식(작교/시놉시스/기타 체크박스)으로 저장된 집필 기록을 새 분류(category) 방식으로 자동 이전
+        (function migrateWriteTypeToCategory() {
+            let changed = false;
+            Object.keys(writeSchedules).forEach(dateStr => {
+                (writeSchedules[dateStr] || []).forEach(s => {
+                    if (s.category === undefined) {
+                        if (s.isCorrection) s.category = '작교';
+                        else if (s.isSynopsis) s.category = '시놉시스';
+                        else if (s.isOther) s.category = '기타';
+                        else s.category = '';
+                        changed = true;
+                    }
+                });
+            });
+            if (changed) save(true);
+        })();
+        // 출판사 '업데이트' 날짜에서 31일 옵션을 없애고 '말일'로 통일했으므로, 예전에 31로 저장된 값을 마이그레이션
+        (function migrateUpdateDay31ToLastDay() {
+            let changed = false;
+            Object.keys(publisherData).forEach(pub => {
+                const info = publisherData[pub];
+                if (info && (info.updateDay === 31 || info.updateDay === '31')) {
+                    info.updateDay = '말일';
+                    changed = true;
+                }
+            });
+            if (changed) save(true);
+        })();
+        
+        if (genreList.length === 0) {
+            genreList = ["BL 장편", "현로 장편", "현로 초단", "BL 초단", "웹툰"].map(name => ({ name, type: name.includes('장편') ? 'long' : 'short', color: DEFAULT_COLORS[name] || '#cbd5e1' }));
+            save(true);
+        }
+
+        if (taskCategoryList.length === 0) {
+            taskCategoryList = Object.keys(TASK_COLORS);
+            save(true);
+        } else {
+            // 공백 차이 등으로 같은 분류명이 중복 저장된 경우 자동 정리 (첫 항목만 남김)
+            const cleanedCatList = taskCategoryList.map(c => (c || '').trim()).filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+            if (cleanedCatList.length !== taskCategoryList.length) { taskCategoryList = cleanedCatList; save(true); }
+        }
+
+        if (writeCategoryList.length === 0) {
+            writeCategoryList = Object.keys(WRITE_COLORS);
+            save(true);
+        } else {
+            const cleanedWriteCatList = writeCategoryList.map(c => (c || '').trim()).filter((c, idx, arr) => c && arr.indexOf(c) === idx);
+            if (cleanedWriteCatList.length !== writeCategoryList.length) { writeCategoryList = cleanedWriteCatList; save(true); }
+        }
+
+        // '메모' 분류는 체크리스트 카드용으로 항상 존재해야 한다 (이름 변경/삭제는 막아둠)
+        const WRITE_MEMO_CATEGORY = '메모';
+        if (!writeCategoryList.includes(WRITE_MEMO_CATEGORY)) {
+            writeCategoryList.push(WRITE_MEMO_CATEGORY);
+            if (WRITE_COLORS[WRITE_MEMO_CATEGORY] === undefined) WRITE_COLORS[WRITE_MEMO_CATEGORY] = '#FDE9A9';
+            save(true);
+        }
+
+        // 지난 날짜 메모 카드의 '못 한 항목'을 오늘 새 메모 카드로 옮겨온다 (어제 카드엔 끝낸 항목만 남고, 다 못 했으면 카드째 사라짐)
+        function localDateStr(d) {
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        }
+        function carryOverMemos() {
+            const now = new Date();
+            const today = localDateStr(now);
+            const lookback = new Date(now); lookback.setDate(lookback.getDate() - 30);
+            const limitStr = localDateStr(lookback);
+            const carry = {};   // workId -> [할 일 문구]
+            let changed = false;
+
+            Object.keys(writeSchedules).sort().forEach(dateStr => {
+                if (dateStr >= today || dateStr < limitStr) return;
+                const list = writeSchedules[dateStr] || [];
+                const emptied = new Set();
+                list.forEach(s => {
+                    if (s.category !== WRITE_MEMO_CATEGORY || !Array.isArray(s.checklist)) return;
+                    if (typeof isScheduleWorkValid === 'function' && !isScheduleWorkValid(s.workId)) return;
+                    const pending = s.checklist.filter(it => !it.done && it.text);
+                    if (!pending.length) return;
+                    (carry[s.workId] = carry[s.workId] || []).push(...pending.map(it => it.text));
+                    s.checklist = s.checklist.filter(it => it.done);
+                    s.isCompleted = s.checklist.length > 0;
+                    if (s.checklist.length === 0) emptied.add(s.id);
+                    changed = true;
+                });
+                if (emptied.size) {
+                    writeSchedules[dateStr] = list.filter(s => !emptied.has(s.id));
+                    if (writeSchedules[dateStr].length === 0) delete writeSchedules[dateStr];
+                }
+            });
+
+            Object.entries(carry).forEach(([workId, texts], wi) => {
+                if (!writeSchedules[today]) writeSchedules[today] = [];
+                const stamp = Date.now() + '_' + wi;
+                writeSchedules[today].push({
+                    id: 'ws_' + stamp + Math.floor(Math.random() * 1000), date: today, workId,
+                    category: WRITE_MEMO_CATEGORY, goal: 0, memo: '', isCompleted: false, volumeId: '',
+                    checklist: texts.map((t, i) => ({ id: 'ck_' + stamp + '_' + i + Math.floor(Math.random() * 1000), text: t, done: false }))
+                });
+            });
+
+            if (changed) save(true);
+            return changed;
+        }
+        carryOverMemos();
+        let _lastCarryDay = localDateStr(new Date());
+        setInterval(() => {
+            const t = localDateStr(new Date());
+            if (t === _lastCarryDay) return;
+            _lastCarryDay = t;
+            if (carryOverMemos() && typeof renderWriteCalendar === 'function') { try { renderWriteCalendar(); } catch (e) {} }
+        }, 60000);
+
+        if (!years.includes(currentYear)) { years.push(currentYear); years.sort((a,b)=>a-b); }
+        let currentGenreTab = '종합', currentLibraryTab = '전체', mainChartInstance = null, genreChartInstance = null, editingWorkId = null, dragSrcEl = null, settlementViewYear = new Date().getFullYear();
+
+        // 장르별 점유율 도넛 조각 위에 마우스오버 없이 바로 금액·퍼센트를 그려주는 Chart.js 플러그인
+        const genreSliceLabelPlugin = {
+            id: 'genreSliceLabels',
+            afterDatasetsDraw(chart) {
+                const meta = chart.getDatasetMeta(0);
+                const dataset = chart.data.datasets[0];
+                if (!dataset) return;
+                const total = dataset.data.reduce((a, b) => a + b, 0);
+                if (!total) return;
+                const ctx = chart.ctx;
+                ctx.save();
+                meta.data.forEach((arc, i) => {
+                    const value = dataset.data[i];
+                    if (!value) return;
+                    const pct = value / total * 100;
+                    if (pct < 4) return; // 너무 작은 조각은 글자가 안 들어가니 생략 (범례에는 그대로 다 나옴)
+                    const angle = (arc.startAngle + arc.endAngle) / 2;
+                    const radius = (arc.innerRadius + arc.outerRadius) / 2;
+                    const x = arc.x + Math.cos(angle) * radius;
+                    const y = arc.y + Math.sin(angle) * radius;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.font = "700 16px 'Pretendard','Apple SD Gothic Neo',sans-serif";
+                    ctx.fillStyle = '#64748b';
+                    ctx.fillText(`${Math.round(pct)}%`, x, y - 10);
+                    ctx.font = "400 12px 'Pretendard','Apple SD Gothic Neo',sans-serif";
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(`₩${formatCurrency(value)}`, x, y + 10);
+                });
+                ctx.restore();
+            }
+        };
+
+        // Utilities
+        function hexToRgba(hex, alpha) { let r = 0, g = 0, b = 0; if (hex.length === 4) { r = parseInt(hex[1] + hex[1], 16); g = parseInt(hex[2] + hex[2], 16); b = parseInt(hex[3] + hex[3], 16); } else if (hex.length === 7) { r = parseInt(hex[1] + hex[2], 16); g = parseInt(hex[3] + hex[4], 16); b = parseInt(hex[5] + hex[6], 16); } return `rgba(${r},${g},${b},${alpha})`; }
+        // hex 색을 흰색과 섞어서 '불투명한' 옅은 색을 만든다 (rgba 반투명이 아니라 진짜 흰색이 섞인 색이라 카드 배경 위에서 흐려 보이지 않는다)
+        function mixWithWhite(hex, ratio) {
+            let r = 0, g = 0, b = 0;
+            if (hex.length === 4) { r = parseInt(hex[1] + hex[1], 16); g = parseInt(hex[2] + hex[2], 16); b = parseInt(hex[3] + hex[3], 16); }
+            else if (hex.length === 7) { r = parseInt(hex[1] + hex[2], 16); g = parseInt(hex[3] + hex[4], 16); b = parseInt(hex[5] + hex[6], 16); }
+            const mix = c => Math.round(c + (255 - c) * ratio);
+            return `rgb(${mix(r)},${mix(g)},${mix(b)})`;
+        }
+        // 코지 테마: 장르 색을 물 빠진(더스티) 색으로 보여준다 — 채도를 절반쯤 낮추고 너무 밝은 색은 살짝 눌러서
+        // 분홍 → 더티 로즈, 하늘색 → 더스티 블루 같은 느낌. 저장된 원래 색은 그대로라서 다른 테마에서는 원래 색이 나온다.
+        // (var: 이 줄보다 먼저 불려도 안전하게)
+        var _cozyMuteCache = {};
+        function cozyMuteColor(hex) {
+            if (!/^#[0-9a-f]{6}$/i.test(hex || '')) return hex;
+            if (_cozyMuteCache[hex]) return _cozyMuteCache[hex];
+            const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h = 0, sat = 0, l = (max + min) / 2;
+            if (max !== min) {
+                const d = max - min;
+                sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                if (max === r) h = (g - b) / d + (g < b ? 6 : 0); else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+                h /= 6;
+            }
+            sat *= 0.5;
+            l = l > 0.72 ? 0.72 + (l - 0.72) * 0.3 : l * 0.97;
+            const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat, p = 2 * l - q;
+            const f = t => { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1 / 6) return p + (q - p) * 6 * t; if (t < 1 / 2) return q; if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6; return p; };
+            // 따뜻한 회색(#B8A58F)을 12%만 섞어서 갈색빛이 도는 '먼지 낀' 느낌
+            const warm = [184, 165, 143], rgb = [f(h + 1 / 3), f(h), f(h - 1 / 3)].map((v, i) => Math.round(v * 255 * 0.88 + warm[i] * 0.12));
+            return (_cozyMuteCache[hex] = '#' + rgb.map(v => v.toString(16).padStart(2, '0')).join(''));
+        }
+        function getGenreColor(genreName) {
+            const genre = genreList.find(g => g.name === genreName);
+            const base = (genre && genre.color) ? genre.color : '#cbd5e1';
+            return (document.body && document.body.classList.contains('theme-cozy')) ? cozyMuteColor(base) : base;
+        }
+        // 대시보드 차트용 색상: 원본 장르 색 + 배지 투명도 (작품 등록 배지와 같은 색감)
+        function getGenrePastelColor(genreName) {
+            const c = getGenreColor(genreName);
+            return hexToRgba(c, genreBadgeOpacity || 0.5);
+        }
+        function formatCurrency(val) { if(!val && val !== 0) return ""; return Math.round(Number(val)).toLocaleString(); }
+        function getYYYYMMDD(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+        // 추정 총매출 공식: 총매출 × 0.7(플랫폼 30% 차감) × (rate/100) = 순수익
+        // 역산: 총매출 = 순수익 ÷ (rate/100) ÷ 0.7
+        // 예) 순수익 2000만, rate=70% → 2000만 / 0.7 / 0.7 ≈ 4082만 ✓
+        function calculateGrossSales(netProfit, rate) { 
+            const r = Number(rate);
+            if (!netProfit || !r || r <= 0) return 0; 
+            return Math.round(netProfit / (r / 100) / 0.7); 
+        }
+        function getCumulativeWorkData(workId) { let totalProfit = 0; Object.values(monthlyData).forEach(monthSet => { if (monthSet[workId]) totalProfit += monthSet[workId]; }); const work = masterWorks.find(w => w.id === workId); const totalSales = work ? calculateGrossSales(totalProfit, work.rate) : 0; return { totalProfit, totalSales }; }
+
+        // ── 출간 일정 캘린더 ──────────────────────────────────────
+        let publishCalDate = new Date();
+        function changePublishCalMonth(delta, toToday = false) {
+            if (toToday) publishCalDate = new Date();
+            else publishCalDate.setMonth(publishCalDate.getMonth() + delta);
+            renderPublishCal();
+        }
+
+        function renderPublishCal() {
+            const y = publishCalDate.getFullYear(), m = publishCalDate.getMonth();
+            document.getElementById('publish-cal-title').innerText = `${y}년 ${m+1}월 출간 일정`;
+            const firstDay = new Date(y,m,1).getDay(), lastDate = new Date(y,m+1,0).getDate();
+            const today = getYYYYMMDD(new Date());
+            const primary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#87ada1';
+
+            const publishMap = {};
+            const allItems = [];
+            masterWorks.forEach(w => {
+                if (!w.isPending && w.publishDate) {
+                    const item = {...w, _displayTitle: w.title, _refId: w.id, _isExtra: false};
+                    publishMap[w.publishDate] = (publishMap[w.publishDate] || []).concat(item);
+                    allItems.push(item);
+                } else if (w.isPending && /^\d{4}-\d{2}$/.test(w.pendingMonth || '')) {
+                    // 연/월까지만 정해진 출간예정 — 그 달 1일에 임의로 배치
+                    const fakeDate = `${w.pendingMonth}-01`;
+                    const item = {...w, publishDate: fakeDate, _displayTitle: w.title, _refId: w.id, _isExtra: false, _pendingMonthOnly: true};
+                    publishMap[fakeDate] = (publishMap[fakeDate] || []).concat(item);
+                    allItems.push(item);
+                }
+                (w.extras || []).forEach(ex => {
+                    if (ex.publishDate) {
+                        const exItem = {
+                            id: w.id + '::' + ex.id,
+                            _refId: w.id + '::' + ex.id,
+                            _displayTitle: `${w.title} [${ex.name}]`,
+                            title: w.title,
+                            genre: w.genre, publisher: w.publisher, studio: w.studio,
+                            publishDate: ex.publishDate, isPending: false,
+                            _isExtra: true, _extraName: ex.name, _parentWorkId: w.id, _extraId: ex.id
+                        };
+                        publishMap[ex.publishDate] = (publishMap[ex.publishDate] || []).concat(exItem);
+                        allItems.push(exItem);
+                    }
+                });
+            });
+
+            // 코지 테마: 큰 영문 월 이름 + 이번 달 출간 수 + 다음 출간 D-day
+            (function renderPublishCozyHero() {
+                const box = document.getElementById('publish-cozy-hero');
+                if (!box) return;
+                if (!document.body.classList.contains('theme-cozy')) { box.innerHTML = ''; return; }
+                const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                const moPrefix = `${y}-${String(m + 1).padStart(2, '0')}`;
+                const inMonth = allItems.filter(w => String(w.publishDate || '').startsWith(moPrefix));
+                const t0 = new Date().setHours(0, 0, 0, 0);
+                const next = allItems.map(w => ({ w, diff: Math.ceil((new Date(w.publishDate).setHours(0, 0, 0, 0) - t0) / 86400000) }))
+                    .filter(x => x.diff >= 0 && !x.w._pendingMonthOnly).sort((a, b) => a.diff - b.diff)[0];
+                const short = t => { t = String(t || ''); return t.length > 16 ? t.slice(0, 15) + '…' : t; };
+                box.innerHTML = `<div class="left"><div class="eyebrow">publishing calendar</div>
+                    <div class="row"><span class="mname">${MN[m]}</span><span class="yr">${y}</span></div></div>
+                    <div class="chips"><span class="chip">♥ 이번 달 출간 ${inMonth.length}개</span>${next ? `<span class="chip">다음 출간 · ${escapeHtml(short(next.w._displayTitle))} <b>${next.diff === 0 ? 'D-Day' : 'D-' + next.diff}</b></span>` : ''}</div>`;
+            })();
+
+            // 사이드바 필터 드롭다운 체크박스 초기화 (genreList 기반)
+            (function initDdayFilterCheckboxes() {
+                const dropdown = document.getElementById('dday-filter-dropdown');
+                if (!dropdown) return;
+                // 기존 장르 체크박스 제거 후 재생성
+                dropdown.querySelectorAll('label.genre-filter-label').forEach(el => el.remove());
+                genreList.forEach(g => {
+                    const label = document.createElement('label');
+                    label.className = 'genre-filter-label flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs text-slate-600';
+                    const isChecked = window._ddayGenreFilter ? window._ddayGenreFilter.has(g.name) : true;
+                    label.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${getGenreColor(g.name)};flex-shrink:0"></span><input type="checkbox" class="dday-genre-check accent-slate-500" value="${g.name}" onchange="onDdayFilterChange(this)" ${isChecked ? 'checked' : ''}><span>${g.name}</span>`;
+                    dropdown.appendChild(label);
+                });
+            })();
+
+            // 사이드바: 본편+외전 통합 - 오늘 이후 전체 출간 예정
+            const allUpcoming = allItems
+                .map(w => ({ ...w, diff: Math.ceil((new Date(w.publishDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000) }))
+                .filter(w => w.diff >= 0)
+                .sort((a,b) => a.diff - b.diff);
+
+            const ddayList = document.getElementById('publish-dday-list');
+            // 필터 적용
+            const _activeFilter = window._ddayGenreFilter;
+            const filteredUpcoming = (_activeFilter && _activeFilter.size < genreList.length)
+                ? allUpcoming.filter(w => _activeFilter.has(w.genre))
+                : allUpcoming;
+            const ddayCountEl = document.getElementById('publish-dday-count');
+            if (ddayCountEl) ddayCountEl.textContent = String(filteredUpcoming.length);
+            if (filteredUpcoming.length > 0) {
+                ddayList.innerHTML = filteredUpcoming.map(w => {
+                    const gc = getGenreColor(w.genre);
+                    const dLabel = w.diff === 0 ? 'D-Day' : `D-${w.diff}`;
+                    const dColor = w.diff === 0 ? '#ef4444' : w.diff <= 7 ? '#f97316' : w.diff <= 30 ? primary : '#94a3b8';
+                    const isWebtoon = w.genre && w.genre.includes('웹툰');
+                    const pubShort = isWebtoon
+                        ? (w.studio && w.studio !== '-' && w.studio !== 'undefined' ? `[${w.studio}]` : '')
+                        : (w.publisher && w.publisher !== '-' ? `[${w.publisher}]` : '');
+                    const extraSuffix = w._isExtra ? ` [${w._extraName}]` : '';
+                    const editAction = w._isExtra ? `switchTab('library'); viewWork('${w._parentWorkId}');` : `switchTab('library'); viewWork('${w.id}');`;
+                    const dateLabel = w._pendingMonthOnly ? `${parseInt(w.publishDate.slice(5,7),10)}월 출간예정` : w.publishDate.slice(5);
+                    return `<div class="flex items-start gap-2 p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all cursor-pointer" style="--c:${ddayMute(gc)}" onclick="${editAction}">
+                        <div class="shrink-0 w-1 self-stretch rounded-full" style="background:${gc}"></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-1 mb-0.5">
+                                <span class="text-sm font-black" style="color:${dColor}">${dLabel}</span>
+                                <span class="text-[12px] font-semibold shrink-0" style="color:var(--primary); filter:saturate(1.9) brightness(0.85);">${dateLabel}</span>
+                            </div>
+                            <div class="font-bold text-slate-700 text-sm" style="white-space:normal; word-break:break-word;">${w.title}${extraSuffix}</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">${pubShort ? pubShort + ' ' : ''}${w.genre}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+            } else {
+                const emptyMsg = (_activeFilter && _activeFilter.size === 0)
+                    ? '선택된 장르가 없습니다.'
+                    : (_activeFilter ? '해당 장르의 출간 일정이 없습니다.' : '예정된 출간 일정이 없습니다.');
+                ddayList.innerHTML = `<div class="text-xs text-slate-400 text-center py-6">${emptyMsg}</div>`;
+            }
+
+            // 달력 렌더
+            const body = document.getElementById('publish-cal-body'); body.innerHTML = '';
+            const prevLast = new Date(y,m,0).getDate();
+            let dragSrcWorkId = null;
+
+            const makeCell = (ds, dayNum, faded, works) => {
+                const isToday = ds === today;
+                const dow = new Date(ds).getDay();
+                const dateColor = isToday ? primary : (dow===0 ? '#f43f5e' : dow===6 ? '#3b82f6' : '#475569');
+                const cell = document.createElement('div');
+                cell.dataset.date = ds;
+                cell.style.position = 'relative';
+                cell.className = `min-h-[140px] rounded-xl p-2 flex flex-col transition-all ${faded ? 'bg-slate-50/50 opacity-40' : 'bg-white'} border ${isToday ? 'border-2 shadow-sm' : 'border-slate-100'}`;
+                if (isToday) cell.style.borderColor = primary;
+
+                // 드롭 이벤트
+                cell.addEventListener('dragover', e => { e.preventDefault(); if (!faded) cell.style.background = hexToRgba(primary, 0.08); });
+                cell.addEventListener('dragleave', () => { cell.style.background = ''; });
+                cell.addEventListener('drop', e => {
+                    e.preventDefault(); cell.style.background = '';
+                    const dragId = e.dataTransfer.getData('text/plain');
+                    if (!dragId) return;
+                    if (dragId.includes('::')) {
+                        // 외전 드래그
+                        const [wId, exId] = dragId.split('::');
+                        const w = masterWorks.find(x => x.id === wId);
+                        const ex = w?.extras?.find(e => e.id === exId);
+                        if (ex) { ex.publishDate = ds; save(); updateUI(); renderPublishCal(); }
+                    } else {
+                        const w = masterWorks.find(x => x.id === dragId); if (!w) return;
+                        w.publishDate = ds;
+                        // 월만 정해진 출간예정 카드를 실제 날짜로 끌어다 놓으면, 그 날짜로 확정한다
+                        if (w.isPending) { w.isPending = false; w.pendingMonth = ''; }
+                        save(); updateUI(); renderPublishCal();
+                    }
+                });
+
+                let badgesHtml = '';
+                if (works && works.length > 0) {
+                    badgesHtml = works.map(w => {
+                        const gc = getGenreColor(w.genre);
+                        const isWebtoon2 = w.genre && w.genre.includes('웹툰');
+                        const pubShort = isWebtoon2
+                            ? (w.studio && w.studio !== '-' && w.studio !== 'undefined' ? w.studio : '')
+                            : (w.publisher && w.publisher !== '-') ? w.publisher : '';
+                        const extraSuffix = w._isExtra ? ` [${w._extraName}]` : '';
+                        const delAction = w._isExtra ? `deleteExtraFromCal('${w._parentWorkId}','${w._extraId}')` : `deletePublishWork('${w.id}')`;
+                        const dragId = w._isExtra ? w.id : w.id;
+                        return `<div class="mt-1.5 px-2 py-1.5 rounded-xl text-[12px] leading-snug cursor-move group/card relative" 
+                                     style="background:${hexToRgba(gc, 0.15)}; border-left: 4px solid ${gc};"
+                                     draggable="true"
+                                     ondragstart="event.dataTransfer.setData('text/plain','${dragId}'); event.currentTarget.style.opacity='0.5';"
+                                     ondragend="event.currentTarget.style.opacity='1';">
+                            <button onclick="event.stopPropagation(); ${delAction}" class="absolute top-1 right-1 opacity-0 group-hover/card:opacity-100 text-slate-300 hover:text-rose-500 text-[10px] transition-all" title="삭제"><i class="fa-solid fa-xmark"></i></button>
+                            <div class="font-bold text-slate-700 pr-4" style="white-space:normal; word-break:break-word;">${w.title}${extraSuffix}</div>
+                            <div class="text-[10px] mt-0.5 font-medium" style="color:${gc}">${w.genre}${pubShort ? ' | ' + pubShort : ''}</div>
+                        </div>`;
+                    }).join('');
+                }
+                const todayBadge = isToday ? `<span class="absolute top-1 right-2 text-[9px] font-black tracking-wide" style="color:${primary}">TODAY</span>` : '';
+                cell.innerHTML = `${todayBadge}<div class="text-[13px] font-bold mb-0.5" style="color:${dateColor}"><span class="pc-num${isToday ? ' pc-today' : ''}">${dayNum}</span></div>${badgesHtml}`;
+                body.appendChild(cell);
+            };
+
+            for (let i=0; i<firstDay; i++) {
+                const d=prevLast-firstDay+1+i, pm=m-1<0?11:m-1, py=m-1<0?y-1:y;
+                const ds_prev=`${py}-${String(pm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                makeCell(ds_prev, d, true, publishMap[ds_prev]);
+            }
+            for (let d=1; d<=lastDate; d++) {
+                const ds=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                makeCell(ds, d, false, publishMap[ds]);
+            }
+            const nextDays=(7-(firstDay+lastDate)%7)%7;
+            for (let d=1; d<=nextDays; d++) {
+                const nm=m+1>11?0:m+1, ny=m+1>11?y+1:y;
+                const ds_next=`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                makeCell(ds_next, d, true, publishMap[ds_next]);
+            }
+        }
+
+        // ── 출간 일정 연간 전체보기 ──────────────────────────────────
+        let publishYearViewActive = false;
+        let publishYearViewYear = new Date().getFullYear();
+
+        function togglePublishYearView() {
+            publishYearViewActive = !publishYearViewActive;
+            document.getElementById('publish-month-view-wrap').style.display = publishYearViewActive ? 'none' : '';
+            document.getElementById('publish-year-view').style.display = publishYearViewActive ? 'block' : 'none';
+            const btn = document.getElementById('publish-year-view-btn');
+            if (btn) {
+                btn.innerHTML = publishYearViewActive
+                    ? '<i class="fa-solid fa-calendar text-[10px]"></i> 월별 보기'
+                    : '<i class="fa-solid fa-calendar-days text-[10px]"></i> 전체 보기';
+            }
+            if (publishYearViewActive) {
+                publishYearViewYear = publishCalDate.getFullYear();
+                renderPublishYearView();
+            } else {
+                renderPublishCal();
+            }
+        }
+
+        function changePublishYearViewYear(delta) {
+            publishYearViewYear += delta;
+            renderPublishYearView();
+        }
+
+        function renderPublishYearView() {
+            document.getElementById('publish-year-view-title').innerText = `${publishYearViewYear}년 출간 일정`;
+            const primary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#87ada1';
+
+            const publishMap = {};
+            masterWorks.forEach(w => {
+                if (!w.isPending && w.publishDate) {
+                    const item = {...w, _displayTitle: w.title, _isExtra: false};
+                    publishMap[w.publishDate] = (publishMap[w.publishDate] || []).concat(item);
+                }
+                (w.extras || []).forEach(ex => {
+                    if (ex.publishDate) {
+                        const exItem = {
+                            id: w.id + '::' + ex.id,
+                            _displayTitle: `${w.title} [${ex.name}]`,
+                            title: w.title, genre: w.genre, publisher: w.publisher, studio: w.studio,
+                            publishDate: ex.publishDate, _isExtra: true, _extraName: ex.name,
+                            _parentWorkId: w.id, _extraId: ex.id
+                        };
+                        publishMap[ex.publishDate] = (publishMap[ex.publishDate] || []).concat(exItem);
+                    }
+                });
+            });
+
+            const monthNames = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+            const container = document.getElementById('publish-year-view-body');
+            container.innerHTML = '';
+
+            for (let mo = 0; mo < 12; mo++) {
+                const moStr = String(mo+1).padStart(2,'0');
+                const monthItems = [];
+                Object.entries(publishMap).forEach(([date, items]) => {
+                    if (date.startsWith(`${publishYearViewYear}-${moStr}`)) {
+                        items.forEach(item => monthItems.push({ date, ...item }));
+                    }
+                });
+                monthItems.sort((a, b) => a.date.localeCompare(b.date));
+
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-2xl border border-slate-100 shadow-sm p-4';
+                card.style.minHeight = '220px';
+
+                const headerEl = document.createElement('div');
+                headerEl.className = 'text-[10px] font-bold text-slate-400 mb-2 tracking-widest uppercase border-b border-slate-100 pb-2';
+                headerEl.textContent = monthNames[mo];
+                card.appendChild(headerEl);
+
+                if (monthItems.length === 0) {
+                    // 빈 공간만 유지, 텍스트 없음
+                } else {
+                    monthItems.forEach(item => {
+                        const gc = getGenreColor(item.genre);
+                        const isWebtoonY = item.genre && item.genre.includes('웹툰');
+                        const pubShort = isWebtoonY
+                            ? (item.studio && item.studio !== '-' && item.studio !== 'undefined' ? item.studio : '')
+                            : (item.publisher && item.publisher !== '-') ? item.publisher
+                            : (item.studio && item.studio !== '-' && item.studio !== 'undefined' ? item.studio : '');
+                        const row = document.createElement('div');
+                        row.className = 'flex items-center gap-1.5 px-2 py-1.5 rounded-lg mb-1 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer';
+                        row.onclick = () => {
+                            publishCalDate = new Date(publishYearViewYear, mo, 1);
+                            publishYearViewActive = true;
+                            togglePublishYearView();
+                        };
+                        row.innerHTML = `
+                            <span style="font-family:monospace; font-weight:600; color:#475569; font-size:0.75rem; flex-shrink:0;">${item.date.slice(5,7)}/${item.date.slice(8,10)}</span>
+                            <span style="width:3px; height:14px; border-radius:9999px; flex-shrink:0; background:${gc}; display:inline-block;"></span>
+                            <span style="font-weight:400; color:#475569; font-size:0.78rem; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${item._displayTitle}">${item._displayTitle}</span>
+                            ${pubShort ? `<span style="font-size:0.65rem; color:#94a3b8; flex-shrink:0;">${pubShort}</span>` : ''}
+                        `;
+                        card.appendChild(row);
+                    });
+                }
+                container.appendChild(card);
+            }
+        }
+
+
+        function deletePublishWork(id) {
+            if (!confirm('이 작품을 출간 일정 및 작품 목록에서 삭제하시겠습니까?')) return;
+            Object.keys(taskSchedules).forEach(date => {
+                taskSchedules[date] = taskSchedules[date].filter(t => !(t.workId === id && t.isAutoManuscript));
+                if (taskSchedules[date].length === 0) delete taskSchedules[date];
+            });
+            masterWorks = masterWorks.filter(w => w.id !== id);
+            purgeOrphanSchedules();
+            save(); updateUI(); renderPublishCal();
+        }
+
+        function deleteExtraFromCal(workId, extraId) {
+            if (!confirm('이 외전을 삭제하시겠습니까?')) return;
+            const w = masterWorks.find(x => x.id === workId); if (!w?.extras) return;
+            const ex = w.extras.find(e => e.id === extraId);
+            // 자동 태스크 정리
+            if (ex?.manuscriptDate && taskSchedules[ex.manuscriptDate]) {
+                taskSchedules[ex.manuscriptDate] = taskSchedules[ex.manuscriptDate].filter(t => t.id !== 'ts_auto_extra_' + extraId);
+                if (taskSchedules[ex.manuscriptDate].length === 0) delete taskSchedules[ex.manuscriptDate];
+            }
+            w.extras = w.extras.filter(e => e.id !== extraId);
+            purgeOrphanSchedules();
+            save(); updateUI(); renderPublishCal();
+        }
+
+                // ─────────────────────────────────────────────────────────
+
+        function downloadBackup() { 
+            const data = { 
+                masterWorks, monthlyData, years, publisherData, analysisData, publisherSortOrder, publisherCardSortOrder, publisherViewMode, genreList, theme: localStorage.getItem('theme_v6'), customColor: localStorage.getItem('custom_color_v6'), genreBadgeOpacity, bgMain: localStorage.getItem('bg_main_v6'), tableFontSettings, crosshairSettings, 
+                writeSchedules, writeSpans, writeVolumes, writeMergedVolumeWorks, taskSchedules, writeCardSettings, taskCardSettings, taskColors: TASK_COLORS, taskCategoryList, writeColors: WRITE_COLORS, writeCategoryList,
+                contacts, penNames, widgetSettingsData, ddayCardDesigns, ddayCardFonts, modalDesign, submissions, webtoonSubs, webtoonSubOrder, contactSortMode, webtoonViewFilter, webtoonSortMode,
+                // [FIX] 글자수 관리 탭 데이터가 백업에서 빠져있던 문제 수정 — 아래 항목들이 누락되어 있었음
+                writerWorks, writerDailyData, writerGlobalDailyGoal, writeCounterBase, writeCounterResetDate, writerLastWorkKey,
+                incomeGoals, taxSettings, taxGoalMemos, taxGoalItems, charGoals, webtoonManage, webtoonCardSettings, penNameColorOverrides, workManage, workManageCardSettings, workManageViewFilter, workManageSortMode
+            }; 
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'}); 
+            const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `royalty_backup_${getYYYYMMDD(new Date())}.json`; a.click(); 
+        }
+        
+        function uploadBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!data.masterWorks) { alert('이 앱에서 받은 백업 파일이 아니에요.'); return; }
+                    if (!confirm('지금 화면의 내용이 백업 파일 내용으로 바뀌어요. 계속할까요?')) return;
+                    hydrateFromParsed(data);
+                    window.__liteSave(JSON.stringify(data), true).then(() => { alert('백업을 불러왔어요.'); location.reload(); }).catch(() => alert('저장 중 문제가 생겼어요.'));
+                } catch (err) { alert('백업 파일을 읽지 못했어요.'); }
+            };
+            reader.readAsText(file);
+        }
+
+        function resetData() { if (confirm("모든 데이터를 지우고 처음 상태로 돌아갑니다. 정말 초기화할까요?\n(먼저 백업 파일을 받아 두는 걸 권해요)")) { window.__liteReset().then(() => { try { localStorage.clear(); } catch(e) {} location.reload(); }); } }
+        // body의 theme-* 클래스만 교체 — className을 통째로 바꾸면 sidebar-web(웹 표시)·sidebar-collapsed(메뉴 접힘) 같은
+        // 다른 클래스까지 지워져서, 웹에서 메뉴 접기 버튼이 사라지는 문제가 있었음
+        function applyThemeClass(theme) {
+            [...document.body.classList].filter(c => c.startsWith('theme-')).forEach(c => document.body.classList.remove(c));
+            if (theme) document.body.classList.add('theme-' + theme);
+        }
+        function setTheme(theme) { try { applyDdayDesign(); applyModalDesign(); } catch (e) {} const _wasCozy = document.body.classList.contains('theme-cozy'); _cozyLaunchSig = ''; activeTheme = theme; localStorage.setItem('theme_v6', theme); document.querySelectorAll('.theme-dot').forEach(d => { d.classList.remove('active'); if(d.dataset.theme === theme) d.classList.add('active'); }); if (theme === 'custom') { setCustomTheme(localStorage.getItem('custom_color_v6') || '#b07d7d'); } else { applyThemeClass(theme); document.body.style.removeProperty('--primary'); document.body.style.removeProperty('--primary-light'); } if (_wasCozy !== (theme === 'cozy')) setTimeout(() => { try { updateUI(); } catch (e) {} }, 0); updateDashboardStats(); }
+        function setCustomTheme(color) { const _wasCozy = document.body.classList.contains('theme-cozy'); activeTheme = 'custom'; localStorage.setItem('theme_v6', 'custom'); localStorage.setItem('custom_color_v6', color); document.querySelectorAll('.theme-dot').forEach(d => d.classList.remove('active')); document.getElementById('custom-theme-dot').classList.add('active'); document.getElementById('custom-theme-dot').style.backgroundColor = color; applyThemeClass(null); document.documentElement.style.setProperty('--primary', color); const r = parseInt(color.substr(1,2), 16), g = parseInt(color.substr(3,2), 16), b = parseInt(color.substr(5,2), 16); document.documentElement.style.setProperty('--primary-light', `rgba(${r},${g},${b},0.1)`); if (_wasCozy) setTimeout(() => { try { updateUI(); } catch (e) {} }, 0); updateDashboardStats(); }
+        function setPageBackgroundColor(color) { document.documentElement.style.setProperty('--bg-main', color); localStorage.setItem('bg_main_v6', color); }
+        function switchTab(tabName) { 
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active')); 
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active')); 
+            document.getElementById(`nav-${tabName}`).classList.add('active'); 
+            document.getElementById(`tab-${tabName}`).classList.add('active'); 
+            document.body.classList.toggle('works-tab-active', tabName === 'works');
+            window.scrollTo(0, 0); 
+            updateUI(); 
+            closeSidebarMobile();
+        }
+        function toggleSidebar() { document.body.classList.toggle('sidebar-open'); }
+        function toggleSidebarCollapse() {
+            document.body.classList.toggle('sidebar-collapsed');
+            try { localStorage.setItem('sidebarCollapsed_v1', document.body.classList.contains('sidebar-collapsed') ? '1' : '0'); } catch(e) {}
+        }
+        try { if (localStorage.getItem('sidebarCollapsed_v1') === '1') document.body.classList.add('sidebar-collapsed'); } catch(e) {}
+        function closeSidebarMobile() { if (window.matchMedia('(max-width: 1024px)').matches) document.body.classList.remove('sidebar-open'); }
+
+        function updateUI() {
+            updateDashboardStats(); updatePublisherDatalist(); updateGenreSelectOptions(); updateStudioDatalist(); updateTitleDatalist();
+            const activeTab = document.querySelector('.tab-content.active'); if(!activeTab) return;
+            const activeId = activeTab.id;
+            if (activeId === 'tab-records') renderRoyaltySheets();
+            if (activeId === 'tab-works') { renderMasterWorksList(); requestAnimationFrame(fitWorksPanelsHeight); setTimeout(fitWorksPanelsHeight, 60); }
+            if (activeId === 'tab-library') renderVisualLibrary(); 
+            if (activeId === 'tab-publishers') renderPublisherTab();
+            if (activeId === 'tab-webtoon') renderWebtoonManage();
+            if (activeId === 'tab-workmanage') renderWorkManage();
+            if (activeId === 'tab-settlements') renderSettlementSchedule();
+            if (activeId === 'tab-tax') renderTaxGoalTab();
+            if (activeId === 'tab-write') { renderWriteCalendarFilters(); renderWriteCalendar(); }
+            if (activeId === 'tab-task') { renderTaskCalendarFilters(); renderTaskCalendar(); }
+            if (activeId === 'tab-daily') { if (!writerJumpToDate) writerViewDate = new Date(); writerJumpToDate = false; writerRenderDaily(); }
+            if (activeId === 'tab-monthly') { writerRenderCalendar(); }
+            if (activeId === 'tab-publish-cal') { renderPublishCal(); }
+            
+            if(document.getElementById('year-btns-container')) {
+                const yearBtns = document.getElementById('year-btns-container');
+                let html = `<button onclick="changeYear('total')" class="px-3 py-1 rounded-lg text-sm font-bold transition-all ${currentYear === 'total' ? 'bg-slate-700 text-white shadow-md' : 'bg-white text-slate-400 hover:bg-slate-100'}">총 합계</button>`;
+                html += years.map(y => `<button onclick="changeYear(${y})" class="px-3 py-1 rounded-lg text-sm font-bold transition-all ${currentYear === y ? 'bg-slate-700 text-white shadow-md' : 'bg-white text-slate-400 hover:bg-slate-100'}">${y}</button>`).join('');
+                yearBtns.innerHTML = html;
+            }
+        }
+        function updateGenreSelectOptions() { const select = document.getElementById('new-work-genre'); if(select) { select.innerHTML = genreList.map(g => `<option value="${g.name}">${g.name}</option>`).join(''); toggleStudioInput(); } }
+        function updateTitleDatalist() { const datalist = document.getElementById('existing-titles-list'); if(!datalist) return; const titles = [...new Set(masterWorks.map(w => w.title))].sort(); datalist.innerHTML = titles.map(t => `<option value="${t}">`).join(''); }
+        function updatePublisherDatalist() { const datalist = document.getElementById('publisher-list'); if(!datalist) return; const allPublishers = [...new Set([...masterWorks.map(w => w.publisher), ...masterWorks.map(w => w.settlementPublisher), ...Object.keys(publisherData)])].filter(p => p && p !== '-').sort(); datalist.innerHTML = allPublishers.map(pub => `<option value="${pub}">`).join(''); }
+        function updateStudioDatalist() { const datalist = document.getElementById('studio-list'); if(!datalist) return; const allStudios = [...new Set(masterWorks.map(w => w.studio))].filter(s => s && s !== '-').sort(); datalist.innerHTML = allStudios.map(s => `<option value="${s}">`).join(''); }
+        function autoFillPublisher(val) { const work = masterWorks.find(w => w.title === val); if(work) { document.getElementById('new-work-publisher').value = work.publisher; } }
+        function setupCustomAutocomplete() {
+            const input = document.getElementById('new-work-title'); const dropdown = document.getElementById('custom-title-dropdown'); if (!input || !dropdown) return;
+            input.addEventListener('focus', () => { renderCustomDropdown(input.value); });
+            input.addEventListener('click', (e) => { renderCustomDropdown(input.value); });
+            input.addEventListener('input', () => { renderCustomDropdown(input.value); });
+            input.addEventListener('blur', () => { setTimeout(() => { dropdown.classList.add('hidden'); }, 200); });
+        }
+        function renderCustomDropdown(filterText) {
+            const dropdown = document.getElementById('custom-title-dropdown'); const titles = [...new Set(masterWorks.map(w => w.title))].sort();
+            const filtered = filterText ? titles.filter(t => t.toLowerCase().includes(filterText.toLowerCase())) : titles;
+            if (filtered.length === 0) { dropdown.classList.add('hidden'); return; }
+            dropdown.innerHTML = filtered.map(t => `<li class="px-4 py-2 hover:bg-emerald-50 cursor-pointer text-sm text-slate-600 transition-colors" onclick="selectCustomTitle('${t}')">${t}</li>`).join('');
+            dropdown.classList.remove('hidden');
+        }
+        function selectCustomTitle(title) { const input = document.getElementById('new-work-title'); input.value = title; autoFillPublisher(title); document.getElementById('custom-title-dropdown').classList.add('hidden'); }
+
+        function resetLibraryFiles() {
+            if (confirm("모든 작품의 '표지 이미지'와 '첨부된 계약서(PDF)' 파일을 삭제하시겠습니까? (텍스트 데이터는 보존됩니다.)")) {
+                let updateCount = 0;
+                masterWorks.forEach(work => { if (work.coverImage) { work.coverImage = null; updateCount++; } if (work.contractFile) { work.contractFile = null; updateCount++; } });
+                if (updateCount > 0) { save(); renderVisualLibrary(); alert(`총 ${updateCount}개의 미디어 파일이 삭제되었습니다.`); } else { alert("삭제할 미디어 파일이 없습니다."); }
+            }
+        }
+
+        function renderVisualLibrary() {
+            const container = document.getElementById('visual-lib-container'); const tabsContainer = document.getElementById('visual-lib-tabs');
+            const totalBadge = document.getElementById('library-total-count');
+            if (totalBadge) totalBadge.textContent = masterWorks.length;
+            const tabs = ['전체', ...genreList.map(g => g.name)];
+            tabsContainer.innerHTML = tabs.map(t => `<button onclick="switchVisualLibTab('${t}')" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all mb-1 ${currentVisualLibTab === t ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:bg-slate-50'}">${t}</button>`).join('');
+            let works = currentVisualLibTab === '전체' ? [...masterWorks] : masterWorks.filter(w => w.genre === currentVisualLibTab);
+            const sortOrder = ['BL 장편', '현로 장편', '현로 초단', 'BL 초단', '웹툰'];
+            works.sort((a,b) => {
+                const idxA = sortOrder.indexOf(a.genre), idxB = sortOrder.indexOf(b.genre);
+                const valA = idxA === -1 ? 999 : idxA, valB = idxB === -1 ? 999 : idxB;
+                if (valA !== valB) return valA - valB;
+                const dateA = sortKeyDate(a), dateB = sortKeyDate(b);
+                return dateA < dateB ? -1 : (dateA > dateB ? 1 : 0);
+            });
+            container.innerHTML = ""; container.className = "grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8";
+            if (works.length === 0) { container.innerHTML = `<div class="col-span-full text-center py-20 text-slate-400">등록된 작품이 없습니다.</div>`; return; }
+
+            // DocumentFragment로 한 번에 렌더 (DOM 반복 접근 방지)
+            const fragment = document.createDocumentFragment();
+            const deferred = []; // 이미지 지연 로딩 목록
+
+            works.forEach(w => {
+                const totalProfit = getCumulativeWorkData(w.id).totalProfit;
+                const showWebtoonBadge = w.hasWebtoon;
+                const dateDisplay = getPendingLabel(w);
+                const genreColor = getGenreColor(w.genre);
+
+                // 이미지: 일단 placeholder로 렌더, 나중에 실제 이미지 삽입
+                const coverPlaceholder = `<div class="w-full h-full flex justify-center items-center text-slate-300 text-4xl bg-slate-50"><i class="fa-regular fa-image"></i></div>`;
+                const deleteBtn = w.coverImage ? `<button onclick="deleteCoverImage('${w.id}', event)" class="absolute top-2 right-2 w-6 h-6 bg-red-500/80 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 z-30 shadow-sm" title="표지 삭제"><i class="fa-solid fa-xmark text-xs"></i></button>` : '';
+                let publisherHtml = `<p class="text-[11px] text-slate-400 truncate" title="${w.publisher}">${w.publisher}</p>`;
+                if (w.studio && w.studio !== '-' && w.studio !== 'undefined' && w.studio.trim() !== '') publisherHtml = `<div class="flex items-center text-[11px] text-slate-400 truncate"><span class="truncate" title="${w.publisher}">${w.publisher}</span><span class="mx-1 text-slate-300">|</span><span class="text-pink-500 font-medium truncate" title="${w.studio}">${w.studio}</span></div>`;
+
+                const div = document.createElement('div');
+                div.className = 'bg-white rounded-xl shadow-sm border border-slate-100 lib-card group';
+                const cropBtn = w.coverImage ? `<button onclick="event.stopPropagation(); openCoverCropForWork('${w.id}');" class="absolute bottom-2 right-2 w-7 h-7 bg-white/90 hover:bg-white text-slate-600 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 z-30 shadow-sm" title="표지 자르기"><i class="fa-solid fa-crop text-xs"></i></button>` : '';
+                div.innerHTML = `<div class="lib-cover-container rounded-t-xl" onclick="triggerCoverUpload('${w.id}')">${coverPlaceholder}<div class="lib-cover-overlay"><i class="fa-solid fa-camera"></i></div>${showWebtoonBadge ? '<span class="absolute top-2 left-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-sm z-20">WEBTOON</span>' : ''}${deleteBtn}${cropBtn}</div><div class="p-4 flex flex-col justify-between cursor-pointer hover:bg-slate-50 transition-colors" onclick="openWorkMemo('${w.id}')"><div class="mb-3"><div class="flex items-center gap-2 mb-1"><span class="w-2 h-2 rounded-full" style="background:${genreColor}"></span><span class="text-[10px] text-slate-400 font-bold">${w.genre}</span></div><h4 class="font-bold text-slate-700 text-sm line-clamp-1 mb-1" title="${w.title}">${w.title}</h4>${publisherHtml}</div><div class="pt-2 border-t border-slate-50 flex justify-between items-end"><span class="text-[10px] font-medium text-slate-400">${dateDisplay}</span><span class="text-xs font-bold text-emerald-600">₩ ${formatCurrency(totalProfit)}</span></div></div>`;
+
+                fragment.appendChild(div);
+                if (w.coverImage) deferred.push({ el: div.querySelector('.lib-cover-container'), src: w.coverImage });
+                else if (hasRemoteCover(w.id)) deferred.push({ el: div.querySelector('.lib-cover-container'), remoteId: w.id });
+            });
+
+            container.appendChild(fragment);
+
+            // 이미지를 작은 배치로 나눠서 로딩 (5개씩, 50ms 간격)
+            const BATCH = 5;
+            function loadBatch(i) {
+                const end = Math.min(i + BATCH, deferred.length);

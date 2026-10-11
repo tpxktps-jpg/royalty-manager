@@ -1,0 +1,250 @@
+  var auth = null, db = null, currentUser = null, saveTimer = null;
+  var CHUNK_SIZE = 450000, lastAppliedVersion = 0, lastUploadedVersion = 0, liveUnsub = null;
+
+  function pill(text, state) {
+    var el = document.getElementById('cloud-pill');
+    if (!el) return;
+    el.textContent = text; el.dataset.state = state || '';
+  }
+  function msg(text) { var el = document.getElementById('cloud-auth-msg'); if (el) el.textContent = text || ''; }
+  function authMessage(err) {
+    var c = err && err.code || '';
+    if (c.indexOf('email-already-in-use') > -1) return '이미 가입된 이메일입니다. 계정 만들기 대신 로그인을 눌러주세요.';
+    if (c.indexOf('invalid-credential') > -1 || c.indexOf('wrong-password') > -1 || c.indexOf('user-not-found') > -1) return '이메일 또는 비밀번호가 맞지 않습니다.';
+    if (c.indexOf('weak-password') > -1) return '비밀번호는 6자 이상으로 만들어주세요.';
+    if (c.indexOf('invalid-email') > -1) return '이메일 형식을 확인해주세요.';
+    if (c.indexOf('permission-denied') > -1) return 'Firebase 저장 권한이 없습니다. Firestore 규칙을 확인해주세요.';
+    return (err && err.message) ? err.message : '처리 중 오류가 발생했습니다.';
+  }
+  function updateAuthUi(user) {
+    var fields = document.getElementById('cloud-login-fields');
+    var out = document.getElementById('cloud-logout');
+    var help = document.getElementById('cloud-auth-help');
+    if (fields) fields.style.display = user ? 'none' : '';
+    if (out) out.style.display = user ? '' : 'none';
+    if (help) help.textContent = user ? ((user.email || '로그인 계정') + '으로 동기화 중입니다.') : '같은 계정으로 로그인하면 휴대폰과 PC의 데이터가 자동으로 이어집니다.';
+    pill(user ? '☁️ 클라우드 연결됨' : '☁️ 로그인해서 동기화', user ? 'ok' : '');
+  }
+  window.openCloudPanel = function () { var el = document.getElementById('cloud-auth-backdrop'); if (el) el.classList.add('open'); msg(''); updateAuthUi(currentUser); };
+  window.closeCloudPanel = function () { var el = document.getElementById('cloud-auth-backdrop'); if (el) el.classList.remove('open'); };
+  function credentials() {
+    return { email: (document.getElementById('cloud-email') || {}).value || '', password: (document.getElementById('cloud-password') || {}).value || '' };
+  }
+  window.cloudLogin = function () {
+    var c = credentials(); msg('로그인 중...');
+    auth.signInWithEmailAndPassword(c.email.trim(), c.password).then(function () { msg(''); closeCloudPanel(); location.reload(); }).catch(function (e) { msg(authMessage(e)); });
+  };
+  window.cloudSignup = function () {
+    var c = credentials(); msg('계정을 만드는 중...');
+    auth.createUserWithEmailAndPassword(c.email.trim(), c.password).then(function () { msg(''); closeCloudPanel(); location.reload(); }).catch(function (e) { msg(authMessage(e)); });
+  };
+  window.cloudLogout = function () { auth.signOut().then(function () { closeCloudPanel(); location.reload(); }); };
+
+  function baseRef(uid) { return db.collection('users').doc(uid).collection('apps').doc('settlement'); }
+  function splitText(text) { var a = []; for (var i = 0; i < text.length; i += CHUNK_SIZE) a.push(text.slice(i, i + CHUNK_SIZE)); return a; }
+  async function readCloud(uid) {
+    var metaSnap = await baseRef(uid).get();
+    if (!metaSnap.exists) return null;
+    var meta = metaSnap.data() || {}, count = Number(meta.chunkCount || 0);
+    if (!count) return null;
+    var reads = [];
+    for (var i = 0; i < count; i++) reads.push(baseRef(uid).collection('chunks').doc(String(i).padStart(5, '0')).get());
+    var docs = await Promise.all(reads), text = '';
+    for (var j = 0; j < docs.length; j++) { if (!docs[j].exists) throw new Error('클라우드 데이터 조각이 누락되었습니다.'); text += (docs[j].data() || {}).text || ''; }
+    return { json: text, version: Number(meta.version || 0), updatedAt: meta.updatedAt && meta.updatedAt.toDate ? meta.updatedAt.toDate() : null };
+  }
+  async function writeCloudObject(obj) {
+    if (!currentUser) return;
+    var copy = Object.assign({}, obj, { __cloudUi: {
+      theme: localStorage.getItem('theme_v6') || 'cozy', customColor: localStorage.getItem('custom_color_v6') || '', bgMain: localStorage.getItem('bg_main_v6') || ''
+    }});
+    var json = JSON.stringify(copy), parts = splitText(json), ref = baseRef(currentUser.uid), oldCount = 0;
+    try { var old = await ref.get(); if (old.exists) oldCount = Number((old.data() || {}).chunkCount || 0); } catch (e) {}
+    pill('☁️ 클라우드 저장 중', 'busy');
+    for (var start = 0; start < Math.max(parts.length, oldCount); start += 400) {
+      var batch = db.batch();
+      for (var i = start; i < Math.min(start + 400, Math.max(parts.length, oldCount)); i++) {
+        var cr = ref.collection('chunks').doc(String(i).padStart(5, '0'));
+        if (i < parts.length) batch.set(cr, { text: parts[i] }); else batch.delete(cr);
+      }
+      await batch.commit();
+    }
+    var version = Date.now(); lastUploadedVersion = version; lastAppliedVersion = version;
+    await ref.set({ version: version, chunkCount: parts.length, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), schema: 1 }, { merge: true });
+    pill('☁️ 클라우드 저장 완료', 'ok');
+  }
+  window.cloudSave = function (obj) {
+    if (!currentUser) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { writeCloudObject(obj).catch(function (e) { console.error('클라우드 저장 실패', e); pill('☁️ 동기화 오류', 'error'); }); }, 1800);
+  };
+  function applyUiFromCloud(parsed) {
+    var u = parsed && parsed.__cloudUi; if (!u) return;
+    if (u.theme) localStorage.setItem('theme_v6', u.theme);
+    if (u.customColor) localStorage.setItem('custom_color_v6', u.customColor);
+    if (u.bgMain) localStorage.setItem('bg_main_v6', u.bgMain);
+  }
+  function startLive(uid) {
+    if (liveUnsub) liveUnsub();
+    liveUnsub = baseRef(uid).onSnapshot(function (snap) {
+      if (!snap.exists) return;
+      var version = Number((snap.data() || {}).version || 0);
+      if (!version || version <= lastAppliedVersion || version === lastUploadedVersion) return;
+      pill('☁️ 다른 기기 자료 받는 중', 'busy');
+      readCloud(uid).then(function (cloud) {
+        if (!cloud || cloud.version <= lastAppliedVersion) return;
+        lastAppliedVersion = cloud.version;
+        var parsed = JSON.parse(cloud.json); applyUiFromCloud(parsed);
+        if (window.__liteSave) return window.__liteSave(cloud.json, true).then(function () { location.reload(); });
+      }).catch(function (e) { console.error(e); pill('☁️ 동기화 오류', 'error'); });
+    }, function (e) { console.error(e); pill('☁️ 동기화 권한 오류', 'error'); });
+  }
+
+  var authReady;
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(config);
+    auth = firebase.auth(); db = firebase.firestore();
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function () {});
+    authReady = new Promise(function (resolve) {
+      var done = false;
+      auth.onAuthStateChanged(function (user) { currentUser = user || null; updateAuthUi(currentUser); if (!done) { done = true; resolve(currentUser); } });
+      setTimeout(function () { if (!done) { done = true; resolve(auth.currentUser || null); } }, 5000);
+    });
+  } catch (e) {
+    console.error('Firebase 시작 실패', e); pill('☁️ Firebase 연결 오류', 'error'); authReady = Promise.resolve(null);
+  }
+
+  window.__cloudPrepareData = async function (localJson) {
+    var user = await authReady;
+    if (!user || !db) return localJson || null;
+    try {
+      pill('☁️ 클라우드 확인 중', 'busy');
+      var cloud = await readCloud(user.uid), localTs = Date.parse(localStorage.getItem('lastModified_v6') || '') || 0;
+      if (!cloud) {
+        if (localJson) { var localObj = JSON.parse(localJson); await writeCloudObject(localObj); }
+        startLive(user.uid); pill('☁️ 클라우드 연결됨', 'ok'); return localJson || null;
+      }
+      lastAppliedVersion = cloud.version;
+      if (!localJson || cloud.version > localTs) {
+        var parsed = JSON.parse(cloud.json); applyUiFromCloud(parsed);
+        localStorage.setItem('lastModified_v6', new Date(cloud.version).toISOString());
+        startLive(user.uid); pill('☁️ 최신 자료 불러옴', 'ok'); return cloud.json;
+      }
+      if (localTs > cloud.version + 1000) await writeCloudObject(JSON.parse(localJson));
+      startLive(user.uid); pill('☁️ 클라우드 연결됨', 'ok'); return localJson;
+    } catch (e) {
+      console.error('클라우드 불러오기 실패', e); pill('☁️ 동기화 오류', 'error'); return localJson || null;
+    }
+  };
+})();
+</script>
+<script>
+/* 시작 도우미: 저장된 데이터를 IndexedDB(브라우저 안 저장소)에서 읽어 온 뒤 앱을 시작합니다.
+   - 서버로 아무것도 보내지 않습니다.
+   - localStorage(약 5MB 제한) 대신 IndexedDB를 써서 표지 이미지가 많아도 안전합니다.
+   - 하루에 한 번 이전 상태를 자동 보관(최근 5개)합니다. */
+(function () {
+  var DB = 'royalty-lite', ST = 'kv', DAY = 86400000, SNAPS = 5;
+  var dbp = new Promise(function (res) {
+    try {
+      var r = indexedDB.open(DB, 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore(ST); };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { res(null); };
+      r.onblocked = function () { res(null); };
+    } catch (e) { res(null); }
+  });
+  function idbGet(db, k) {
+    return new Promise(function (res) {
+      try { var q = db.transaction(ST, 'readonly').objectStore(ST).get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(undefined); }; }
+      catch (e) { res(undefined); }
+    });
+  }
+  function idbPut(db, k, v) {
+    return new Promise(function (res, rej) {
+      try {
+        var t = db.transaction(ST, 'readwrite'); t.objectStore(ST).put(v, k);
+        t.oncomplete = function () { res(); }; t.onerror = function () { rej(t.error); }; t.onabort = function () { rej(t.error); };
+      } catch (e) { rej(e); }
+    });
+  }
+
+  // 저장 (순서대로 한 번에 하나씩)
+  var chain = Promise.resolve();
+  window.__liteSave = function (json, force) {
+    chain = chain.then(function () {
+      return dbp.then(function (db) {
+        if (!db) { try { localStorage.setItem('RoyaltyData_v6_Backup', json); } catch (e) {} return; }
+        return idbGet(db, 'meta').then(function (meta) {
+          meta = meta || { ts: 0, i: -1 };
+          return idbGet(db, 'data').then(function (prev) {
+            var p = Promise.resolve();
+            var hasPrev = typeof prev === 'string' && prev.length > 2 && prev !== json;
+            if (hasPrev && force) {
+              p = idbPut(db, 'snap-pre', { ts: Date.now(), json: prev });            // 복원/불러오기 직전 상태
+            } else if (hasPrev && Date.now() - meta.ts > DAY) {
+              var i = (meta.i + 1) % SNAPS;
+              p = idbPut(db, 'snap-' + i, { ts: Date.now(), json: prev }).then(function () { return idbPut(db, 'meta', { ts: Date.now(), i: i }); });
+            }
+            return p.then(function () { return idbPut(db, 'data', json); });
+          });
+        });
+      });
+    }).catch(function (e) { console.error('저장 실패', e); });
+    return chain;
+  };
+
+  window.__liteReset = function () {
+    return dbp.then(function (db) {
+      if (!db) return;
+      return new Promise(function (res) {
+        try { var t = db.transaction(ST, 'readwrite'); t.objectStore(ST).clear(); t.oncomplete = res; t.onerror = res; t.onabort = res; } catch (e) { res(); }
+      });
+    });
+  };
+
+  // 설정창: 자동 보관본 목록 / 되돌리기
+  function fmt(ts) { var d = new Date(ts), p = function (n) { return String(n).padStart(2, '0'); }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+  window.__liteSnapList = function () {
+    var sel = document.getElementById('snap-select'); if (!sel) return;
+    dbp.then(function (db) {
+      if (!db) { sel.innerHTML = '<option value="">(이 브라우저에서는 사용할 수 없어요)</option>'; return; }
+      var keys = ['snap-pre']; for (var i = 0; i < SNAPS; i++) keys.push('snap-' + i);
+      return Promise.all(keys.map(function (k) { return idbGet(db, k).then(function (v) { return v && v.json ? { k: k, v: v } : null; }); })).then(function (list) {
+        list = list.filter(Boolean).sort(function (a, b) { return b.v.ts - a.v.ts; });
+        if (!list.length) { sel.innerHTML = '<option value="">아직 보관본이 없어요 (내일부터 쌓여요)</option>'; return; }
+        sel.innerHTML = list.map(function (o) {
+          var n = ''; try { var d = JSON.parse(o.v.json); n = ' · 작품 ' + ((d.masterWorks || []).length) + '개'; } catch (e) {}
+          return '<option value="' + o.k + '">' + (o.k === 'snap-pre' ? '불러오기/되돌리기 직전 · ' : '') + fmt(o.v.ts) + n + '</option>';
+        }).join('');
+      });
+    });
+  };
+  window.restoreSnapshot = function () {
+    var sel = document.getElementById('snap-select'); if (!sel || !sel.value) { alert('되돌릴 보관본을 골라 주세요.'); return; }
+    if (!confirm('선택한 보관본으로 되돌립니다. 지금 내용은 사라져요. 계속할까요?')) return;
+    dbp.then(function (db) { return idbGet(db, sel.value); }).then(function (o) {
+      if (!o || !o.json) { alert('보관본을 읽지 못했어요.'); return; }
+      return window.__liteSave(o.json, true).then(function () { alert('되돌렸어요.'); location.reload(); });
+    });
+  };
+
+  // 시작
+  dbp.then(function (db) { return db ? idbGet(db, 'data') : undefined; }).then(function (v) {
+    var localData = typeof v === 'string' ? v : null;
+    return window.__cloudPrepareData ? window.__cloudPrepareData(localData) : localData;
+  }).then(function (v) {
+    window.__LITE_DATA__ = typeof v === 'string' ? v : null;
+    if (window.__LITE_DATA__) window.__liteSave(window.__LITE_DATA__);
+    var el = document.createElement('script');
+    el.textContent = document.getElementById('app-src').textContent;
+    document.body.appendChild(el);
+    try { document.dispatchEvent(new Event('DOMContentLoaded')); } catch (e) {}
+    try { if (window.__appInit) window.__appInit(); } catch (e) { console.error(e); }
+  });
+})();
+
+    </script>
+
+</body>
+</html>

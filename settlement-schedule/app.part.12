@@ -1,0 +1,2804 @@
+                boxEl.style.height = h + 'px';
+                return { left, top, right: left + w, bottom: top + h };
+            }
+
+            document.addEventListener('mousemove', (e) => {
+                if (!active || !boxEl) return;
+                const box = updateBox(e.clientX, e.clientY);
+
+                // 같은 캘린더의 카드들과 겹침 판정
+                calSelection.cal = whichCal;
+                calSelection.ids.clear();
+                containerEl.querySelectorAll('.cal-selectable').forEach(card => {
+                    const r = card.getBoundingClientRect();
+                    const overlap = !(r.right < box.left || r.left > box.right || r.bottom < box.top || r.top > box.bottom);
+                    if (overlap) {
+                        card.classList.add('cal-selected');
+                        calSelection.ids.add(card.dataset.blockId + '|' + card.dataset.blockDate);
+                    } else {
+                        card.classList.remove('cal-selected');
+                    }
+                });
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!active) return;
+                active = false;
+                if (boxEl) { boxEl.remove(); boxEl = null; }
+                // 선택이 하나도 없으면 상태 비움
+                if (calSelection.ids.size === 0) clearSelection();
+            });
+
+            // Del / Backspace → 선택된 카드 일괄 삭제 (확인창 없음)
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+                if (calSelection.ids.size === 0) return;
+                // 입력 중이면(모달 등) 무시
+                const ae = document.activeElement;
+                if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+
+                e.preventDefault();
+                deleteSelectedCalBlocks();
+            });
+        })();
+
+        function deleteSelectedCalBlocks() {
+            if (calSelection.ids.size === 0) return;
+            const cal = calSelection.cal;
+            const store = cal === 'write' ? writeSchedules : taskSchedules;
+
+            const count = calSelection.ids.size;
+            const label = cal === 'write' ? '집필' : '스케줄';
+            if (!confirm(`선택한 ${label} 일정 ${count}개를 삭제하시겠습니까?`)) return;
+
+            calSelection.ids.forEach(key => {
+                const sep = key.lastIndexOf('|');
+                const id = key.slice(0, sep);
+                const date = key.slice(sep + 1);
+                if (store[date]) {
+                    store[date] = store[date].filter(item => item.id !== id);
+                    if (store[date].length === 0) delete store[date];
+                }
+            });
+
+            calSelection.ids.clear();
+            calSelection.cal = null;
+            save();
+            if (cal === 'write') renderWriteCalendar();
+            else renderTaskCalendar();
+        }
+
+        // 🟢 [NEW] 집필 관리 모달 기능
+        let currentEditWriteDate = null;
+        let currentEditWriteId = null;
+
+        // 🟢 [NEW] 목표 분량 프리셋(4000/5000/6000/직접입력) 선택
+        function selectWriteGoalPreset(val) {
+            const input = document.getElementById('write-goal-input');
+            if (val !== 'custom') {
+                input.value = val;
+            }
+            input.focus();
+            if (val === 'custom') input.select();
+            syncWriteGoalPresetHighlight();
+        }
+
+        // 현재 입력된 글자수에 맞춰 프리셋 버튼 하이라이트 동기화 (직접 타이핑해도 반영)
+        function syncWriteGoalPresetHighlight() {
+            const val = parseInt(document.getElementById('write-goal-input').value) || 0;
+            const presets = [4000, 5000, 6000, 8000, 10000, 12000, 15000];
+            document.querySelectorAll('.write-goal-preset-btn').forEach(btn => {
+                const isCustomBtn = btn.dataset.goal === 'custom';
+                const active = isCustomBtn ? !presets.includes(val) : parseInt(btn.dataset.goal) === val;
+                btn.classList.toggle('bg-emerald-500', active);
+                btn.classList.toggle('text-white', active);
+                btn.classList.toggle('border-emerald-500', active);
+                btn.classList.toggle('bg-slate-50', !active);
+                btn.classList.toggle('text-slate-600', !active);
+                btn.classList.toggle('border-slate-200', !active);
+            });
+        }
+
+        function toggleWriteType(category) {
+            const goalCont = document.getElementById('write-goal-container');
+            const memoCont = document.getElementById('write-memo-container');
+            const memoLabel = document.getElementById('write-memo-label');
+            const checklistCont = document.getElementById('write-checklist-container');
+            const completeCont = document.getElementById('write-complete-container');
+            const isMemo = category === WRITE_MEMO_CATEGORY;
+
+            if (isMemo) {
+                goalCont.classList.add('hidden');
+                memoCont.classList.add('hidden');
+                checklistCont.classList.remove('hidden');
+                completeCont.classList.add('hidden');
+                if (!document.getElementById('write-checklist-rows').children.length) addWriteChecklistRow('', false, false);
+            } else if (category) {
+                goalCont.classList.add('hidden');
+                memoCont.classList.remove('hidden');
+                checklistCont.classList.add('hidden');
+                if (currentEditWriteId) completeCont.classList.remove('hidden');
+                if (memoLabel) memoLabel.textContent = `${category} 메모 (선택)`;
+            } else {
+                goalCont.classList.remove('hidden');
+                memoCont.classList.add('hidden');
+                checklistCont.classList.add('hidden');
+                if (currentEditWriteId) completeCont.classList.remove('hidden');
+            }
+        }
+
+        // ── '메모' 분류 체크리스트 편집 ──
+        function addWriteChecklistRow(text, done, focus, id) {
+            const rows = document.getElementById('write-checklist-rows');
+            const row = document.createElement('div');
+            row.className = 'flex items-center gap-2';
+            row.dataset.itemId = id || ('ck_' + Date.now() + Math.floor(Math.random() * 1000));
+            const cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.checked = !!done; cb.className = 'w-4 h-4 accent-emerald-500 shrink-0';
+            const input = document.createElement('input');
+            input.type = 'text'; input.value = text || ''; input.placeholder = '할 일을 적으세요';
+            input.className = 'flex-1 min-w-0 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm outline-none focus:border-emerald-400';
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); addWriteChecklistRow('', false, true); }
+            });
+            const del = document.createElement('button');
+            del.type = 'button'; del.className = 'text-slate-300 hover:text-rose-500 px-1 shrink-0';
+            del.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            del.onclick = () => row.remove();
+            row.append(cb, input, del);
+            rows.appendChild(row);
+            if (focus) input.focus();
+        }
+
+        function renderWriteChecklistRows(items) {
+            document.getElementById('write-checklist-rows').innerHTML = '';
+            (items || []).forEach(it => addWriteChecklistRow(it.text, it.done, false, it.id));
+        }
+
+        function collectWriteChecklist() {
+            return Array.from(document.querySelectorAll('#write-checklist-rows > div')).map(row => ({
+                id: row.dataset.itemId,
+                text: row.querySelector('input[type="text"]').value.trim(),
+                done: row.querySelector('input[type="checkbox"]').checked
+            })).filter(it => it.text);
+        }
+
+        // 🟢 [NEW] 집필 분류(카테고리) 드롭다운 옵션 렌더 — 스케줄 관리와 독립적으로 관리됨
+        function renderWriteCategorySelectOptions() {
+            const select = document.getElementById('write-category-select');
+            if (!select) return;
+            const prevValue = select.value;
+            select.innerHTML = `<option value="">✏️ 집필 목표</option>` + writeCategoryList.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+            select.value = writeCategoryList.includes(prevValue) ? prevValue : "";
+        }
+
+        function openWriteModal(dateStr) {
+            if(masterWorks.length === 0) { alert('먼저 작품을 등록해주세요.'); return; }
+            currentEditWriteDate = dateStr; currentEditWriteId = null;
+            document.getElementById('write-modal-title').innerText = "✍️ 집필 목표 추가";
+            document.getElementById('write-modal-date').innerText = dateStr;
+            
+            currentWriteModalGenre = '전체';
+            renderWriteModalGenreTabs();
+            renderWriteModalWorkSelect();
+            document.getElementById('write-work-select').value = "";
+            
+            renderWriteCategorySelectOptions();
+            document.getElementById('write-category-select').value = "";
+            document.getElementById('write-goal-input').value = "4000";
+            syncWriteGoalPresetHighlight();
+            document.getElementById('write-memo-input').value = "";
+            document.getElementById('write-is-completed').checked = false;
+            renderWriteVolumeSelect('');
+            document.getElementById('write-complete-container').classList.add('hidden');
+            document.getElementById('write-delete-btn').classList.add('hidden');
+            document.getElementById('write-goal-bulk-btn').classList.add('hidden'); // 새로 추가하는 카드는 아직 순서상 이후 카드가 없으니 일괄 변경/일괄 삭제 버튼 숨김
+            document.getElementById('write-delete-bulk-btn').classList.add('hidden');
+            renderWriteChecklistRows([]);
+            toggleWriteType('');
+            updateWriteWorkInfoPanel();
+
+            const wsm1 = document.getElementById('write-schedule-modal');
+            wsm1.classList.add('open');
+            requestAnimationFrame(() => { wsm1.scrollTop = 0; });
+        }
+
+        function openWriteEditModal(id, dateStr) {
+            const item = writeSchedules[dateStr]?.find(s => s.id === id);
+            if(!item) return;
+            currentEditWriteDate = dateStr; currentEditWriteId = id;
+            document.getElementById('write-modal-title').innerText = "🛠 집필 목표 관리";
+            document.getElementById('write-modal-date').innerText = dateStr;
+            
+            const work = masterWorks.find(w => w.id === item.workId);
+            currentWriteModalGenre = work ? work.genre : '전체';
+            renderWriteModalGenreTabs();
+            renderWriteModalWorkSelect();
+            // 이미 연결해둔 작품이 출간 완료(또는 과거 작품 숨김)로 목록에서 빠졌더라도
+            // 연결이 풀린 것처럼 빈 채로 뜨지 않게 임시로 넣어준다
+            const writeWorkSel = document.getElementById('write-work-select');
+            if (item.workId && !Array.from(writeWorkSel.options).some(o => o.value === item.workId)) {
+                const r = resolveWorkItem(item.workId);
+                if (r.displayTitle) writeWorkSel.insertAdjacentHTML('beforeend', `<option value="${item.workId}">${r.displayTitle} (출간됨)</option>`);
+            }
+            writeWorkSel.value = item.workId;
+            
+            renderWriteCategorySelectOptions();
+            document.getElementById('write-category-select').value = item.category || "";
+            document.getElementById('write-goal-input').value = item.goal || 4000;
+            syncWriteGoalPresetHighlight();
+            document.getElementById('write-memo-input').value = item.memo || "";
+            document.getElementById('write-is-completed').checked = item.isCompleted;
+            renderWriteVolumeSelect(item.volumeId || '');
+            renderWriteChecklistRows(item.checklist || []);
+
+            document.getElementById('write-complete-container').classList.remove('hidden');
+            toggleWriteType(item.category || '');
+            document.getElementById('write-delete-btn').classList.remove('hidden');
+            // 분류 없는 '집필 목표' 카드일 때만 일괄 변경/일괄 삭제 버튼 노출 (교정/시놉시스 등은 대상 아님)
+            document.getElementById('write-goal-bulk-btn').classList.toggle('hidden', !!item.category);
+            document.getElementById('write-delete-bulk-btn').classList.toggle('hidden', !!item.category);
+            updateWriteWorkInfoPanel();
+
+            const wsm2 = document.getElementById('write-schedule-modal');
+            wsm2.classList.add('open');
+            requestAnimationFrame(() => { wsm2.scrollTop = 0; });
+        }
+
+        function closeWriteModal() { document.getElementById('write-schedule-modal').classList.remove('open'); }
+
+        // 🟢 [NEW] 집필 목표 모달 왼쪽에 붙는 '작품 정보' 패널 — 선택된 작품의 기본 정보와 목표 글자수를 보여주고,
+        // 공포/공미 글자수는 여기서 바로 수정할 수 있게 한다 (extras/외전은 대상이 아니라 원작품 기준).
+        function updateWriteWorkInfoPanel() {
+            const panel = document.getElementById('write-workinfo-panel');
+            if (!panel) return;
+            const workId = document.getElementById('write-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) { panel.style.visibility = 'hidden'; return; }
+            panel.style.visibility = 'visible';
+
+            document.getElementById('wwi-title').textContent = w.title || '(제목 없음)';
+            const genreCol = getGenreColor(w.genre);
+            const genreBadge = document.getElementById('wwi-genre-badge');
+            genreBadge.textContent = w.genre || '-';
+            genreBadge.style.background = hexToRgba(genreCol, 0.16);
+            genreBadge.style.color = genreCol;
+            // 카드 전체는 다시 흰색으로 두고(.modal-content 기본값 그대로), 제목이 있는 헤더 부분에만
+            // 이 작품 장르 색으로 그라데이션을 준다. 반투명(rgba)이 아니라 흰색과 섞은 불투명한 색이라 흐려 보이지 않는다.
+            panel.style.removeProperty('background');
+            document.getElementById('wwi-header').style.background = `linear-gradient(135deg, ${mixWithWhite(genreCol, 0.65)}, ${mixWithWhite(genreCol, 0.9)})`;
+            document.getElementById('wwi-publisher').textContent = w.publisher || '-';
+            document.getElementById('wwi-manuscript-date').value = w.manuscriptDate || '';
+            document.getElementById('wwi-goal-withspace').value = w.goalWithSpace || '';
+            document.getElementById('wwi-goal-nospace').value = w.goalNoSpace || '';
+
+            const pendingBox = document.getElementById('wwi-pending');
+            const dateInput = document.getElementById('wwi-publish-date');
+            const monthInput = document.getElementById('wwi-pending-month');
+            pendingBox.checked = !!w.isPending;
+            if (w.isPending) {
+                dateInput.classList.add('hidden'); dateInput.value = '';
+                monthInput.classList.remove('hidden'); monthInput.value = w.pendingMonth || '';
+            } else {
+                dateInput.classList.remove('hidden'); dateInput.value = w.publishDate || '';
+                monthInput.classList.add('hidden'); monthInput.value = '';
+            }
+            renderWwiProgress(w);
+        }
+
+        // '현재 집필 정보' — 달력에 만들어 둔 집필 카드 기준 계획 분량, 지금까지 쓴 분량, 오늘부터 남은 분량과 하루 분량.
+        // 계획 분량은 카드 누적 숫자(괄호 안 첫 숫자)와 같은 방식: '지금부터 카운터' 리셋 날짜 이후 카드 목표를 전부 더한 값.
+        function renderWwiProgress(w) {
+            const body = document.getElementById('wwi-progress-body');
+            if (!body) return;
+            const t = new Date();
+            const today = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+            const resetDate = writeCounterResetDate[w.id] || '';
+            let planned = 0, lastDate = '';
+            const cardDaysLeft = new Set();
+            Object.entries(writeSchedules).forEach(([ds, list]) => (list || []).forEach(s => {
+                if (s.workId !== w.id || s.category) return;
+                if (resetDate && ds < resetDate) return;
+                const g = Number(s.goal) || 0;
+                planned += g;
+                if (ds > lastDate) lastDate = ds;
+                if (ds >= today && g > 0) cardDaysLeft.add(ds);
+            }));
+            const fmt = n => Math.round(n).toLocaleString();
+            const nospace = n => fmt(n * NOSPACE_TO_WITHSPACE_RATIO);
+            const row = (label, main, sub, hi) => `
+                <div class="rounded-xl pl-3 pr-3 py-2" style="background:${hi ? 'var(--primary-light)' : '#f8fafc'}">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-bold ${hi ? '' : 'text-slate-500'}" ${hi ? 'style="color:var(--primary)"' : ''}>${label}</span>
+                        <span class="font-bold text-sm ${hi ? '' : 'text-slate-700'}" ${hi ? 'style="color:var(--primary)"' : ''}>${main}</span>
+                    </div>
+                    ${sub ? `<p class="text-[10px] text-slate-400 text-right mt-0.5">${sub}</p>` : ''}
+                </div>`;
+            if (!planned) { body.innerHTML = `<p class="text-xs text-slate-400">이 작품의 집필 카드가 아직 없어요.</p>`; return; }
+
+            const written = writerGetWorkTotal(w.id);
+            const remain = Math.max(0, planned - written);
+            let html = row('계획 글자수', `${fmt(planned)}자`, `공미 ${nospace(planned)}자 · 마지막 카드 ${lastDate.slice(5).replace('-', '/')}`)
+                     + row('지금까지 쓴 글자수', `${fmt(written)}자`, `공미 ${nospace(written)}자`)
+                     + row('오늘부터 남은 글자수', `${fmt(remain)}자`, `공미 ${nospace(remain)}자`);
+            if (remain <= 0) {
+                html += `<p class="text-xs font-bold text-center py-1" style="color:var(--primary)">계획한 분량을 다 썼어요 🎉</p>`;
+            } else if (lastDate < today) {
+                html += `<p class="text-xs text-slate-400 text-center py-1">오늘 이후 집필 카드가 없어요.</p>`;
+            } else {
+                const daysLeft = Math.round((new Date(lastDate) - new Date(today)) / 86400000) + 1;
+                const cardDays = cardDaysLeft.size;
+                html += row('하루에 써야 할 글자수', `${fmt(remain / daysLeft)}자`,
+                    `${lastDate.slice(5).replace('-', '/')}까지 ${daysLeft}일 기준${cardDays && cardDays !== daysLeft ? ` · 남은 카드 ${cardDays}일 기준 ${fmt(remain / cardDays)}자` : ''}`, true);
+            }
+            body.innerHTML = html;
+        }
+
+        // 패널에서 공포/공미 글자수를 바꾸면 원작품(masterWorks)에 바로 저장하고,
+        // 반대쪽 값은 기존 등록 폼과 같은 비율(NOSPACE_TO_WITHSPACE_RATIO)로 같이 채워준다.
+        function wwiUpdateGoal(field) {
+            const workId = document.getElementById('write-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            const withSpaceEl = document.getElementById('wwi-goal-withspace');
+            const noSpaceEl = document.getElementById('wwi-goal-nospace');
+            if (field === 'withspace') {
+                const v = Math.max(0, parseInt(withSpaceEl.value) || 0);
+                w.goalWithSpace = v;
+                if (v > 0) { w.goalNoSpace = Math.round(v * NOSPACE_TO_WITHSPACE_RATIO); noSpaceEl.value = w.goalNoSpace; }
+            } else {
+                const v = Math.max(0, parseInt(noSpaceEl.value) || 0);
+                w.goalNoSpace = v;
+                if (v > 0) { w.goalWithSpace = Math.round(v / NOSPACE_TO_WITHSPACE_RATIO); withSpaceEl.value = w.goalWithSpace; }
+            }
+            save();
+            if (typeof updateWriteVolumeInfo === 'function') updateWriteVolumeInfo();
+            updateUI();
+        }
+
+        // 출간 예정일 미정/확정 토글 — 메인 작품 등록 폼(new-work-pending)과 동일한 동작
+        function wwiTogglePending(checkbox) {
+            const dateInput = document.getElementById('wwi-publish-date');
+            const monthInput = document.getElementById('wwi-pending-month');
+            if (checkbox.checked) {
+                dateInput.classList.add('hidden'); dateInput.value = '';
+                monthInput.classList.remove('hidden');
+            } else {
+                dateInput.classList.remove('hidden');
+                monthInput.classList.add('hidden'); monthInput.value = '';
+            }
+            wwiUpdatePublishDate();
+        }
+        // 출간 예정일/미정 여부를 원작품에 바로 저장 — 작품 등록 폼과 완전히 같은 필드를 씀
+        function wwiUpdatePublishDate() {
+            const workId = document.getElementById('write-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            const isPending = document.getElementById('wwi-pending').checked;
+            w.isPending = isPending;
+            w.pendingMonth = isPending ? (document.getElementById('wwi-pending-month').value || '') : '';
+            w.publishDate = isPending ? '' : (document.getElementById('wwi-publish-date').value || '');
+            save();
+            updateUI();
+        }
+        // 완고 입고일을 원작품에 바로 저장하고, 자동 등록된 '완고 입고' 스케줄도 같이 옮겨준다
+        function wwiUpdateManuscriptDate() {
+            const workId = document.getElementById('write-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            const oldDate = w.manuscriptDate;
+            const newDate = document.getElementById('wwi-manuscript-date').value || '';
+            w.manuscriptDate = newDate;
+            syncManuscriptTaskSchedule(w, oldDate, newDate);
+            save();
+            updateUI();
+        }
+
+        // 🟢 [NEW] 지금 편집 중인 카드부터, 같은 작품의 이후 '집필 목표' 카드들을 전부 지정한 글자수로 한 번에 변경
+        // (날짜 → id 순서는 cumulativeGoalMap과 동일한 정렬 기준을 사용해서 달력에 보이는 순서와 일치시킴)
+        function bulkUpdateGoalFromHere() {
+            if (!currentEditWriteId) return;
+            const workId = document.getElementById('write-work-select').value;
+            const newGoal = parseInt(document.getElementById('write-goal-input').value) || 0;
+            if (newGoal <= 0) { alert('변경할 글자수를 입력해주세요.'); return; }
+
+            // 같은 작품 + 분류 없는(=집필 목표) 카드만 모아서 날짜/id 순 정렬
+            let items = [];
+            Object.entries(writeSchedules).forEach(([dateStr, schedules]) => {
+                (schedules || []).forEach(s => {
+                    if (s.workId === workId && !s.category) items.push(s);
+                });
+            });
+            items.sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id));
+
+            const startIdx = items.findIndex(s => s.id === currentEditWriteId);
+            if (startIdx === -1) return;
+            const targets = items.slice(startIdx);
+
+            if (!confirm(`이 카드부터 이후 ${targets.length}개 카드를 전부 ${newGoal.toLocaleString()}자로 변경할까요?`)) return;
+
+            targets.forEach(s => { s.goal = newGoal; });
+
+            save();
+            closeWriteModal();
+            renderWriteCalendar();
+        }
+
+        // 🟢 [NEW] 지금 편집 중인 카드부터, 같은 작품의 이후 '집필 목표' 카드들을 전부 삭제 (이 앞의 카드는 그대로 둠)
+        function bulkDeleteFromHere() {
+            if (!currentEditWriteId) return;
+            const workId = document.getElementById('write-work-select').value;
+
+            let items = [];
+            Object.entries(writeSchedules).forEach(([dateStr, schedules]) => {
+                (schedules || []).forEach(s => {
+                    if (s.workId === workId && !s.category) items.push(s);
+                });
+            });
+            items.sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id));
+
+            const startIdx = items.findIndex(s => s.id === currentEditWriteId);
+            if (startIdx === -1) return;
+            const targets = items.slice(startIdx);
+
+            if (!confirm(`이 카드부터 이후 ${targets.length}개 카드를 전부 삭제할까요?\n(이 앞의 카드는 그대로 남아요)`)) return;
+
+            const targetIds = new Set(targets.map(s => s.id));
+            Object.keys(writeSchedules).forEach(dateStr => {
+                writeSchedules[dateStr] = (writeSchedules[dateStr] || []).filter(s => !targetIds.has(s.id));
+                if (writeSchedules[dateStr].length === 0) delete writeSchedules[dateStr];
+            });
+
+            save();
+            closeWriteModal();
+            renderWriteCalendar();
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 권(卷) 관리 — 작품을 1권 / 2권으로 나눠서 각각 목표를 잡는다
+        // ════════════════════════════════════════════════════════
+
+        // 예전 방식('이 카드부터 새 구간 시작' 표시)으로 저장된 카드를 권 구조로 한 번만 옮긴다
+        function migrateWriteResetToVolumes() {
+            let changed = false;
+            const byWork = {};
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.category) return;
+                (byWork[x.workId] = byWork[x.workId] || []).push(x);
+            }));
+
+            Object.entries(byWork).forEach(([workId, items]) => {
+                if (!items.some(x => x.resetCounter)) return;
+                items.sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id));
+
+                const vols = writeVolumes[workId] ? [...writeVolumes[workId]] : [];
+                const newId = () => 'vol_' + Date.now() + Math.floor(Math.random()*100000);
+
+                // 첫 구간 표시 앞에 있던 카드들은 '1권'으로 묶어준다
+                const firstIdx = items.findIndex(x => x.resetCounter);
+                let curVolId = '';
+                if (firstIdx > 0) {
+                    const before = items.slice(0, firstIdx).reduce((n, x) => n + (Number(x.goal) || 0), 0);
+                    const v = { id: newId(), name: '1권', goal: before };
+                    vols.push(v);
+                    curVolId = v.id;
+                }
+
+                items.forEach(x => {
+                    if (x.resetCounter) {
+                        const name = (x.resetLabel || '').trim() || `${vols.length + 1}권`;
+                        const v = { id: newId(), name, goal: Number(x.resetGoal) || 0 };
+                        vols.push(v);
+                        curVolId = v.id;
+                    }
+                    if (curVolId && !x.volumeId) x.volumeId = curVolId;
+                    if (x.resetCounter || x.resetLabel !== undefined || x.resetGoal !== undefined) {
+                        delete x.resetCounter; delete x.resetLabel; delete x.resetGoal;
+                        changed = true;
+                    }
+                });
+                if (vols.length) writeVolumes[workId] = vols;
+            });
+
+            if (changed) { try { save(); } catch (e) {} }
+
+            clearVolumesBeforeCounterReset();
+        }
+
+        // '지금부터 카운터' 이전 카드에 잘못 붙은 권 지정을 떼어낸다.
+        // 그 구간은 예전처럼 권과 무관하게 따로 세야 한다.
+        function clearVolumesBeforeCounterReset() {
+            let changed = false;
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.category || !x.volumeId) return;
+                const cutoff = writeCounterResetDate[x.workId];
+                if (cutoff && x.date < cutoff) { x.volumeId = ''; changed = true; }
+            }));
+            if (changed) { try { save(); } catch (e) {} }
+            return changed;
+        }
+
+        // 그 작품의 권 목록 (외전은 외전대로 따로 관리)
+        function getWriteVolumes(workId) {
+            return (writeVolumes[workId] || []).map(v => ({ ...v }));
+        }
+
+        // 집필 카드 모달의 '권 선택' 드롭다운을 다시 그린다
+        function renderWriteVolumeSelect(keepId) {
+            const sel = document.getElementById('write-volume-select');
+            if (!sel) return;
+            const workId = document.getElementById('write-work-select').value;
+            const vols = getWriteVolumes(workId);
+            const prev = keepId !== undefined ? keepId : sel.value;
+
+            sel.innerHTML = `<option value="">— 권 나누지 않음 —</option>` +
+                vols.map(v => `<option value="${v.id}">${v.name}${v.goal ? ` (${Number(v.goal).toLocaleString()}자)` : ''}</option>`).join('');
+            sel.value = vols.some(v => v.id === prev) ? prev : '';
+            updateWriteVolumeInfo();
+        }
+
+        // 고른 권에 이미 얼마나 배정했는지 알려준다
+        function updateWriteVolumeInfo() {
+            const el = document.getElementById('write-volume-info');
+            if (!el) return;
+            const workId = document.getElementById('write-work-select').value;
+            const volId = document.getElementById('write-volume-select').value;
+            const resolved = resolveWorkItem(workId);
+
+            const applyBox = document.getElementById('write-volume-apply');
+            if (applyBox) applyBox.classList.toggle('hidden', !volId);
+
+            if (!volId) {
+                const workGoal = resolved.goalWithSpace || 0;
+                el.innerHTML = workGoal
+                    ? `권을 나누지 않으면 작품 전체 목표 <b class="text-slate-700">${workGoal.toLocaleString()}자</b> 기준으로 누적됩니다.`
+                    : `권을 나누지 않으면 작품 전체 기준으로 누적됩니다.`;
+                return;
+            }
+
+            const vol = getWriteVolumes(workId).find(v => v.id === volId);
+            if (!vol) { el.innerHTML = ''; return; }
+
+            // 이 권에 배정된 다른 카드들의 목표 합 (지금 편집 중인 카드는 제외)
+            let assigned = 0;
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.workId === workId && !x.category && x.volumeId === volId && x.id !== currentEditWriteId) {
+                    assigned += Number(x.goal) || 0;
+                }
+            }));
+            const goal = Number(vol.goal) || 0;
+            const left = goal ? Math.max(0, goal - assigned) : 0;
+            // 저장하면 앞의 권 미지정 카드들이 이전 권으로 자동 지정된다는 안내
+            const autoN = autoFillPreviousVolume(workId, currentEditWriteId, volId, currentEditWriteDate, false);
+            const vols = getWriteVolumes(workId);
+            const prevName = autoN ? (vols[vols.findIndex(v => v.id === volId) - 1] || {}).name : '';
+
+            el.innerHTML = `<b class="text-amber-600">${vol.name}</b> 목표 <b class="text-slate-700">${goal.toLocaleString()}자</b>
+                &nbsp;·&nbsp; 이미 배정 <b class="text-slate-700">${assigned.toLocaleString()}자</b>
+                ${goal ? `&nbsp;·&nbsp; 남은 분량 <b class="text-amber-600">${left.toLocaleString()}자</b>` : ''}
+                ${autoN ? `<br><span class="text-emerald-600">저장하면 이 카드 앞의 권 미지정 카드 <b>${autoN}개</b>가 <b>${prevName}</b>으로 자동 지정됩니다.</span>` : ''}`;
+        }
+
+        // 같은 작품의 집필 목표 카드를 달력 순서대로 정렬해서 돌려준다
+        function getWorkGoalCardsSorted(workId) {
+            let items = [];
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.workId === workId && !x.category) items.push(x);
+            }));
+            items.sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.id.localeCompare(b.id));
+            return items;
+        }
+
+        // '지금부터 카운터'로 잘라둔 날짜. 그 이전 카드들은 권에 넣지 않고 예전처럼 따로 센다.
+        function getVolumeCutoffDate(workId) {
+            return writeCounterResetDate[workId] || '';
+        }
+
+        // 2권을 고르면, 그 앞의 '권 미지정' 카드들은 자연히 1권이므로 자동으로 채워준다.
+        // (이미 권이 정해진 카드를 만나거나, 카운터 리셋 지점을 만나면 거기서 멈춘다)
+        function autoFillPreviousVolume(workId, cardId, volId, dateStr, applyIt) {
+            if (!workId || !volId) return 0;
+            const vols = writeVolumes[workId] || [];
+            const vi = vols.findIndex(v => v.id === volId);
+            if (vi <= 0) return 0;                 // 첫 권이면 앞에 채울 권이 없다
+            const prevVol = vols[vi - 1];
+
+            const items = getWorkGoalCardsSorted(workId);
+            let idx = cardId ? items.findIndex(x => x.id === cardId) : -1;
+            if (idx === -1) {
+                // 아직 저장 전인 새 카드는 날짜 기준으로 앞쪽을 찾는다
+                idx = items.filter(x => x.date < dateStr).length;
+            }
+
+            const cutoff = getVolumeCutoffDate(workId);
+            let filled = 0;
+            for (let i = idx - 1; i >= 0; i--) {
+                if (items[i].volumeId) break;                  // 이미 권이 있으면 중단
+                if (cutoff && items[i].date < cutoff) break;    // 카운터 리셋 이전은 건드리지 않음
+                if (applyIt) items[i].volumeId = prevVol.id;
+                filled++;
+            }
+            return filled;
+        }
+
+        // 이 카드 앞/뒤의 같은 작품 카드들을 한 번에 같은 권으로 지정한다
+        function applyVolumeToRange(dir) {
+            const workId = document.getElementById('write-work-select').value;
+            const volId = document.getElementById('write-volume-select').value;
+            if (!workId) { alert('먼저 작품을 선택해주세요.'); return; }
+            if (!volId) { alert('먼저 권을 선택해주세요.'); return; }
+            const vol = getWriteVolumes(workId).find(v => v.id === volId);
+            if (!vol) return;
+
+            const items = getWorkGoalCardsSorted(workId);
+
+            const idx = currentEditWriteId ? items.findIndex(x => x.id === currentEditWriteId) : -1;
+            let targets;
+            if (idx === -1) {
+                // 아직 저장 전인 새 카드는 날짜를 기준으로 나눈다
+                const d = currentEditWriteDate;
+                targets = dir === 'before' ? items.filter(x => x.date < d) : items.filter(x => x.date > d);
+            } else {
+                targets = dir === 'before' ? items.slice(0, idx) : items.slice(idx + 1);
+            }
+
+            // '지금부터 카운터'로 잘라둔 이전 카드는 권에 넣지 않는다
+            const cutoff = getVolumeCutoffDate(workId);
+            let skipped = 0;
+            if (cutoff) {
+                const before = targets.length;
+                targets = targets.filter(x => x.date >= cutoff);
+                skipped = before - targets.length;
+            }
+            if (!targets.length) { alert('지정할 카드가 없습니다.'); return; }
+
+            const already = targets.filter(x => x.volumeId && x.volumeId !== volId).length;
+            const msg = `${dir === 'before' ? '이 카드 앞' : '이 카드 뒤'}의 카드 ${targets.length}개를 '${vol.name}'으로 지정할까요?`
+                + (already ? `\n\n(이미 다른 권으로 지정된 카드 ${already}개도 함께 바뀝니다)` : '')
+                + (skipped ? `\n\n(지금부터 카운터 이전 카드 ${skipped}개는 그대로 둡니다)` : '');
+            if (!confirm(msg)) return;
+
+            targets.forEach(x => x.volumeId = volId);
+            save();
+            renderWriteCalendar();
+            updateWriteVolumeInfo();
+        }
+
+        // ── 권 관리 모달
+        let volumeEditRows = [];
+        let volumeEditWorkId = null;
+
+        function openWriteVolumeModal() {
+            const workId = document.getElementById('write-work-select').value;
+            if (!workId) { alert('먼저 작품을 선택해주세요.'); return; }
+            volumeEditWorkId = workId;
+            volumeEditRows = getWriteVolumes(workId);
+            if (!volumeEditRows.length) {
+                // 처음 열면 1권 한 줄을 미리 깔아준다
+                volumeEditRows = [{ id: 'vol_' + Date.now(), name: '1권', goal: resolveWorkItem(workId).goalWithSpace || 0 }];
+            }
+            document.getElementById('volume-modal-work').innerText = resolveWorkItem(workId).displayTitle || '';
+            renderVolumeList();
+            document.getElementById('write-volume-modal').classList.add('open');
+        }
+        function closeWriteVolumeModal() { document.getElementById('write-volume-modal').classList.remove('open'); }
+
+        function renderVolumeList() {
+            const box = document.getElementById('volume-list');
+            box.innerHTML = volumeEditRows.map((v, i) => `
+                <div class="flex items-center gap-2">
+                    <input type="text" value="${(v.name || '').replace(/"/g, '&quot;')}" oninput="volumeEditRows[${i}].name = this.value"
+                           placeholder="예) ${i+1}권" class="flex-1 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm outline-none focus:border-amber-400">
+                    <input type="number" value="${v.goal || ''}" min="0" step="1000" oninput="volumeEditRows[${i}].goal = parseInt(this.value)||0; renderVolumeSummary();"
+                           placeholder="100000" class="w-32 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm text-right outline-none focus:border-amber-400">
+                    <span class="text-sm text-slate-500 shrink-0">자</span>
+                    <button type="button" onclick="removeWriteVolumeRow(${i})" class="w-8 h-8 flex items-center justify-center text-rose-400 hover:bg-rose-50 rounded-lg shrink-0">
+                        <i class="fa-solid fa-trash text-xs"></i>
+                    </button>
+                </div>`).join('');
+            renderVolumeSummary();
+        }
+
+        function renderVolumeSummary() {
+            const el = document.getElementById('volume-summary');
+            if (!el) return;
+            const workGoal = resolveWorkItem(volumeEditWorkId).goalWithSpace || 0;
+            const sum = volumeEditRows.reduce((n, v) => n + (Number(v.goal) || 0), 0);
+            const diff = workGoal - sum;
+            el.innerHTML = `권 목표 합계 <b class="text-slate-700">${sum.toLocaleString()}자</b>
+                &nbsp;·&nbsp; 작품 전체 목표 <b class="text-slate-700">${workGoal.toLocaleString()}자</b>
+                ${workGoal ? (diff === 0
+                    ? ' &nbsp;·&nbsp; <span class="text-emerald-600 font-bold">딱 맞아요</span>'
+                    : (diff > 0 ? ` &nbsp;·&nbsp; <span class="text-amber-600 font-bold">${diff.toLocaleString()}자 남음</span>`
+                                : ` &nbsp;·&nbsp; <span class="text-rose-500 font-bold">${Math.abs(diff).toLocaleString()}자 초과</span>`)) : ''}`;
+        }
+
+        function addWriteVolumeRow() {
+            volumeEditRows.push({ id: 'vol_' + Date.now() + Math.floor(Math.random()*1000), name: `${volumeEditRows.length + 1}권`, goal: 0 });
+            renderVolumeList();
+        }
+
+        function removeWriteVolumeRow(i) {
+            const v = volumeEditRows[i];
+            // 이미 카드에 쓰이고 있는 권이면 알려주고 지운다 (카드의 권 지정은 자동으로 풀린다)
+            let used = 0;
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.workId === volumeEditWorkId && x.volumeId === v.id) used++;
+            }));
+            if (used && !confirm(`'${v.name}'을(를) 삭제하면 이 권으로 지정된 카드 ${used}개의 권 지정이 풀립니다. 삭제할까요?`)) return;
+            volumeEditRows.splice(i, 1);
+            renderVolumeList();
+        }
+
+        function saveWriteVolumes() {
+            const rows = volumeEditRows
+                .map(v => ({ id: v.id, name: (v.name || '').trim(), goal: Number(v.goal) || 0 }))
+                .filter(v => v.name);
+            const keep = new Set(rows.map(v => v.id));
+
+            // 사라진 권을 쓰던 카드는 권 지정을 풀어준다
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.workId === volumeEditWorkId && x.volumeId && !keep.has(x.volumeId)) x.volumeId = '';
+            }));
+
+            // 권이 있던 작품이 이번 저장으로 무권이 되면 '합친 작품'으로 표시해둔다 —
+            // 이 표시가 있어야 진행률 계산이 원고 위치 대신 실제 글자수 합산으로 바뀐다.
+            const hadVolumes = (writeVolumes[volumeEditWorkId] || []).length > 0;
+            if (hadVolumes && rows.length === 0) writeMergedVolumeWorks[volumeEditWorkId] = true;
+
+            if (rows.length) writeVolumes[volumeEditWorkId] = rows;
+            else delete writeVolumes[volumeEditWorkId];
+
+            save();
+            closeWriteVolumeModal();
+            renderWriteVolumeSelect();
+            renderWriteCalendar();
+            try { writerUpdateDailyStats(true); } catch(e) {}
+        }
+
+        // 권을 하나하나 지우지 않고 한 번에 전부 합친다 — 이미 쓴 글자수(카드)는 그대로 두고
+        // 권 지정만 풀어서, 권 구분 없이 실제 글자수(diff) 합산으로 진행률을 보여준다.
+        function mergeWriteVolumes() {
+            if (!volumeEditWorkId) return;
+            const workId = volumeEditWorkId;
+            const vols = writeVolumes[workId] || [];
+            if (!vols.length) { alert('합칠 권이 없어요.'); return; }
+            const names = vols.map(v => v.name).join(', ');
+            if (!confirm(`'${names}'을(를) 전부 합칠까요?\n\n이미 쓴 글자수는 그대로 남고, 권 구분 없이 하나로 합쳐서 진행률을 계산합니다.`)) return;
+
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.workId === workId) x.volumeId = '';
+            }));
+            delete writeVolumes[workId];
+            writeMergedVolumeWorks[workId] = true;
+
+            save();
+            closeWriteVolumeModal();
+            renderWriteVolumeSelect();
+            renderWriteCalendar();
+            try { writerUpdateDailyStats(true); } catch(e) {}
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 3.3% 공제 계산기 — 월별 정산 탭 우측 상단 계산기 아이콘에서 열림
+        // ════════════════════════════════════════════════════════
+        const wc$ = (id) => document.getElementById(id);
+
+        // 데스크탑 앱에서는 다른 미니 위젯처럼 항상 위에 뜨는 별도 창으로 열고,
+        // 웹(브라우저)에서는 별도 창을 띄울 수 없으니 원래대로 모달로 연다.
+        function openWithholdingCalc() {
+            if (isNodeEnvironment && window.electronAPI && window.electronAPI.openCalcWidget) {
+                window.electronAPI.openCalcWidget();
+            } else {
+                openWithholdingCalcModal();
+            }
+        }
+
+        function openWithholdingCalcModal() {
+            document.getElementById('withholding-calc-modal').classList.add('open');
+            wcCalculate();
+        }
+        function closeWithholdingCalcModal() {
+            document.getElementById('withholding-calc-modal').classList.remove('open');
+        }
+
+        function wcFormatKRW(n) {
+            const sign = n < 0 ? '-' : '';
+            const abs = Math.abs(n);
+            const hasDecimal = !Number.isInteger(abs);
+            const parts = abs.toFixed(hasDecimal ? 2 : 0).split('.');
+            parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return sign + parts[0] + (hasDecimal ? ('.' + parts[1]) : '');
+        }
+
+        function wcParseNumbers(text) {
+            // OCR 오인식 보정 (알파벳 O/o를 숫자 0으로, 쉼표 뒤 공백 제거해 숫자 파편화 방지)
+            let cleanText = text.replace(/[Oo]/g, '0').replace(/,\s+/g, ',');
+            const matches = cleanText.match(/-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?/g);
+            if (!matches) return [];
+            return matches.map(s => Number(s.replace(/,/g, ''))).filter(n => Number.isFinite(n));
+        }
+
+        function wcToggleAdvanced() {
+            const on = wc$('wc-advanced-mode').checked;
+            wc$('wc-advanced-controls').classList.toggle('hidden', !on);
+            wc$('wc-kpi-grid').classList.toggle('wc-advanced', on);
+            wc$('wc-pretax-box').classList.toggle('hidden', !on);
+            wcCalculate();
+        }
+        function wcHandleFeeRateChange() {
+            wc$('wc-fee-rate-custom').classList.toggle('hidden', wc$('wc-fee-rate').value !== 'custom');
+            wcCalculate();
+        }
+        function wcHandlePayoutRatioChange() {
+            wc$('wc-payout-ratio-custom').classList.toggle('hidden', wc$('wc-payout-ratio').value !== 'custom');
+            wcCalculate();
+        }
+
+        function wcRenderRows(itemsData) {
+            const tbody = wc$('wc-rows');
+            if (itemsData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="wc-mono" style="text-align:center; color:#94a3b8; padding:20px;">추출된 금액이 없어요 🥲</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = itemsData.map((item, i) => `
+                <tr>
+                    <td class="wc-mono" style="text-align:center; color:#94a3b8">${i + 1}</td>
+                    <td class="wc-mono" style="text-align:right">${wcFormatKRW(item.gross)}</td>
+                    <td class="wc-mono wc-copy-cell" style="text-align:right" onclick="wcCopyIndividualItem(this, ${item.net})">${wcFormatKRW(item.net)}</td>
+                </tr>`).join('');
+        }
+
+        async function wcCopyText(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+        }
+
+        async function wcCopyIndividualItem(element, value) {
+            try {
+                await wcCopyText(String(value));
+                const original = element.textContent;
+                element.textContent = '복사 완료! ✅';
+                element.style.color = '#16a34a';
+                setTimeout(() => { element.textContent = original; element.style.color = ''; }, 1200);
+            } catch (e) {
+                const errBox = wc$('wc-err');
+                errBox.textContent = '복사에 실패했어요 😭';
+                errBox.classList.remove('hidden');
+            }
+        }
+
+        async function wcCopyToClipboard(elementId, titleId, originalTitleText) {
+            const text = wc$(elementId).textContent;
+            const num = text.replace(/[^\d-]/g, '');
+            if (!num) return;
+            try {
+                await wcCopyText(num);
+                const titleElem = wc$(titleId);
+                titleElem.textContent = '복사 완료! ✅';
+                setTimeout(() => { titleElem.textContent = originalTitleText; }, 1500);
+            } catch (e) {
+                const errBox = wc$('wc-err');
+                errBox.textContent = '복사에 실패했어요 😭';
+                errBox.classList.remove('hidden');
+            }
+        }
+
+        function wcCalculate() {
+            const errBox = wc$('wc-err');
+            errBox.classList.add('hidden');
+            errBox.textContent = '';
+
+            const rate = 3.3; // 원천징수 3.3% 고정
+            const advanced = wc$('wc-advanced-mode').checked;
+            let feeRate = 0, payoutRatio = 100;
+
+            if (advanced) {
+                feeRate = wc$('wc-fee-rate').value === 'custom' ? Number(wc$('wc-fee-rate-custom').value) : Number(wc$('wc-fee-rate').value);
+                payoutRatio = wc$('wc-payout-ratio').value === 'custom' ? Number(wc$('wc-payout-ratio-custom').value) : Number(wc$('wc-payout-ratio').value);
+                if (!Number.isFinite(feeRate) || feeRate < 0 || feeRate > 100) {
+                    errBox.textContent = '플랫폼 수수료(%)는 0~100 사이 숫자로 입력해주세요.';
+                    errBox.classList.remove('hidden');
+                    return;
+                }
+                if (!Number.isFinite(payoutRatio) || payoutRatio < 0 || payoutRatio > 100) {
+                    errBox.textContent = '정산 비율(%)은 0~100 사이 숫자로 입력해주세요.';
+                    errBox.classList.remove('hidden');
+                    return;
+                }
+            }
+
+            const feeMult = (100 - feeRate) / 100;
+            const ratioMult = payoutRatio / 100;
+            const preTaxMult = feeMult * ratioMult;
+            const taxMult = (100 - rate) / 100;
+            const mult = preTaxMult * taxMult;
+
+            const nums = wcParseNumbers(wc$('wc-amounts').value);
+            const itemsData = nums.map(n => {
+                const itemNet = Math.round(n * mult);
+                return { gross: n, net: itemNet };
+            });
+
+            const gross = itemsData.reduce((a, b) => a + b.gross, 0);
+            const preTaxRaw = gross * preTaxMult;
+            const netRaw = gross * mult;
+            const withheldRaw = preTaxRaw - netRaw;
+
+            wc$('wc-gross').textContent = wcFormatKRW(Math.round(gross)) + '원';
+            wc$('wc-pretax').textContent = wcFormatKRW(Math.round(preTaxRaw)) + '원';
+            wc$('wc-withheld').textContent = wcFormatKRW(Math.round(withheldRaw)) + '원';
+            wc$('wc-net').textContent = wcFormatKRW(Math.round(netRaw)) + '원';
+            wc$('wc-count').textContent = String(nums.length);
+            wc$('wc-mult').textContent = mult.toFixed(4);
+
+            wcRenderRows(itemsData);
+        }
+
+        // ── 정산서 이미지 OCR (Tesseract.js) ──
+        async function wcProcessImage(file) {
+            const overlay = wc$('wc-loading-overlay');
+            const loadingText = wc$('wc-loading-text');
+            overlay.style.display = 'flex';
+            loadingText.textContent = '엔진 초기 로딩 중... (네트워크에 따라 최대 10초 소요)';
+            try {
+                if (typeof Tesseract === 'undefined') throw new Error('이 버전에서는 이미지 인식을 지원하지 않아요. 숫자를 직접 붙여넣어 주세요');
+                const result = await Tesseract.recognize(file, 'kor+eng', {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            loadingText.textContent = `문자 추출 중... ${Math.round(m.progress * 100)}% 완료`;
+                        } else if (m.status.includes('loading')) {
+                            loadingText.textContent = '언어팩 로딩 중... 잠시만 대기해주세요.';
+                        }
+                    }
+                });
+                const extractedText = result.data.text;
+                const amountsEl = wc$('wc-amounts');
+                amountsEl.value = amountsEl.value ? amountsEl.value + '\n\n' + extractedText : extractedText;
+                wcCalculate();
+            } catch (e) {
+                const errBox = wc$('wc-err');
+                errBox.textContent = '이미지에서 텍스트를 추출하는 데 실패했어요. (' + e.message + ')';
+                errBox.classList.remove('hidden');
+            } finally {
+                overlay.style.display = 'none';
+                loadingText.textContent = '이미지 분석 준비 중...';
+            }
+        }
+
+        function wcHandleDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('wc-dragover'); }
+        function wcHandleDragLeave(e) { e.currentTarget.classList.remove('wc-dragover'); }
+        function wcHandleDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('wc-dragover');
+            const files = e.dataTransfer.files;
+            for (const file of files) {
+                if (file.type.indexOf('image') === 0) { wcProcessImage(file); return; }
+            }
+        }
+
+        // 계산기 모달이 열려있고 금액 입력칸에 포커스가 있을 때만 이미지 붙여넣기를 가로챈다
+        // (다른 곳의 기존 붙여넣기 기능과 절대 안 겹치게)
+        document.addEventListener('paste', (e) => {
+            const modal = document.getElementById('withholding-calc-modal');
+            if (!modal || !modal.classList.contains('open')) return;
+            if (document.activeElement !== wc$('wc-amounts')) return;
+            const cd = e.clipboardData || window.clipboardData;
+            if (!cd) return;
+            if (cd.files && cd.files.length > 0) {
+                for (let i = 0; i < cd.files.length; i++) {
+                    if (cd.files[i].type.startsWith('image/')) { e.preventDefault(); wcProcessImage(cd.files[i]); return; }
+                }
+            }
+            const items = cd.items;
+            if (items) {
+                for (let i = 0; i < items.length; i++) {
+                    if (items[i].type.indexOf('image') !== -1) {
+                        e.preventDefault();
+                        const file = items[i].getAsFile();
+                        if (file) { wcProcessImage(file); return; }
+                    }
+                }
+            }
+        });
+
+        function saveWriteSchedule() {
+            const dateStr = currentEditWriteDate;
+            const workId = document.getElementById('write-work-select').value;
+            const category = document.getElementById('write-category-select').value;
+            const goal = category ? 0 : (parseInt(document.getElementById('write-goal-input').value) || 0);
+            const isMemoCard = category === WRITE_MEMO_CATEGORY;
+            const memo = isMemoCard ? '' : document.getElementById('write-memo-input').value;
+            const checklist = isMemoCard ? collectWriteChecklist() : null;
+            const isCompleted = isMemoCard
+                ? (checklist.length > 0 && checklist.every(it => it.done))
+                : document.getElementById('write-is-completed').checked;
+            const volumeId = document.getElementById('write-volume-select').value;
+
+            if(!workId) { alert("작품을 선택해주세요."); return; }
+
+            if(!writeSchedules[dateStr]) writeSchedules[dateStr] = [];
+
+            let savedId = currentEditWriteId;
+            if(currentEditWriteId) {
+                const idx = writeSchedules[dateStr].findIndex(s => s.id === currentEditWriteId);
+                if(idx > -1) {
+                    const next = { id: currentEditWriteId, date: dateStr, workId, category, goal, memo, isCompleted, volumeId };
+                    if (checklist) next.checklist = checklist;
+                    writeSchedules[dateStr][idx] = next;
+                }
+            } else {
+                savedId = 'ws_' + Date.now() + Math.floor(Math.random()*1000);
+                const created = { id: savedId, date: dateStr, workId, category, goal, memo, isCompleted, volumeId };
+                if (checklist) created.checklist = checklist;
+                writeSchedules[dateStr].push(created);
+            }
+
+            // 뒤쪽 권을 골랐다면, 그 앞의 '권 미지정' 카드들은 자연히 이전 권이므로 자동으로 채워준다
+            if (!category) autoFillPreviousVolume(workId, savedId, volumeId, dateStr, true);
+
+            save(); closeWriteModal(); renderWriteCalendar();
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 연간 타임라인 — 그 해의 작업 일정과 쉬는 구간을 가로로 길게 한눈에
+        // ════════════════════════════════════════════════════════
+        let timelineYear = new Date().getFullYear();
+        const TL_PAD = 10;        // 좌우 여백
+        const TL_BAR_H = 68;      // 막대 하나 높이 (제목 + 일수 + 글자수 세 줄)
+        const TL_BAR_GAP = 6;     // 겹칠 때 아래로 밀리는 간격
+        const TL_GAP_MERGE = 7;   // 이 일수 이하로 떨어진 일정은 한 덩어리로 묶어서 표시
+        const TL_MIN_DAYS = 3;    // 이 일수 이하 짧은 일정은 막대로 표시하지 않음
+        const TL_LIGHT_WEEKLY = 10000;   // 일주일 평균 이 글자수 미만인 집필 구간(예: 주 1회 4천자)은 연간 일정·쉬는 구간에서 뺀다
+
+        function openYearTimeline() {
+            timelineYear = writeCalDate.getFullYear();
+            // 창을 먼저 띄워야 실제 너비를 잴 수 있다 (가로 스크롤 없이 딱 맞추기 위함)
+            document.getElementById('year-timeline-modal').classList.add('open');
+            requestAnimationFrame(renderYearTimeline);
+        }
+        function closeYearTimeline() { document.getElementById('year-timeline-modal').classList.remove('open'); }
+        function changeTimelineYear(delta) { timelineYear += delta; renderYearTimeline(); }
+
+        function tlIsLeap(y) { return (y%4===0 && y%100!==0) || y%400===0; }
+        function tlDaysInYear(y) { return tlIsLeap(y) ? 366 : 365; }
+        // 그 해 1월 1일을 0으로 놓은 날짜 인덱스
+        function tlDayIndex(dateStr, y) {
+            const [yy, mm, dd] = dateStr.split('-').map(Number);
+            return Math.round((new Date(yy, mm-1, dd) - new Date(y, 0, 1)) / 86400000);
+        }
+        function tlIndexToDate(idx, y) {
+            const d = new Date(y, 0, 1 + idx);
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        }
+        function tlKoreanShort(dateStr) {
+            const [, m, d] = dateStr.split('-').map(Number);
+            return `${m}/${d}`;
+        }
+
+        // 연간 일정에서 제외할 작품 — 초단편은 편수가 많아 타임라인이 지저분해져서 빼고 본다
+        function tlIsExcludedWork(workId) {
+            if (!workId) return false;
+            const g = resolveWorkItem(workId).genre || '';
+            return g.includes('초단');
+        }
+
+        // 그 해의 일정 데이터를 한 번에 계산해 둔다 (화면 표시와 이미지 저장이 같은 데이터를 쓴다)
+        function buildYearTimelineData(y) {
+            const daysInYear = tlDaysInYear(y);
+
+            // ── 1) 그 해 집필 카드들을 작품별로 모은다
+            const groups = {};
+            Object.entries(writeSchedules).forEach(([dateStr, list]) => {
+                if (!dateStr.startsWith(`${y}-`)) return;
+                (list || []).forEach(s => {
+                    if (!isScheduleWorkValid(s.workId)) return;
+                    if (tlIsExcludedWork(s.workId)) return;   // 초단편 제외
+                    if (!groups[s.workId]) groups[s.workId] = { days: new Set(), chars: 0, cats: {}, dayChars: {}, editDays: new Set() };
+                    const g = groups[s.workId];
+                    if (s.category) {
+                        g.cats[s.category] = (g.cats[s.category] || 0) + 1;
+                        if (String(s.category).includes('교정')) g.editDays.add(dateStr); // 교정 줄에 따로 표시
+                    }
+                    else {
+                        g.days.add(dateStr);
+                        const v = Number(s.goal) || 0;
+                        g.chars += v;
+                        g.dayChars[dateStr] = (g.dayChars[dateStr] || 0) + v;
+                    }
+                });
+            });
+
+            // ── 2) 연속된 날짜 묶음(구간)으로 변환. 한 줄에 다 얹기 위해 '구간 하나 = 항목 하나'로 펼친다
+            let items = [];
+            const works = [];
+            Object.entries(groups).forEach(([workId, g]) => {
+                const sorted = Array.from(g.days).sort();
+                if (!sorted.length) return;
+                const resolved = resolveWorkItem(workId);
+                const title = resolved.displayTitle || '(삭제된 작품)';
+                const color = getGenreColor(resolved.genre) || '#87ada1';
+                const catText = Object.entries(g.cats).map(([c, n]) => `${c}${n>1?`×${n}`:''}`).join(' · ');
+
+                const segs = [];
+                sorted.forEach(ds => {
+                    const idx = tlDayIndex(ds, y);
+                    const last = segs[segs.length-1];
+                    if (last && idx - last.endIdx <= TL_GAP_MERGE) { last.endIdx = idx; last.days++; last.chars += g.dayChars[ds] || 0; }
+                    else segs.push({ startIdx: idx, endIdx: idx, days: 1, chars: g.dayChars[ds] || 0 });
+                });
+                // 띄엄띄엄 조금씩 쓰는 카드(예: 주 1회 4천자)는 막대로 안 그리고 쉬는 구간·집필일 계산에도 안 넣는다.
+                // 카드마다 앞뒤 6일(2주 폭) 안의 글자수로 일주일 평균을 내서 1만자 미만이면 '조금씩 쓰는 카드'로 본다
+                // — 그래서 주 1회 카드 뒤에 몰아 쓰는 기간이 붙어 있으면, 앞의 주 1회 부분만 빠지고 뒤쪽만 막대가 된다.
+                // 확정 작품 수·목표 글자수·아래 표(works)에는 그대로 센다.
+                const dayPts = sorted.map(ds => [tlDayIndex(ds, y), g.dayChars[ds] || 0]);
+                const barDays = sorted.filter((ds, k) => {
+                    const idx = dayPts[k][0];
+                    const near = dayPts.reduce((n, [j, c]) => n + (Math.abs(j - idx) <= 6 ? c : 0), 0);
+                    return near / 13 * 7 >= TL_LIGHT_WEEKLY;
+                });
+                const barSegs = [];
+                barDays.forEach(ds => {
+                    const idx = tlDayIndex(ds, y);
+                    const last = barSegs[barSegs.length-1];
+                    if (last && idx - last.endIdx <= TL_GAP_MERGE) { last.endIdx = idx; last.days++; last.chars += g.dayChars[ds] || 0; }
+                    else barSegs.push({ startIdx: idx, endIdx: idx, days: 1, chars: g.dayChars[ds] || 0 });
+                });
+                works.push({
+                    workId, title, color, segs,
+                    genre: resolved.genre || '', catText,
+                    totalChars: g.chars, workDays: sorted.length,
+                    goalWithSpace: resolved.goalWithSpace || 0,
+                    firstDate: sorted[0], lastDate: sorted[sorted.length-1]
+                });
+                barSegs.forEach((sg, i) => items.push({
+                    kind: 'work', group: 'write', workId, title, color,
+                    startIdx: sg.startIdx, endIdx: sg.endIdx, days: sg.days,
+                    spanDays: sg.endIdx - sg.startIdx + 1,   // 구간 전체 길이 (쉬는 날 포함)
+                    chars: sg.chars,
+                    part: barSegs.length > 1 ? `${i+1}/${barSegs.length}` : '',
+                    catText: i === 0 ? catText : ''
+                }));
+
+                // 달력에 찍어둔 [교정] 카드도 구간으로 묶어 교정 줄에 올린다
+                const editSorted = Array.from(g.editDays).sort();
+                if (editSorted.length) {
+                    const eSegs = [];
+                    editSorted.forEach(ds => {
+                        const idx = tlDayIndex(ds, y);
+                        const last = eSegs[eSegs.length-1];
+                        if (last && idx - last.endIdx <= TL_GAP_MERGE) { last.endIdx = idx; last.days++; }
+                        else eSegs.push({ startIdx: idx, endIdx: idx, days: 1 });
+                    });
+                    eSegs.forEach((sg, i) => items.push({
+                        kind: 'work', group: 'edit', workId, title, color,
+                        spanType: 'edit', noChars: true, isEditCard: true,
+                        startIdx: sg.startIdx, endIdx: sg.endIdx, days: sg.days,
+                        spanDays: sg.endIdx - sg.startIdx + 1,
+                        workDays: sg.days, chars: 0,
+                        part: eSegs.length > 1 ? `${i+1}/${eSegs.length}` : '', catText: ''
+                    }));
+                }
+            });
+            works.sort((a, b) => a.firstDate.localeCompare(b.firstDate));
+
+            // ── 3) 기간 일정도 같은 줄에 함께 얹는다
+            const spans = [];
+            const midBreakSegs = [];   // 기간 일정 중간에 넣어둔 '중간 휴식 기간'만 따로 모아서, 쉬는 구간 줄에도 노란 빗금으로 표시
+            writeSpans
+                .filter(s => s.startDate <= `${y}-12-31` && s.endDate >= `${y}-01-01`)
+                .filter(s => !tlIsExcludedWork(s.workId))   // 초단편에 연결된 기간 일정도 제외
+                .sort((a, b) => a.startDate.localeCompare(b.startDate))
+                .forEach(s => {
+                    // 연도 경계를 넘어가는 기간 일정은 그 해에 걸친 부분만 계산한다 (연도별로 따로 집계)
+                    const clipStart = s.startDate < `${y}-01-01` ? `${y}-01-01` : s.startDate;
+                    const clipEnd = s.endDate > `${y}-12-31` ? `${y}-12-31` : s.endDate;
+                    const clippedSpan = (clipStart !== s.startDate || clipEnd !== s.endDate) ? { ...s, startDate: clipStart, endDate: clipEnd } : s;
+                    const st = calcSpanStats(clippedSpan);
+                    spans.push({ span: clippedSpan, stats: st });
+                    (s.midBreaks || []).forEach(b => {
+                        if (!b.start || !b.end) return;
+                        const bs = b.start < `${y}-01-01` ? `${y}-01-01` : b.start;
+                        const be = b.end > `${y}-12-31` ? `${y}-12-31` : b.end;
+                        if (bs > be) return;
+                        const bsIdx = Math.max(0, tlDayIndex(bs, y));
+                        const beIdx = Math.min(daysInYear - 1, tlDayIndex(be, y));
+                        if (beIdx - bsIdx + 1 >= 2) midBreakSegs.push({ startIdx: bsIdx, endIdx: beIdx, days: beIdx - bsIdx + 1 });
+                    });
+                    const sType = s.type || 'write';
+                    items.push({
+                        kind: 'span',
+                        group: sType === 'edit' ? 'edit' : (sType === 'write' ? 'spanWrite' : 'spanRest'),
+                        spanId: s.id, color: s.color || '#f0e0a8',
+                        title: (s.title && s.title !== '(제목 없음)') ? s.title : '',
+                        workName: s.workId ? ((resolveWorkItem(s.workId).displayTitle || '') + (getSpanSeqInfo(s.id) ? ` ${getSpanSeqInfo(s.id).n}` : '')) : '',
+                        cumChars: (getSpanSeqInfo(s.id) || {}).n > 1 ? getSpanSeqInfo(s.id).cumChars : 0,
+                        spanType: sType, noChars: st.noChars,
+                        startIdx: Math.max(0, tlDayIndex(s.startDate, y)),
+                        endIdx: Math.min(daysInYear - 1, tlDayIndex(s.endDate, y)),
+                        days: st.totalDays, workDays: st.workDays, restDays: st.restDays,
+                        chars: st.totalChars, catText: ''
+                    });
+                });
+
+            items.sort((a, b) => a.startIdx - b.startIdx || b.endIdx - a.endIdx);
+
+            // ── 4) 아무 일정도 없는 "쉬는 구간"
+            const busy = new Array(daysInYear).fill(false);
+            items.forEach(it => { for (let i = it.startIdx; i <= it.endIdx; i++) if (i>=0 && i<daysInYear) busy[i] = true; });
+            const restSegs = [];
+            let i0 = null;
+            for (let i = 0; i <= daysInYear; i++) {
+                if (i < daysInYear && !busy[i]) { if (i0 === null) i0 = i; }
+                else if (i0 !== null) {
+                    if (i - i0 >= 2) restSegs.push({ startIdx: i0, endIdx: i-1, days: i - i0 });
+                    i0 = null;
+                }
+            }
+
+            // ── 5) 월별 목표 글자수 (집필 카드 기준)
+            const monthly = new Array(12).fill(0).map(() => ({ chars: 0, days: new Set() }));
+            Object.entries(writeSchedules).forEach(([dateStr, list]) => {
+                if (!dateStr.startsWith(`${y}-`)) return;
+                const m = Number(dateStr.slice(5, 7)) - 1;
+                (list || []).forEach(s => {
+                    if (s.category || !isScheduleWorkValid(s.workId)) return;
+                    if (tlIsExcludedWork(s.workId)) return;   // 초단편 제외
+                    monthly[m].chars += Number(s.goal) || 0;
+                    monthly[m].days.add(dateStr);
+                });
+            });
+
+            // 확정 목표 글자수 = 달력에 찍힌 집필 카드 전부 (막대에서 뺀 '조금씩 쓰는 구간'도 포함)
+            const totalChars = works.reduce((n, w) => n + (Number(w.totalChars) || 0), 0);
+            const busyDays = busy.filter(Boolean).length;
+
+            return { y, daysInYear, items, works, spans, restSegs, midBreakSegs, busy, busyDays, monthly, totalChars };
+        }
+
+        function renderYearTimeline() {
+            const y = timelineYear;
+            const label = document.getElementById('timeline-year-label');
+            if (label) label.textContent = `${y}년`;
+            const body = document.getElementById('year-timeline-body');
+
+            const data = buildYearTimelineData(y);
+            const { daysInYear, items, spans, works, restSegs, midBreakSegs, busyDays, totalChars } = data;
+
+            // 가로 스크롤이 생기지 않도록 창 너비에 딱 맞춰 그린다
+            const avail = Math.max(600, (body.clientWidth || 1400) - TL_PAD * 2);
+
+            // 확정(실제 카드가 있는 작품) / 계약작(제목이 작품과 연결된 기간 일정) / 자유작(작품 연결 없는 기간 일정)으로 나눠서 보여준다.
+            // 총 휴식일 = 진짜 빈 날(1일짜리도 전부) + 집필·교정 기간 일정에 넣어둔 쉬는 요일(화·금 등) + 휴식/여행/시놉기획 종류 기간 일정
+            const confirmedWorkIds = new Set(works.map(w => w.workId));
+            const internalRestDays = items.filter(it => it.kind === 'span' && (it.group === 'spanWrite' || it.group === 'edit')).reduce((n, it) => n + (Number(it.restDays) || 0), 0);
+            const dedicatedRestDays = items.filter(it => it.group === 'spanRest').reduce((n, it) => n + (Number(it.days) || 0), 0);
+            const totalRestDays = (daysInYear - busyDays) + internalRestDays + dedicatedRestDays;
+
+            // 아직 카드로 안 만들어진(확정 안 된) 집필형 기간 일정 — 작품 연결 여부로 계약작/자유작을 가른다
+            const confirmedSpanIds = new Set();
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(s => { if (s.spanId) confirmedSpanIds.add(s.spanId); }));
+            const pendingWriteSpans = spans.filter(sp => (sp.span.type || 'write') === 'write' && !confirmedSpanIds.has(sp.span.id));
+            const contractSpans = pendingWriteSpans.filter(sp => sp.span.workId && !confirmedWorkIds.has(sp.span.workId));
+            const freeSpans = pendingWriteSpans.filter(sp => !sp.span.workId);
+            const contractWorkCount = new Set(contractSpans.map(sp => sp.span.workId)).size;
+            const freeWorkCount = freeSpans.length;   // 자유작은 연결된 작품이 없어 하나로 묶을 수 없으니, 기간 일정 하나당 1개로 센다
+
+            const contractChars = contractSpans.reduce((n, sp) => n + sp.stats.totalChars, 0);
+            const contractWriteDays = contractSpans.reduce((n, sp) => n + (Number(sp.stats.workDays) || 0), 0);
+            const freeChars = freeSpans.reduce((n, sp) => n + sp.stats.totalChars, 0);
+            const freeWriteDays = freeSpans.reduce((n, sp) => n + (Number(sp.stats.workDays) || 0), 0);
+
+            // 집필일 = 실제로 쓴(카드 있는) 날 + 아직 카드는 없지만 집필형 기간 일정에서 쉬는 날 빼고 남는 날
+            const confirmedWriteDays = items.filter(it => it.kind === 'work').reduce((n, it) => n + (Number(it.days) || 0), 0);
+
+            // 2번째 줄: 확정 + 계약작까지 확정된다고 가정
+            const withContractWorks = confirmedWorkIds.size + contractWorkCount;
+            const withContractWriteDays = confirmedWriteDays + contractWriteDays;
+            const withContractChars = totalChars + contractChars;
+            // 3번째 줄: 거기에 자유작까지 전부 확정된다고 가정 (전체 총합)
+            const withFreeWorks = withContractWorks + freeWorkCount;
+            const withFreeWriteDays = withContractWriteDays + freeWriteDays;
+            const withFreeChars = withContractChars + freeChars;
+
+            document.getElementById('timeline-summary').innerHTML =
+                `<div>확정 <b class="text-slate-700">${confirmedWorkIds.size}작품</b> · 계약작 <b class="text-slate-700">${contractWorkCount}작품</b> · 자유작 <b class="text-slate-700">${freeWorkCount}작품</b> · 집필일 <b class="text-slate-700">${confirmedWriteDays}일</b> · 총 <b class="text-amber-700">${totalRestDays}일</b> 휴식 · 확정 목표 <b class="text-emerald-600">${totalChars.toLocaleString()}자</b></div>
+                 <div class="mt-0.5">(계약작까지 확정 시 <b class="text-slate-700">${withContractWorks}작품</b> · 집필일 <b class="text-slate-700">${withContractWriteDays}일</b> · 총 <b class="text-amber-700">${totalRestDays}일</b> 휴식 · 목표 <b class="text-emerald-600">${withContractChars.toLocaleString()}자</b>)</div>
+                 <div class="mt-0.5">(자유작까지 확정 시 <b class="text-slate-700">${withFreeWorks}작품</b> · 집필일 <b class="text-slate-700">${withFreeWriteDays}일</b> · 총 <b class="text-amber-700">${totalRestDays}일</b> 휴식 · 목표 <b class="text-emerald-600">${withFreeChars.toLocaleString()}자</b>)</div>`;
+            // ── 6) 막대가 좁으면 글씨를 막대 오른쪽 바깥에 내놓는다. 그 폭까지 감안해서 줄(lane)을 배치
+            // ── 6) 네모(막대) 안에 글씨를 넣는다.
+            //      폭이 모자라면 글씨를 조금씩 줄여서라도 안에 넣고(최대 60%까지),
+            //      그래도 안 되면 그때만 막대 바깥에 쓴다.
+            const TL_FONT = "'Pretendard','Apple SD Gothic Neo',sans-serif";
+            if (!renderYearTimeline._mc) renderYearTimeline._mc = document.createElement('canvas');
+            const measCtx = renderYearTimeline._mc.getContext('2d');
+            const TL_MIN_SCALE = 0.6;         // 일수·글자수 줄은 60%까지 줄인다
+            const TL_TITLE_MIN_SCALE = 0.85;  // 제목은 아주 조금만 줄인다
+            const TL_PAD_IN = 6;       // 막대 안쪽 좌우 여백 합계 (실제 padding 2+2 보다 넉넉히)
+            const TL_SUM_FONT = 13;    // 오른쪽 '합계' 글자 크기
+
+            // '합계' 칸 폭 — 실제로 찍힐 숫자 길이에 맞춰서 정한다 (전엔 무조건 한 달치 폭이라 오른쪽에 빈 공간이 많이 남았음).
+            // 칸 시작 앞(10px)·글자 뒤(10px) 여백만 남기고, 그 사이엔 가장 긴 숫자가 딱 맞게 들어간다.
+            const writeCharsSum = items.filter(it => it.group === 'write').reduce((n, it) => n + (Number(it.chars) || 0), 0);
+            const spanWriteCharsSum = items.filter(it => it.group === 'spanWrite').reduce((n, it) => n + (Number(it.chars) || 0), 0);
+            const spanRestDaysSum = items.filter(it => it.group === 'spanRest').reduce((n, it) => n + (Number(it.days) || 0), 0);
+            const restDaysSum = restSegs.reduce((n, g) => n + g.days, 0);
+            measCtx.font = `800 ${TL_SUM_FONT}px ${TL_FONT}`;
+            const sumCandidates = [
+                `${writeCharsSum.toLocaleString()}자`, `${spanWriteCharsSum.toLocaleString()}자`,
+                `${spanRestDaysSum.toLocaleString()}일`, `총 ${restDaysSum.toLocaleString()}일`, '합계'
+            ];
+            const maxSumTextW = Math.max(0, ...sumCandidates.map(t => measCtx.measureText(t).width));
+            const sumColW = Math.max(60, Math.ceil(maxSumTextW) + 20);
+            renderYearTimeline._lastSumColW = sumColW;   // 드래그 처리(startTimelineSpanMove/Resize)가 같은 값을 쓰도록 캐시
+            const fullW = avail;              // 전체(달력 + 합계 칸)
+            const totalW = avail - sumColW;   // 1년치 달력이 차지하는 폭
+            const xOf = (idx) => (idx / daysInYear) * totalW;
+
+            const labelLines = (it) => {
+                const isSpan = it.kind === 'span';
+                const conf = SPAN_TYPES[it.spanType || 'write'];
+                const icon = (isSpan || it.isEditCard) ? conf.icon + ' ' : '';
+                const workTag = (isSpan && it.workName) ? `${it.title ? ' · ' : ''}${it.workName}` : '';
+                const l1 = `${icon}${it.title}${workTag}${it.part ? ` ${it.part}` : ''}`;
+                // 자리가 좁으면 짧은 제목으로 — 연결 작품 이름(workTag)만 빼고, 내가 적은 제목(it.title)은 그대로 유지한다
+                // (예전엔 여기서 무조건 "집필" 같은 종류 이름으로 바꿔버려서, 제목을 적어놔도 좁은 칸에서는 안 보였음)
+                const l1short = (isSpan || it.isEditCard) ? `${conf.icon} ${it.title || it.workName || ''}` : it.title;
+
+                // 집필은 세 줄(제목 / 일수 / 글자수), 교정·휴식·기타는 두 줄(제목 / 일수)
+                const total = it.spanDays || it.days;
+                const isWriting = conf.chars || (!isSpan && !it.isEditCard);
+                if (!isWriting) return [l1, `${total}일`, '', l1short, `${total}일`];
+
+                const workD = (isSpan || it.isEditCard) ? it.workDays : it.days;
+                const hasWork = (workD != null && workD !== total);
+                const l2 = hasWork ? `${total}일 / 집필 ${workD}일` : `${total}일`;
+                // 자리가 좁으면 "14/10일" 처럼 더 줄인 형태로
+                const l2short = hasWork ? `${total}/${workD}일` : `${total}일`;
+                return [l1, l2, `${it.chars.toLocaleString()}자${it.cumChars ? ` (누적 ${it.cumChars.toLocaleString()}자)` : ''}`, l1short, l2short];
+            };
+            const measLine = (txt, size, weight, sp) => {
+                measCtx.font = `${weight} ${size}px ${TL_FONT}`;
+                return measCtx.measureText(txt).width + txt.length * sp + 6;
+            };
+
+            // 3일 이하 짧은 일정은 막대가 너무 작아 알아보기 어려우니 표시에서 뺀다
+            // (쉬는 구간 계산에는 그대로 반영되어 있다)
+            const drawItems = items.filter(it => it.days > TL_MIN_DAYS);
+            drawItems.forEach(it => {
+                it.x = xOf(it.startIdx);
+                it.w = Math.max(5, xOf(it.endIdx + 1) - it.x);
+                const [l1, l2, l3, l1short, l2short] = labelLines(it);
+                const usable = it.w - TL_PAD_IN;
+
+                // 일수 줄은 그대로 들어가면 "14일 / 집필 10일", 좁으면 "14/10일"
+                const w2full = measLine(l2, 11, 700, 0.5);
+                const useFullDays = usable >= w2full;
+                const l2alt = l2short || l2;
+                it.line2 = useFullDays ? l2 : l2alt;
+                const w2 = useFullDays ? w2full : measLine(l2alt, 11, 700, 0.5);
+                const w3 = l3 ? measLine(l3, 11, 700, 0.5) : 0;
+                const wSub = Math.max(w2, w3);
+
+                // 제목은 조금만(85%까지), 아래 줄은 넉넉히(60%까지) 줄여서 안에 넣는다.
+                // 그래도 제목이 안 들어가면 종류 이름만 쓴 짧은 제목으로 한 번 더 시도하고,
+                // 그래도 안 들어가면 제목 자체를 6자(공백 포함)로 잘라서 말줄임표로 넣는다 —
+                // 막대 바깥으로 글씨가 빠지는 것보다 안에 짧게라도 들어가는 걸 우선한다.
+                const wFull = measLine(l1, 12, 800, 0.6);
+                const wShort = (l1short && l1short !== l1) ? measLine(l1short, 12, 800, 0.6) : wFull;
+                const l1trunc = it.title.length > 6 ? it.title.slice(0, 6) + '…' : it.title;
+                const wTrunc = measLine(l1trunc, 12, 800, 0.6);
+                const subOk = usable >= wSub * TL_MIN_SCALE;
+                if (subOk && usable >= wFull * TL_TITLE_MIN_SCALE)      { it.title1 = l1;      it.w1 = wFull; it.inside = true; }
+                else if (subOk && usable >= wShort * TL_TITLE_MIN_SCALE) { it.title1 = l1short; it.w1 = wShort; it.inside = true; }
+                else if (subOk)                                          { it.title1 = l1trunc; it.w1 = wTrunc; it.inside = true; }
+                else                                                     { it.title1 = l1;      it.w1 = wFull; it.inside = false; }
+
+                it.textW = Math.max(it.w1, wSub);
+                // 글꼴 차이로 몇 px 넘쳐 말줄임(…)이 되지 않도록 살짝 여유를 둔다
+                const SAFE = 0.97;
+                it.titleScale = it.inside ? Math.min(1, (usable / it.w1) * SAFE) : 1;
+                // 두 줄을 각각 재서 줄인다 — 긴 줄 때문에 짧은 줄까지 작아지지 않게
+                it.scale2 = it.inside ? Math.min(1, (usable / w2) * SAFE) : 1;
+                it.scale3 = (it.inside && w3) ? Math.min(1, (usable / w3) * SAFE) : 1;
+                it.labelSide = 'right';
+                if (!it.inside && it.x + it.w + 6 + it.textW + TL_PAD_IN > totalW) it.labelSide = 'left';
+                const outW = it.textW + TL_PAD_IN;
+                it.packX = (!it.inside && it.labelSide === 'left') ? it.x - outW - 6 : it.x;
+                it.packW = it.inside ? it.w : (it.labelSide === 'left' ? outW + 6 + it.w : it.w + 6 + outW);
+            });
+
+            // 줄(밴드) 순서: ① 집필 일정 ② 교정 일정 ③ 내가 만든 기간 일정(집필·휴식·기타)
+            const packBand = (list, startLane) => {
+                const laneEndX = [];
+                list.forEach(it => {
+                    // 하루 차이로 이어지는 일정도 같은 줄에 놓이도록 여유를 아주 작게 준다
+                    let lane = laneEndX.findIndex(end => end <= it.packX + 0.5);
+                    if (lane === -1) { lane = laneEndX.length; laneEndX.push(0); }
+                    laneEndX[lane] = it.packX + it.packW;
+                    it.lane = startLane + lane;
+                });
+                return laneEndX.length;
+            };
+            // ① 집필 일정 ② 교정 일정 ③ 내가 만든 기간 일정 중 집필 ④ 휴식·기타
+            const BAND_GROUPS = ['write', 'edit', 'spanWrite', 'spanRest'];
+            const bands = BAND_GROUPS.map((g, i) => {
+                const list = drawItems.filter(it => it.group === g);
+                list.forEach(it => it.bandIdx = i);
+                return list;
+            });
+            let laneCursor = 0;
+            const bandStart = [];
+            const bandLanes = bands.map(list => {
+                bandStart.push(laneCursor);
+                const n = packBand(list, laneCursor);
+                laneCursor += n;
+                return n;
+            });
+            const laneCount = Math.max(1, laneCursor);
+            const TL_BAND_GAP = 18;  // 구역 이름이 들어갈 자리
+            // 세로 틈(TL_BAND_GAP)은 '내용이 있는 구역'끼리 사이에만 들어간다.
+            // 그래서 각 막대를 몇 번째 구역 틈 뒤에 놓을지는 원래 구역 번호(0~3)가 아니라,
+            // 그 앞에 실제로 내용이 있던 구역이 몇 개였는지로 정해야 한다 (중간 구역이 비어있으면 틀어짐).
+            let activeGapCursor = 0;
+            const gapIdxByBand = bandLanes.map(n => {
+                const gi = activeGapCursor;
+                if (n > 0) activeGapCursor++;
+                return gi;
+            });
+            bands.forEach((list, i) => { list.forEach(it => { it.gapIdx = gapIdxByBand[i]; }); });
+            // 각 막대의 세로 위치 (구역이 바뀔 때마다 이름 넣을 틈을 준다)
+            const laneTop = (it) => TL_BAND_GAP + it.lane * (TL_BAR_H + TL_BAR_GAP) + it.gapIdx * TL_BAND_GAP;
+            // 밴드(구역)가 시작하는 세로 위치 — 그 바로 위에 합계를 적는다
+            const bandTopOf = (laneStart, gapIdx) => TL_BAND_GAP + laneStart * (TL_BAR_H + TL_BAR_GAP) + gapIdx * TL_BAND_GAP;
+            const activeBands = bandLanes.filter(n => n > 0).length;
+            const trackH = TL_BAND_GAP + laneCount * TL_BAR_H + (laneCount - 1) * TL_BAR_GAP + Math.max(0, activeBands - 1) * TL_BAND_GAP;
+
+            // ── 7) 월 구분선 / 월 축
+            const monthStartIdx = [];
+            for (let m = 0; m < 12; m++) monthStartIdx.push(tlDayIndex(`${y}-${String(m+1).padStart(2,'0')}-01`, y));
+            const gridLines = (h) => monthStartIdx.map((idx, m) =>
+                `<div style="position:absolute; left:${xOf(idx)}px; top:0; height:${h}px; width:1px; background:${m===0?'transparent':'#f1f5f9'};"></div>`
+            ).join('')
+            // 12월 뒤 '합계' 칸을 나누는 선
+            + `<div style="position:absolute; left:${totalW}px; top:0; height:${h}px; width:1px; background:#e2e8f0;"></div>`;
+
+            const todayStr = getYYYYMMDD(new Date());
+            const hasToday = todayStr.startsWith(`${y}-`);
+            const todayX = hasToday ? xOf(tlDayIndex(todayStr, y)) : 0;
+
+            let axis = `<div style="position:relative; width:${fullW}px; height:52px;">
+                <div style="position:absolute; left:0; width:${totalW}px; top:34px; height:4px; border-radius:2px;
+                     background:linear-gradient(to right,#f97316,#a3b86c,#4ea87a,#34a06a);"></div>`;
+            monthStartIdx.forEach((idx, m) => {
+                // 동그라미는 '달이 시작하는 경계'에, 글씨는 그 달 한가운데에 놓는다
+                const x = xOf(idx);
+                const nextX = xOf(m === 11 ? daysInYear : monthStartIdx[m + 1]);
+                axis += `<div style="position:absolute; left:${(x + nextX) / 2}px; top:10px; transform:translateX(-50%); font-size:12px; font-weight:700; color:#64748b; white-space:nowrap;">${m+1}월</div>
+                         <div style="position:absolute; left:${x}px; top:30px; width:12px; height:12px; margin-left:-6px; border-radius:50%; background:#fff; border:3px solid ${m<6?'#f0a06a':'#5cb085'};"></div>`;
+            });
+            // 한 해가 끝나는 지점에도 마감 표시를 찍어서 선이 그냥 잘려 보이지 않게
+            axis += `<div style="position:absolute; left:${totalW}px; top:30px; width:12px; height:12px; margin-left:-6px; border-radius:50%; background:#fff; border:3px solid #34a06a;"></div>`;
+            if (hasToday) axis += `<div style="position:absolute; left:${todayX}px; top:0; height:52px; width:2px; background:#f43f5e; opacity:.55;"></div>
+                                   <div style="position:absolute; left:${todayX}px; top:-2px; transform:translateX(-50%); font-size:9px; font-weight:800; color:#f43f5e; letter-spacing:1px;">TODAY</div>`;
+            axis += `</div>`;
+
+            // ── 8) 통합 트랙 — 위에서부터 집필 일정 / 교정 일정 / 내가 만든 기간 일정
+            let track = `<div style="position:relative; width:${fullW}px; height:${trackH}px;">${gridLines(trackH)}`;
+            if (hasToday) track += `<div style="position:absolute; left:${todayX}px; top:0; height:${trackH}px; width:2px; background:#f43f5e; opacity:.25;"></div>`;
+
+            // 줄 오른쪽 끝에 그 줄의 합계를 적는다 (집필 계획 / 내가 만든 집필 기간 일정은 글자수, 휴식 등은 일수로)
+            const bandTotal = (bandIdx, color, unit) => {
+                if (!bandLanes[bandIdx]) return '';
+                const list = items.filter(it => it.group === BAND_GROUPS[bandIdx]);
+                const sum = unit === 'days'
+                    ? list.reduce((n, it) => n + (Number(it.days) || 0), 0)
+                    : list.reduce((n, it) => n + (Number(it.chars) || 0), 0);
+                if (!sum) return '';
+                const label = unit === 'days' ? `${sum.toLocaleString()}일` : `${sum.toLocaleString()}자`;
+                return `<div style="position:absolute; left:${totalW + 10}px; top:${bandTopOf(bandStart[bandIdx], gapIdxByBand[bandIdx]) + 4}px;
+                            font-size:${TL_SUM_FONT}px; font-weight:800; color:${color}; white-space:nowrap; z-index:3;">
+                        합계<br>${label}</div>`;
+            };
+            track += bandTotal(0, '#0f766e') + bandTotal(2, '#b45309') + bandTotal(3, '#92400e', 'days');
+
+
+
+            drawItems.forEach(it => {
+                const top = laneTop(it);
+                const isSpan = it.kind === 'span';
+                const conf = SPAN_TYPES[it.spanType || 'write'];
+                const sd = tlIndexToDate(it.startIdx, y), ed = tlIndexToDate(it.endIdx, y);
+                const [l1, l2full, l3] = labelLines(it);
+                const l2 = it.line2 || l2full;
+                const titleTxt = it.title1 || l1;
+                const tip = `${l1} · ${sd} ~ ${ed} · ${l2full}${l3 ? ` · ${l3}` : ''}`;
+                // 기간 일정: 드래그해서 날짜 이동 / 확정 일정: 클릭하면 그 일정이 시작하는 날로 집필 달력 이동
+                const click = isSpan
+                    ? `onmousedown="startTimelineSpanMove(event, '${it.spanId}')" ontouchstart="startTimelineSpanMove(event, '${it.spanId}')"`
+                    : `onclick="closeYearTimeline(); jumpWriteCalendarToDate('${sd}')"`;
+
+                // 윗줄에 제목, 아랫줄에 "총 _일 중 집필 _일 / 글자수" — 네모 안에서 가운데 정렬
+                // 제목(12) / 일수(11) / 글자수(11) — 제목은 아주 조금만, 아랫줄은 필요한 만큼 줄인다
+                const tsc = it.titleScale || 1;
+                const subColor = isSpan || it.isEditCard ? '#b45309' : '#0f766e';
+                const subLine = (txt, mt, ls) => `<div style="margin-top:${mt}px; font-size:${(11*ls).toFixed(1)}px; line-height:1.25; font-weight:700; color:${subColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:${(0.5*ls).toFixed(2)}px;">${txt}</div>`;
+                const textHtml = `
+                    <div style="overflow:hidden; text-align:center; width:100%;">
+                        <div style="font-size:${(12*tsc).toFixed(1)}px; line-height:1.3; font-weight:800; color:#334155; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:${(0.6*tsc).toFixed(2)}px;">${titleTxt}</div>
+                        ${subLine(l2, 5, it.scale2 || 1)}
+                        ${l3 ? subLine(l3, 3, it.scale3 || 1) : ''}
+                    </div>`;
+
+                // 기간 일정 막대 양쪽 끝의 얇은 손잡이 — 잡고 늘리거나 줄이면 그쪽 날짜만 바뀐다
+                const resizeHandles = isSpan ? `
+                    <div onmousedown="startTimelineSpanResize(event, '${it.spanId}', 'start')" ontouchstart="startTimelineSpanResize(event, '${it.spanId}', 'start')" title="시작일 조절" style="position:absolute; left:0; top:0; width:14px; height:100%; cursor:ew-resize;"></div>
+                    <div onmousedown="startTimelineSpanResize(event, '${it.spanId}', 'end')" ontouchstart="startTimelineSpanResize(event, '${it.spanId}', 'end')" title="종료일 조절" style="position:absolute; right:0; top:0; width:14px; height:100%; cursor:ew-resize;"></div>
+                ` : '';
+
+                track += `<div title="${tip}" ${click}
+                    style="position:absolute; left:${it.x + 1}px; top:${top}px; width:${Math.max(3, it.w - 2)}px; height:${TL_BAR_H}px;
+                           background:${isSpan ? it.color : hexToRgba(it.color, 0.35)};
+                           border-left:4px solid ${isSpan ? spanColorSolid(it.color) : it.color}; border-radius:8px; box-sizing:border-box;
+                           box-shadow:0 1px 3px rgba(0,0,0,.06); cursor:${isSpan ? 'grab' : 'pointer'};
+                           display:flex; align-items:center; justify-content:center; padding:0 ${it.inside ? 2 : 0}px;">
+                    ${it.inside ? textHtml : ''}
+                    ${resizeHandles}
+                </div>`;
+
+                // 60%로 줄여도 안 들어갈 만큼 좁을 때만 바깥에 쓴다
+                if (!it.inside) {
+                    const pos = it.labelSide === 'left'
+                        ? `right:${Math.max(0, totalW - it.x + 6)}px; text-align:right;`
+                        : `left:${it.x + it.w + 6}px;`;
+                    track += `<div title="${tip}" ${click}
+                        style="position:absolute; ${pos} top:${top}px; height:${TL_BAR_H}px;
+                               display:flex; align-items:center; cursor:${isSpan ? 'grab' : 'default'};">${textHtml}</div>`;
+                }
+            });
+            track += `</div>`;
+
+            // ── 9) 쉬는 구간
+            let rest = `<div style="position:relative; width:${fullW}px; height:30px;">${gridLines(30)}`;
+            restSegs.forEach(sg => {
+                const x = xOf(sg.startIdx), w = Math.max(4, xOf(sg.endIdx + 1) - x);
+                // 칸이 좁아도 며칠인지는 항상 보이도록 글씨를 줄여서 가운데에 넣는다
+                const txt = `${sg.days}일`;
+                measCtx.font = `700 10px ${TL_FONT}`;
+                const need = measCtx.measureText(txt).width + 4;
+                const fs = Math.max(6, Math.min(10, 10 * (w - 2) / need));
+                rest += `<div title="${tlIndexToDate(sg.startIdx,y)} ~ ${tlIndexToDate(sg.endIdx,y)} · ${sg.days}일 비어있음"
+                    style="position:absolute; left:${x}px; width:${w}px; top:4px; height:22px; border-radius:6px;
+                           background:repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 5px,#e2e8f0 5px,#e2e8f0 10px);
+                           display:flex; align-items:center; justify-content:center; overflow:hidden;
+                           font-size:${fs.toFixed(1)}px; font-weight:800; color:#7c8899;">
+                    <span style="white-space:nowrap;">${txt}</span></div>`;
+            });
+            // 기간 일정 안에 넣어둔 '중간 휴식 기간'도 같은 줄에 노란 빗금으로 표시 (진짜 빈 날과 구분)
+            midBreakSegs.forEach(sg => {
+                const x = xOf(sg.startIdx), w = Math.max(4, xOf(sg.endIdx + 1) - x);
+                const txt = `${sg.days}일`;
+                measCtx.font = `700 10px ${TL_FONT}`;
+                const need = measCtx.measureText(txt).width + 4;
+                const fs = Math.max(6, Math.min(10, 10 * (w - 2) / need));
+                rest += `<div title="${tlIndexToDate(sg.startIdx,y)} ~ ${tlIndexToDate(sg.endIdx,y)} · ${sg.days}일 중간 휴식"
+                    style="position:absolute; left:${x}px; width:${w}px; top:4px; height:22px; border-radius:6px;
+                           background:repeating-linear-gradient(45deg,#fef3c7,#fef3c7 5px,#fde68a 5px,#fde68a 10px);
+                           display:flex; align-items:center; justify-content:center; overflow:hidden;
+                           font-size:${fs.toFixed(1)}px; font-weight:800; color:#b45309;">
+                    <span style="white-space:nowrap;">${txt}</span></div>`;
+            });
+            rest += `<div style="position:absolute; left:${totalW + 10}px; top:6px;
+                          font-size:${TL_SUM_FONT}px; font-weight:800; color:#7c8899; white-space:nowrap;">
+                      총 ${restSegs.reduce((n,g)=>n+g.days,0)}일</div>`;
+            rest += `</div>`;
+
+            const empty = !drawItems.length
+                ? `<div class="text-center text-slate-300 py-16 text-sm">${y}년에 등록된 집필 일정이 없습니다.</div>` : '';
+
+            // ── 10) 화면에도 이미지 저장과 같은 내용의 표를 그대로 보여준다 (확정 일정 / 기간일정·집필 / 기간일정·휴식 등)
+            const tables = renderTimelineTablesHtml(data, y);
+
+            body.innerHTML = `
+                <div style="width:${fullW}px; margin:0 auto;">
+                    ${axis}
+                    ${track}
+                    ${empty}
+                    <div class="text-[11px] font-bold text-slate-400 mt-4 mb-1.5">쉬는 구간 (2일 이상 비는 날)</div>
+                    ${rest}
+                    ${tables}
+                </div>`;
+        }
+
+        // 화면용 표(확정 일정 / 기간일정·집필 / 기간일정·휴식 등) — 이미지 저장(exportYearTimelineImage)과 같은 데이터를 그대로 HTML 표로 보여준다
+        function renderTimelineTablesHtml(data, y) {
+            const { works, spans, restSegs } = data;
+            const num = n => (Number(n) || 0).toLocaleString();
+            const wrap = (title, accent, inner) => `
+                <div class="mt-6">
+                    <h4 class="text-sm font-bold mb-2" style="color:${accent}">${title}</h4>
+                    <div class="overflow-x-auto rounded-xl border border-slate-100 scroll-invisible">${inner}</div>
+                </div>`;
+            const tableHtml = (cols, rows, accent, footRow) => rows.length ? `
+                <table class="w-full text-[13px] border-collapse" style="min-width:640px;">
+                    <thead><tr style="background:${accent}18;">
+                        ${cols.map(c => `<th class="text-left p-2 font-bold whitespace-nowrap" style="color:${accent}">${c}</th>`).join('')}
+                    </tr></thead>
+                    <tbody>${rows.map((r, i) => `<tr style="${i % 2 ? 'background:#fafafa;' : ''} border-top:1px solid #f1f5f9;">
+                        ${r.map(v => `<td class="p-2 whitespace-nowrap text-slate-600">${v}</td>`).join('')}
+                    </tr>`).join('')}</tbody>
+                    ${footRow ? `<tfoot><tr style="background:${accent}10; border-top:2px solid ${accent}33;">
+                        ${footRow.map(v => `<td class="p-2 whitespace-nowrap font-bold" style="color:${accent}">${v}</td>`).join('')}
+                    </tr></tfoot>` : ''}
+                </table>` : `<p class="text-[13px] text-slate-300 text-center py-4">없음</p>`;
+
+            // 확정 일정 (작품별, 달력 카드 기준)
+            const workRows = works.map(w => [
+                `<b class="text-slate-700">${w.title}</b>`, w.genre || '-',
+                `${w.firstDate} ~ ${w.lastDate}`, `${w.workDays}일`,
+                `${num(w.totalChars)}자`, w.workDays ? `${num(Math.round(w.totalChars / w.workDays))}자/일` : '-'
+            ]);
+            const wDaysSum = works.reduce((n, w) => n + (Number(w.workDays) || 0), 0);
+            const wCharsSum = works.reduce((n, w) => n + (Number(w.totalChars) || 0), 0);
+            const confirmedHtml = wrap('■ 확정 일정 (달력 카드 기준)', '#0f766e',
+                tableHtml(['작품', '장르', '집필 기간', '일수', '글자수', '평균'], workRows, '#0f766e',
+                    ['합계', `${works.length}작품`, '', `${wDaysSum}일`, `${num(wCharsSum)}자`, wDaysSum ? `${num(Math.round(wCharsSum / wDaysSum))}자/일` : '-']));
+
+            // 기간 일정 · 집필
+            const writeSpanRows = spans.filter(sp => (sp.span.type || 'write') === 'write').map(({ span: s, stats: st }) => {
+                const t = SPAN_TYPES[s.type || 'write'];
+                const restTxt = s.restMode === 'days'
+                    ? (s.restWeekdays?.length ? `매주 ${s.restWeekdays.map(i => SPAN_DOW_NAMES[i]).join('·')}` : '없음')
+                    : `주 ${s.restPerWeek || 0}회`;
+                const workTitle = s.workId ? (resolveWorkItem(s.workId).displayTitle || '-') : '-';
+                return [`${t.icon} ${s.title}`, workTitle, `${s.startDate} ~ ${s.endDate}`,
+                    `${st.totalDays}일`, `${st.workDays}일`, restTxt,
+                    `${num(st.totalChars)}자 <span style="color:#94a3b8;">(공미 ${num(Math.round(st.totalChars * NOSPACE_TO_WITHSPACE_RATIO))}자)</span>`,
+                    `${num(s.dailyChars)}자/일${spanDailyRanges(s).length ? ` <span style="color:#94a3b8;">(구간별 ${spanDailyRanges(s).length}개)</span>` : ''}`, s.memo || '-'];
+            });
+            const writeSpanList = spans.filter(sp => (sp.span.type || 'write') === 'write');
+            const wsTotalDays = writeSpanList.reduce((n, sp) => n + (Number(sp.stats.totalDays) || 0), 0);
+            const wsWorkDays = writeSpanList.reduce((n, sp) => n + (Number(sp.stats.workDays) || 0), 0);
+            const wsChars = writeSpanList.reduce((n, sp) => n + (Number(sp.stats.totalChars) || 0), 0);
+            const writeSpanHtml = wrap('■ 기간 일정 · 집필', '#b45309',
+                tableHtml(['일정 제목', '연결 작품', '기간', '총일수', '집필일', '쉬는 날', '예상 글자수', '하루 집필량', '메모'], writeSpanRows, '#b45309',
+                    ['합계', `${writeSpanList.length}개`, '', `${wsTotalDays}일`, `${wsWorkDays}일`, '',
+                     `${num(wsChars)}자 <span style="opacity:.6;font-weight:500;">(공미 ${num(Math.round(wsChars * NOSPACE_TO_WITHSPACE_RATIO))}자)</span>`,
+                     wsWorkDays ? `${num(Math.round(wsChars / wsWorkDays))}자/일` : '-', '']));
+
+            // 기간 일정 · 휴식 등 (휴식/교정/여행/시놉기획)
+            const restSpanRows = spans.filter(sp => (sp.span.type || 'write') !== 'write').map(({ span: s, stats: st }) => {
+                const t = SPAN_TYPES[s.type || 'write'];
+                const workTitle = s.workId ? (resolveWorkItem(s.workId).displayTitle || '-') : '-';
+                return [`${t.icon} ${t.label}`, s.title, workTitle, `${s.startDate} ~ ${s.endDate}`, `${st.totalDays}일`, s.memo || '-'];
+            });
+            const restSpanDaysSum = spans.filter(sp => (sp.span.type || 'write') !== 'write').reduce((n, sp) => n + (Number(sp.stats.totalDays) || 0), 0);
+            const restSpanHtml = wrap('■ 기간 일정 · 휴식 등 (휴식·교정·여행·시놉기획)', '#92400e',
+                tableHtml(['종류', '일정 제목', '연결 작품', '기간', '총일수', '메모'], restSpanRows, '#92400e',
+                    ['합계', `${restSpanRows.length}개`, '', '', `${restSpanDaysSum}일`, '']));
+
+            // 월별 목표 — 확정(카드) 글자수와 예정(아직 카드 없는 집필형 기간 일정) 글자수를 나눠서 같이 보여준다
+            const confirmedSpanIdsForMonth = new Set();
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(s => { if (s.spanId) confirmedSpanIdsForMonth.add(s.spanId); }));
+            const pendingWriteSpans = spans.filter(sp => (sp.span.type || 'write') === 'write' && !confirmedSpanIdsForMonth.has(sp.span.id));
+            const monthRows = Array.from({ length: 12 }, (_, m) => {
+                const monthStr = `${y}-${String(m + 1).padStart(2, '0')}`;
+                const monthStart = `${monthStr}-01`;
+                const daysInMonth = new Date(y, m + 1, 0).getDate();
+                const monthEnd = `${monthStr}-${String(daysInMonth).padStart(2, '0')}`;
+                const confirmedChars = data.monthly[m].chars;
+                const confirmedDays = data.monthly[m].days.size;
+                // 예정(계약작+자유작 모두 포함) — 아직 카드 없는 집필형 기간 일정을 이 달 범위로 잘라서 합산
+                const pendingChars = pendingWriteSpans.reduce((n, sp) => n + spanCharsInRange(sp.span, monthStart, monthEnd), 0);
+                const pendingDays = pendingWriteSpans.reduce((n, sp) => n + spanWorkDaysInRange(sp.span, monthStart, monthEnd), 0);
+                const combinedChars = confirmedChars + pendingChars;
+                const combinedDays = confirmedDays + pendingDays;
+                // 하루 평균은 '집필한 날 기준'이 아니라 그 달 전체 날짜수(28~31일)로 나눈다
+                return [`${m + 1}월`,
+                    `${num(confirmedChars)}자`, `${num(pendingChars)}자`, `${num(combinedChars)}자`,
+                    `${confirmedDays}일`, `${combinedDays}일`,
+                    `${num(Math.round(confirmedChars / daysInMonth))}자/일`,
+                    `${num(Math.round(combinedChars / daysInMonth))}자/일`];
+            });
+            const mSum = monthRows.reduce((acc, r) => { r.forEach((v, i) => { if (i > 0) acc[i] = (acc[i] || 0) + (Number(String(v).replace(/[^0-9]/g, '')) || 0); }); return acc; }, []);
+            const yearDays = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 366 : 365;
+            const monthHtml = wrap('■ 월별 목표', '#4f46e5',
+                tableHtml(['월', '확정 글자수', '예정 글자수', '합계', '집필 일수(확정)', '집필 일수(합계)', '하루 평균(확정)', '하루 평균(합계)'], monthRows, '#4f46e5',
+                    ['합계', `${num(mSum[1])}자`, `${num(mSum[2])}자`, `${num(mSum[3])}자`, `${mSum[4] || 0}일`, `${mSum[5] || 0}일`,
+                     `${num(Math.round((mSum[1] || 0) / yearDays))}자/일`, `${num(Math.round((mSum[3] || 0) / yearDays))}자/일`]));
+
+            // 일정이 비어 있는 구간 (2일 이상)
+            const restRows = restSegs.map(sg => [`${tlIndexToDate(sg.startIdx, y)} ~ ${tlIndexToDate(sg.endIdx, y)}`, `${sg.days}일`]);
+            const gapHtml = wrap('■ 일정이 비어 있는 구간 (2일 이상)', '#64748b',
+                tableHtml(['기간', '일수'], restRows, '#64748b'));
+
+            return confirmedHtml + writeSpanHtml + restSpanHtml + monthHtml + gapHtml;
+        }
+
+        // 창 크기가 바뀌면 가로 스크롤이 생기지 않도록 다시 그린다
+        window.addEventListener('resize', () => {
+            const m = document.getElementById('year-timeline-modal');
+            if (m && m.classList.contains('open')) renderYearTimeline();
+        });
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 연간 일정표만 인쇄 — 화면에 그려진 그림 그대로 새 창에 옮겨 인쇄한다
+        // ════════════════════════════════════════════════════════
+        function printYearTimeline() {
+            const body = document.getElementById('year-timeline-body');
+            const inner = body && body.firstElementChild;
+            if (!inner) { alert('인쇄할 일정이 없습니다.'); return; }
+
+            const TARGET_W = 1040;   // A4 가로 인쇄 폭(여백 제외) 기준
+            const summary = (document.getElementById('timeline-summary') || {}).innerText || '';
+
+            // 화면 그림을 그대로 줄이면 글씨가 너무 작아지므로,
+            // 인쇄 폭에 맞춰 한 번 다시 그려서 글씨 크기를 유지한 채 배치를 새로 잡는다
+            const prevWidth = body.style.width;
+            body.style.width = (TARGET_W + TL_PAD * 2) + 'px';
+            renderYearTimeline();
+            const printInner = body.firstElementChild;
+            const pr = printInner.getBoundingClientRect();
+            const w = Math.ceil(pr.width), h = Math.ceil(pr.height);
+            const html = printInner.outerHTML;
+            body.style.width = prevWidth;
+            renderYearTimeline();   // 화면은 원래 크기로 되돌린다
+
+            const sc = Math.min(1, TARGET_W / w);
+
+            // 새 창은 팝업 차단에 걸리므로, 화면 밖에 숨긴 프레임을 만들어 그것만 인쇄한다
+            const old = document.getElementById('year-timeline-print-frame');
+            if (old) old.remove();
+            const frame = document.createElement('iframe');
+            frame.id = 'year-timeline-print-frame';
+            frame.setAttribute('aria-hidden', 'true');
+            // 폭이 0이면 배치가 틀어지므로 실제 크기를 주고 화면 밖으로 밀어둔다
+            frame.style.cssText = 'position:fixed; left:-10000px; top:0; width:1200px; height:900px; border:0;';
+            document.body.appendChild(frame);
+
+            const win = frame.contentWindow;
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+                <title>${timelineYear}년 집필 일정</title>
+                <style>
+                    @page { size: A4 landscape; margin: 10mm; }
+                    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+                    body { margin: 0; font-family: 'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif; color: #334155; }
+                    h1 { font-size: 20px; margin: 0 0 4px; color: #78350f; }
+                    .sum { font-size: 12px; color: #64748b; margin: 0 0 14px; }
+                    /* zoom은 배치까지 같이 줄어들어 인쇄 시 페이지 폭에 정확히 맞는다 */
+                    .wrap { width: ${w}px; zoom: ${sc.toFixed(4)}; }
+                </style></head><body>
+                <h1>${timelineYear}년 집필 일정</h1>
+                <p class="sum">${summary}</p>
+                <div class="wrap">${html}</div>
+                </body></html>`);
+            win.document.close();
+
+            // 글꼴·배치가 자리를 잡은 뒤에 인쇄 대화상자를 띄운다
+            const go = () => {
+                try {
+                    win.focus();
+                    win.print();
+                } catch (err) {
+                    console.error('[Print] 인쇄 실패', err);
+                    alert('인쇄를 시작하지 못했습니다. 이미지로 저장 후 인쇄해 주세요.');
+                }
+                setTimeout(() => frame.remove(), 1500);   // 인쇄 대화상자가 닫힌 뒤 정리
+            };
+            setTimeout(go, 400);
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 집필 관리의 모든 기록을 연도 구분 없이 한 텍스트 파일로 내보내기
+        //   (챗GPT 등에 붙여넣어 집필 루틴을 상담하기 좋게, 이미지 대신 글자로 내보낸다)
+        // ════════════════════════════════════════════════════════
+        function exportAllWritingRecords() {
+            const lines = [];
+            const today = getYYYYMMDD(new Date());
+            const fmtDateTime = (dm) => {
+                const pad = n => String(n).padStart(2, '0');
+                return `${dm.getFullYear()}-${pad(dm.getMonth() + 1)}-${pad(dm.getDate())} ${pad(dm.getHours())}:${pad(dm.getMinutes())}`;
+            };
+            // 실제 데이터 파일이 마지막으로 저장된 시각을 우선 쓴다 (세션을 새로 열어도 정확함).
+            // Electron이 아니거나 파일이 없으면 localStorage에 기록해둔 마지막 저장 시각으로 대체한다.
+            let lastModTxt = '-';
+            try {
+                if (isNodeEnvironment && fs.existsSync(dataFilePath)) {
+                    lastModTxt = fmtDateTime(fs.statSync(dataFilePath).mtime);
+                }
+            } catch (e) {}
+            if (lastModTxt === '-') {
+                const lastModRaw = localStorage.getItem('lastModified_v6');
+                if (lastModRaw) {
+                    const dm = new Date(lastModRaw);
+                    if (!isNaN(dm.getTime())) lastModTxt = fmtDateTime(dm);
+                }
+            }
+            lines.push('■ 집필 기록 전체 내보내기');
+            lines.push(`기준일: ${today} / 마지막 수정: ${lastModTxt}`);
+            lines.push('');
+
+            // work.memo에서 이미지는 base64 원문을 빼고 "[이미지 N개 첨부됨]"으로만 표시한다.
+            // (레거시 블록 JSON 형식으로 저장된 메모도 있어서, 그 경우도 함께 처리한다)
+            const stripHtml = (raw) => {
+                if (!raw) return '';
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        let imgCount = 0;
+                        const textParts = [];
+                        parsed.forEach(b => {
+                            if (b.type === 'image') imgCount++;
+                            else if (b.content) textParts.push(String(b.content).replace(/<[^>]+>/g, ' '));
+                        });
+                        let result = textParts.join(' ').replace(/\s+/g, ' ').trim();
+                        if (imgCount) result += (result ? ' ' : '') + `[이미지 ${imgCount}개 첨부됨]`;
+                        return result;
+                    }
+                } catch (e) { /* 레거시 JSON이 아니면 아래 HTML 처리로 진행 */ }
+
+                const tmp = document.createElement('div');
+                tmp.innerHTML = raw;
+                const imgs = tmp.querySelectorAll('img');
+                const imgCount = imgs.length;
+                imgs.forEach(img => img.remove());
+                let text = (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+                if (imgCount) text += (text ? ' ' : '') + `[이미지 ${imgCount}개 첨부됨]`;
+                return text;
+            };
+
+            const workCharTotals = getAllWorkRegisteredCharTotals();
+
+            // 같은 날짜라도 분류(집필/작교 등)·권·메모가 다르면 서로 다른 작업이라 절대 합치면 안 된다.
+            // 그래서 '날짜'만으로 합치지 않고, 날짜 안에서 다시 (분류+권+메모)가 완전히 같은 카드끼리만 묶는다.
+            // 예: 9/15에 일반 5천+5천, 작교 4천·1권이 있으면 → "일반 10,000자" 한 줄 + "[작교] 4,000자 · 1권" 한 줄로 따로 나온다.
+            const groupDayCards = (items, workId) => {
+                const vols = workId ? getWriteVolumes(workId) : [];
+                const groups = {};
+                items.forEach(it => {
+                    const key = `${it.category || ''}|||${it.volumeId || ''}|||${it.memo || ''}`;
+                    (groups[key] = groups[key] || []).push(it);
+                });
+                return Object.values(groups).map(group => {
+                    const total = group.reduce((sum, it) => sum + (Number(it.goal) || 0), 0);
+                    const doneCount = group.filter(it => it.isCompleted).length;
+                    const status = doneCount === group.length ? '완료' : doneCount === 0 ? '미완료' : `완료 ${doneCount}/${group.length}`;
+                    const cat = group[0].category || '';
+                    const memo = group[0].memo || '';
+                    const vol = group[0].volumeId ? vols.find(v => v.id === group[0].volumeId) : null;
+                    return {
+                        total, status,
+                        catTxt: cat ? `[${cat}] ` : '',
+                        memoTxt: (memo ? ` · ${memo}` : '') + (vol ? ` · ${vol.name}` : '')
+                    };
+                });
+            };
+
+            // 모든 집필 카드를 한 번에 모아 이후 통계·표시에 재사용
+            const allItems = [];
+            Object.entries(writeSchedules).forEach(([dateStr, list]) => {
+                (list || []).forEach(s => allItems.push({ ...s, date: s.date || dateStr }));
+            });
+            // 작품별 '완료 처리'된 카드의 글자수 합 = 지금까지 실제로 확정(완료)한 분량으로 취급
+            const doneCharsByWork = {};
+            allItems.forEach(it => {
+                if (!it.isCompleted || !it.workId) return;
+                doneCharsByWork[it.workId] = (doneCharsByWork[it.workId] || 0) + (Number(it.goal) || 0);
+            });
+            // 이미 개별 카드로 확정된 기간 일정의 id 모음 — '예정' 합계에서 중복 집계되지 않도록 제외할 때 쓴다
+            const confirmedSpanIds = new Set(allItems.filter(it => it.spanId).map(it => it.spanId));
+
+            // 1) 작품 정보 — 작품이 정해지지 않은 '유동 집필 슬롯'은 workId가 없어서 여기 절대 안 들어간다 (작품 수 집계에서도 제외됨)
+            const worksWithData = new Set();
+            allItems.forEach(it => { if (it.workId) worksWithData.add(it.workId); });
+            writeSpans.forEach(s => { if (s.workId) worksWithData.add(s.workId); }); // 카드가 아직 없어도 기간 일정만 걸려있으면 포함
+            const workList = Array.from(worksWithData).map(id => masterWorks.find(w => w.id === id)).filter(Boolean);
+
+            lines.push(`=== 작품 정보 (${workList.length}개, 유동 집필 슬롯은 작품으로 안 셈) ===`);
+            if (!workList.length) lines.push('(없음)');
+            workList.forEach(w => {
+                const goalChars = workCharTotals[w.id] || w.goalWithSpace || w.goalNoSpace || 0;
+                const memoTxt = stripHtml(w.memo);
+                // 이미 출간된 작품은 "집필 카드가 얼마나 완료 체크됐는지"가 실제 진행 상황과 무관해서 진행률 계산에서 뺀다
+                const isPublished = !w.isPending && w.publishDate && w.publishDate < today;
+
+                lines.push(`\n- [${w.genre || '장르 미상'}] ${w.title}  (work_id: ${w.id})`);
+                lines.push(`  장르: ${w.genre || '-'}`);
+                lines.push(`  출판사: ${w.publisher || '-'} · 플랫폼: ${(workManage[w.id] || {}).launchPlatform || '-'} · 프로모션: ${(workManage[w.id] || {}).promotion || '-'}`);
+                lines.push(`  원고 마감: ${w.manuscriptDate || '미정'} · 출간 예정: ${getPendingLabel(w)}`);
+                if (isPublished) {
+                    lines.push(`  진행 상황: 이미 출간 완료 — 진행률 계산 제외 (목표 ${goalChars.toLocaleString()}자(공포) / 공미 ${(w.goalNoSpace || 0).toLocaleString()}자)`);
+                } else {
+                    const doneChars = doneCharsByWork[w.id] || 0;
+                    const leftChars = Math.max(0, goalChars - doneChars);
+                    const pct = goalChars > 0 ? Math.round(doneChars / goalChars * 100) : 0;
+                    lines.push(`  진행 상황(집필 카드 기준 — 실제 원고 글자수가 아니라 앱에 등록/완료 체크한 카드 합계예요): 목표 ${goalChars.toLocaleString()}자(공포) · 현재 ${doneChars.toLocaleString()}자 · 남음 ${leftChars.toLocaleString()}자 · 진행률 ${pct}% (공미 목표 ${(w.goalNoSpace || 0).toLocaleString()}자)`);
+                }
+                if (memoTxt) lines.push(`  메모: ${memoTxt}`);
+            });
+            lines.push('');
+
+            // 2) 기간 일정(계획) — 종류별로 구분. '집필' 종류는 작품 연결 여부로 다시 나눈다
+            //    (특정 작품과 연결된 집필 일정 / 작품 미정 유동 집필 슬롯 / 휴식·여행·교정·시놉기획)
+            lines.push('=== 기간 일정 ===');
+            if (!writeSpans.length) { lines.push('(없음)'); lines.push(''); }
+            else {
+                [...writeSpans].sort((a, b) => a.startDate.localeCompare(b.startDate)).forEach(s => {
+                    const st = calcSpanStats(s);
+                    const typeConf = SPAN_TYPES[s.type || 'write'] || SPAN_TYPES.write;
+                    const isWrite = (s.type || 'write') === 'write';
+                    const dateRange = `${s.startDate}~${s.endDate}`;
+
+                    const confirmedNote = confirmedSpanIds.has(s.id) ? '  [이미 확정된 카드 있음 → 요약의 "예정"에서는 제외, "확정"에 포함됨]' : '';
+
+                    if (isWrite && s.workId) {
+                        // 특정 작품과 연결된 집필 일정
+                        const w = masterWorks.find(x => x.id === s.workId);
+                        const title = w ? w.title : (resolveWorkItem(s.workId).displayTitle || '(삭제된 작품)');
+                        const pub = w ? (w.publisher || '-') : '-';
+                        const genreTag = w && w.genre ? `[${w.genre}] ` : '';
+                        lines.push(`- [집필·작품연결] ${genreTag}${title} / ${pub} / ${dateRange} / 예상 ${st.totalChars.toLocaleString()}자  (schedule_id: ${s.id})${confirmedNote}`);
+                    } else if (isWrite && !s.workId) {
+                        // 작품이 아직 정해지지 않은 유동 집필 슬롯 — 작품명을 억지로 붙이지 않되, 슬롯 자체의 제목은 그대로 보여준다
+                        const slotTitle = (s.title && s.title !== '(제목 없음)') ? s.title : '(제목 없음)';
+                        lines.push(`- [유동 집필 슬롯] ${slotTitle} · 연결 작품: 없음 · ${dateRange} · 하루 ${Number(s.dailyChars || 0).toLocaleString()}자 · 예상 ${st.totalChars.toLocaleString()}자  (schedule_id: ${s.id})${confirmedNote}`);
+                        if (s.memo) lines.push(`  용도 메모: ${s.memo}`);
+                    } else {
+                        // 휴식 / 여행 / 교정 / 시놉·기획
+                        const wTitle = s.workId ? (resolveWorkItem(s.workId).displayTitle || '') : '';
+                        lines.push(`- [${typeConf.label}]${wTitle ? ` ${wTitle} ·` : ''} ${dateRange} (총 ${st.totalDays}일)  (schedule_id: ${s.id})`);
+                        if (s.memo) lines.push(`  메모: ${s.memo}`);
+                    }
+                });
+                lines.push('');
+            }
+
+            // 3) 작품별 집필 카드 기록 — '기간 일정을 확정해서 생긴 카드'와 '하나씩 개별 입력한 카드'를 구분해서 보여준다
+
+            // 3-1) 확정 일정 — 기간 일정 단위로 묶어서, 실제 집필한 날 사이사이의 휴식일도 그대로 보여준다
+            lines.push('=== 기간 일정에서 생성된 카드 ===');
+            const confirmedItems = allItems.filter(it => !!it.spanId);
+            if (!confirmedItems.length) { lines.push('(없음)'); lines.push(''); }
+            else {
+                const bySpan = {};
+                confirmedItems.forEach(it => { (bySpan[it.spanId] = bySpan[it.spanId] || []).push(it); });
+                const spanIds = Object.keys(bySpan).sort((a, b) => {
+                    const sa = writeSpans.find(s => s.id === a), sb = writeSpans.find(s => s.id === b);
+                    return (sa ? sa.startDate : '').localeCompare(sb ? sb.startDate : '');
+                });
+                spanIds.forEach(spanId => {
+                    const span = writeSpans.find(s => s.id === spanId);
+                    const cardsByDate = {};
+                    bySpan[spanId].forEach(it => { (cardsByDate[it.date] = cardsByDate[it.date] || []).push(it); });
+
+                    if (!span) {
+                        // 원본 기간 일정이 이미 삭제된 경우 — 휴식일을 알 수 없으니 카드만 나열
+                        const w = masterWorks.find(x => x.id === bySpan[spanId][0].workId);
+                        const title = w ? w.title : (resolveWorkItem(bySpan[spanId][0].workId).displayTitle || '(삭제된 작품)');
+                        const genreTag = w && w.genre ? `[${w.genre}] ` : '';
+                        lines.push(`\n${genreTag}${title} (원본 기간 일정은 삭제됨)`);
+                        const fallbackWorkId = bySpan[spanId][0].workId;
+                        Object.keys(cardsByDate).sort().forEach(d => {
+                            groupDayCards(cardsByDate[d], fallbackWorkId).forEach(g => {
+                                lines.push(`  ${d}  ${g.catTxt}${g.total.toLocaleString()}자  (${g.status})${g.memoTxt}`);
+                            });
+                        });
+                        return;
+                    }
+
+                    const w = masterWorks.find(x => x.id === span.workId);
+                    const title = w ? w.title : (resolveWorkItem(span.workId).displayTitle || '(삭제된 작품)');
+                    const genreTag = w && w.genre ? `[${w.genre}] ` : '';
+                    lines.push(`\n${genreTag}${title} ${span.title || ''} (${span.startDate} ~ ${span.endDate})  (schedule_id: ${span.id})`);
+
+                    const totalDays = spanDayDiff(span.startDate, span.endDate) + 1;
+                    const [sy, sm, sd] = span.startDate.split('-').map(Number);
+                    const restSet = span.restMode === 'days' ? new Set(span.restWeekdays || []) : null;
+                    const restPerWeek = Math.min(7, Math.max(0, Number(span.restPerWeek) || 0));
+                    const restEveryN = (!restSet && restPerWeek > 0) ? Math.round(7 / restPerWeek) : null;
+
+                    let spanTotal = 0;
+                    for (let i = 0; i < totalDays; i++) {
+                        const dt = new Date(sy, sm - 1, sd + i);
+                        const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                        const isRest = restSet ? restSet.has(dt.getDay()) : (restEveryN ? ((i + 1) % restEveryN === 0) : false);
+                        if (isRest) { lines.push(`  ${dateStr}  휴식일`); continue; }
+                        const dayCards = cardsByDate[dateStr];
+                        if (dayCards && dayCards.length) {
+                            groupDayCards(dayCards, span.workId).forEach(g => {
+                                spanTotal += g.total;
+                                lines.push(`  ${dateStr}  ${g.catTxt}${g.total.toLocaleString()}자  (${g.status})${g.memoTxt}`);
+                            });
+                        } else {
+                            lines.push(`  ${dateStr}  (카드 없음)`);
+                        }
+                    }
+                    lines.push(`  → 이 기간 합계: ${spanTotal.toLocaleString()}자`);
+                });
+                lines.push('');
+            }
+
+            // 3-2) 확정 카드 — 기간 일정과 무관하게 하나씩 등록한 카드. 지난 기록은 빼고 오늘 이후 것만 보여준다
+            lines.push('=== 확정 카드 (오늘 이후) ===');
+            const manualItems = allItems.filter(it => !it.spanId && it.date >= today);
+            if (!manualItems.length) { lines.push('(없음)'); lines.push(''); }
+            else {
+                const byWork = {};
+                manualItems.forEach(it => { (byWork[it.workId] = byWork[it.workId] || []).push(it); });
+                Object.keys(byWork).sort((a, b) => {
+                    const fa = byWork[a].map(x => x.date).sort()[0] || '';
+                    const fb = byWork[b].map(x => x.date).sort()[0] || '';
+                    return fa.localeCompare(fb);
+                }).forEach(wId => {
+                    const w = masterWorks.find(x => x.id === wId);
+                    const title = w ? w.title : (resolveWorkItem(wId).displayTitle || '(삭제된 작품)');
+                    const genreTag = w && w.genre ? `[${w.genre}] ` : '';
+                    const byDate = {};
+                    byWork[wId].forEach(it => { (byDate[it.date] = byDate[it.date] || []).push(it); });
+                    let workTotal = 0, cardCount = 0;
+                    lines.push(`\n${genreTag}${title}`);
+                    Object.keys(byDate).sort().forEach(d => {
+                        cardCount += byDate[d].length;
+                        groupDayCards(byDate[d], wId).forEach(g => {
+                            workTotal += g.total;
+                            lines.push(`  ${d}  ${g.catTxt}${g.total.toLocaleString()}자  (${g.status})${g.memoTxt}`);
+                        });
+                    });
+                    lines.push(`  → 이 작품 합계: ${workTotal.toLocaleString()}자 (${Object.keys(byDate).length}일 · 원본 카드 ${cardCount}건)`);
+                });
+                lines.push('');
+            }
+
+            // 같은 날짜에 카드가 여러 개(예: 5,000자 + 5,000자) 있으면 그날은 합쳐서 1만자로 취급한다.
+            // 작품별/전체 날짜별 합계를 미리 만들어서 아래 3-3, 3-4, 3-5에서 재사용한다.
+            const dailyByWork = {};  // { workId: { 'YYYY-MM-DD': 합친 글자수 } }
+            const dailyAll = {};     // { 'YYYY-MM-DD': 전체 작품 합친 글자수 }
+            allItems.forEach(it => {
+                if (!it.workId) return;
+                const goal = Number(it.goal) || 0;
+                dailyAll[it.date] = (dailyAll[it.date] || 0) + goal;
+                if (!dailyByWork[it.workId]) dailyByWork[it.workId] = {};
+                dailyByWork[it.workId][it.date] = (dailyByWork[it.workId][it.date] || 0) + goal;
+            });
+
+            // 3-3) 작품별 집필 일정 요약 — 총 집필 기간 / 집필 일수 / 글자수 / 하루 평균
+            lines.push('=== 작품별 집필 일정 요약 (달력 카드 기준, 같은 날 카드는 합쳐서 계산) ===');
+            if (!workList.length) lines.push('(없음)');
+            else workList.forEach(w => {
+                const genreTag = w.genre ? `[${w.genre}] ` : '';
+                const days = dailyByWork[w.id] ? Object.keys(dailyByWork[w.id]).sort() : [];
+                if (!days.length) { lines.push(`- ${genreTag}${w.title}: 등록된 집필 카드 없음`); return; }
+                const totalChars = days.reduce((sum, d) => sum + dailyByWork[w.id][d], 0);
+                const dayCount = days.length;
+                const avg = dayCount ? Math.round(totalChars / dayCount) : 0;
+                lines.push(`- ${genreTag}${w.title}: 집필 기간 ${days[0]} ~ ${days[days.length - 1]} · 집필 일수 ${dayCount}일 · 글자수 ${totalChars.toLocaleString()}자 · 하루 평균 ${avg.toLocaleString()}자`);
+            });
+            lines.push('');
+
+            // 3-4) 월별 집필 카드 글자수 — 전체 작품 합산, 연-월(YYYY-MM) 기준
+            lines.push('=== 월별 집필 카드 글자수 (전체 작품 합산, 같은 날 카드는 합쳐서 계산) ===');
+            const monthMap = {};
+            Object.entries(dailyAll).forEach(([date, chars]) => {
+                const ym = date.slice(0, 7);
+                if (!monthMap[ym]) monthMap[ym] = { chars: 0, days: 0 };
+                monthMap[ym].chars += chars;
+                monthMap[ym].days += 1;
+            });
+            const monthKeys = Object.keys(monthMap).sort();
+            if (!monthKeys.length) lines.push('(없음)');
+            else monthKeys.forEach(ym => {
+                const m = monthMap[ym];
+                const avg = m.days ? Math.round(m.chars / m.days) : 0;
+                lines.push(`- ${ym}: ${m.chars.toLocaleString()}자 · 집필 ${m.days}일 · 하루 평균 ${avg.toLocaleString()}자`);
+            });
+            lines.push('');
+
+            // 3-5) 일정이 비어 있는 구간 (3일 이상) — 카드뿐 아니라 기간 일정(작품연결 집필/유동 슬롯/교정/여행/시놉기획)이
+            //      걸려 있는 날도 전부 '점유'로 보고, 휴식은 따로 '의도적 휴식'으로 구분해서 보여준다.
+            const occupiedDates = new Set(Object.keys(dailyAll));
+            const restDates = new Set();
+            writeSpans.forEach(s => {
+                const type = s.type || 'write';
+                const totalDays = spanDayDiff(s.startDate, s.endDate) + 1;
+                for (let i = 0; i < totalDays; i++) {
+                    const d = spanDateAdd(s.startDate, i);
+                    if (type === 'rest') restDates.add(d); else occupiedDates.add(d);
+                }
+            });
+            const allKnownDates = [...occupiedDates, ...restDates];
+
+            // 계산 로직은 그대로 두고, 결과만 '진짜 빈 구간'과 '확정 휴식 일정' 두 섹션으로 나눠서 출력한다
+            // (휴식은 빈 구간이 아니라 이미 확정된 일정이라서)
+            let trueGaps = [];
+            if (allKnownDates.length >= 2) {
+                const sortedAll = allKnownDates.sort();
+                const rangeStart = sortedAll[0], rangeEnd = sortedAll[sortedAll.length - 1];
+                const totalRangeDays = spanDayDiff(rangeStart, rangeEnd) + 1;
+
+                let blankStart = null;
+                for (let i = 0; i < totalRangeDays; i++) {
+                    const d = spanDateAdd(rangeStart, i);
+                    const isBlank = !occupiedDates.has(d) && !restDates.has(d);
+                    if (isBlank) {
+                        if (blankStart === null) blankStart = d;
+                    } else if (blankStart !== null) {
+                        const blankEnd = spanDateAdd(d, -1);
+                        const len = spanDayDiff(blankStart, blankEnd) + 1;
+                        if (len >= 3) trueGaps.push(`${blankStart} ~ ${blankEnd} (${len}일)`);
+                        blankStart = null;
+                    }
+                }
+                if (blankStart !== null) {
+                    const len = spanDayDiff(blankStart, rangeEnd) + 1;
+                    if (len >= 3) trueGaps.push(`${blankStart} ~ ${rangeEnd} (${len}일)`);
+                }
+            }
+
+            lines.push('=== 일정이 비어 있는 구간 (3일 이상) ===');
+            if (allKnownDates.length < 2) lines.push('(계산할 데이터가 부족해요)');
+            else if (!trueGaps.length) lines.push('(3일 이상 비는 구간 없음)');
+            else trueGaps.forEach(g => lines.push(`- ${g}`));
+            lines.push('');
+
+            lines.push('=== 확정 휴식 일정 ===');
+            const restSpans = writeSpans.filter(s => (s.type || 'write') === 'rest').sort((a, b) => a.startDate.localeCompare(b.startDate));
+            if (!restSpans.length) lines.push('(없음)');
+            else restSpans.forEach(s => {
+                const days = spanDayDiff(s.startDate, s.endDate) + 1;
+                lines.push(`- ${s.startDate} ~ ${s.endDate} (${days}일)${s.title && s.title !== '(제목 없음)' ? ` · ${s.title}` : ''}`);
+            });
+            lines.push('');
+
+            // 4) 요약 — 일정 분류는 딱 둘: 확정(개별 집필 카드가 실제로 존재) / 예정(카드 없이 기간 일정으로만 잡힘).
+            //    완료는 확정 안의 상태값일 뿐 별도 분류가 아니라서, 참고용으로 따로 한 줄만 보여준다.
+            //    이미 카드로 확정된 기간 일정은 예정에서 제외해서 중복 집계를 막는다 (confirmedSpanIds로 판별).
+            const totalCards = allItems.length;
+            const totalConfirmedChars = allItems.reduce((sum, it) => sum + (Number(it.goal) || 0), 0);
+            const totalDoneChars = allItems.filter(it => it.isCompleted).reduce((sum, it) => sum + (Number(it.goal) || 0), 0);
+            const pendingSpans = writeSpans.filter(s => (s.type || 'write') === 'write' && !confirmedSpanIds.has(s.id));
+            const totalPendingChars = pendingSpans.reduce((sum, s) => sum + calcSpanStats(s).totalChars, 0);
+
+            // 연도별 — 확정은 카드의 '날짜' 기준, 예정은 (아직 확정 안 된) 기간 일정의 '시작일' 기준으로 나눈다.
+            const yearConfirmed = {};
+            allItems.forEach(it => {
+                const yr = it.date.slice(0, 4);
+                yearConfirmed[yr] = (yearConfirmed[yr] || 0) + (Number(it.goal) || 0);
+            });
+            const yearDone = {};
+            allItems.forEach(it => {
+                if (!it.isCompleted) return;
+                const yr = it.date.slice(0, 4);
+                yearDone[yr] = (yearDone[yr] || 0) + (Number(it.goal) || 0);
+            });
+            const yearPending = {};
+            pendingSpans.forEach(s => {
+                const yr = s.startDate.slice(0, 4);
+                yearPending[yr] = (yearPending[yr] || 0) + calcSpanStats(s).totalChars;
+            });
+            const allYears = new Set([...Object.keys(yearConfirmed), ...Object.keys(yearPending)]);
+
+            lines.push('=== 요약 ===');
+            lines.push(`- 확정: ${totalConfirmedChars.toLocaleString()}자`);
+            lines.push(`- 예정: ${totalPendingChars.toLocaleString()}자`);
+            lines.push(`- 총합(확정 + 예정): ${(totalConfirmedChars + totalPendingChars).toLocaleString()}자`);
+            lines.push(`- 완료: ${totalDoneChars.toLocaleString()}자`);
+            lines.push(`- 등록된 작품(유동 슬롯 제외): 총 ${workList.length}개`);
+            lines.push(`- 등록된 집필 카드: 총 ${totalCards}개`);
+            lines.push('※ "확정" = 이미 잡힌 일정 전부: 집필 카드 + 작교(교정) 카드 + 기타 카드(개별 카드는 종류 무관 전부) + 휴식 기간 일정(휴식은 글자수 0으로 잡혀요). "예정" = 아직 카드로 안 만들어진 기간 일정: 작품 연결 예정 + 유동 슬롯 예정. 이미 확정 카드가 생긴 기간 일정은 예정에서 빠져서 중복으로 안 잡혀요. "완료"는 확정 카드 중 완료 체크된 것만 따로 뽑은 참고값이에요.');
+            Array.from(allYears).sort().forEach(yr => {
+                const conf = yearConfirmed[yr] || 0;
+                const pending = yearPending[yr] || 0;
+                const done = yearDone[yr] || 0;
+                lines.push(`- ${yr}년: 확정 ${conf.toLocaleString()}자 · 예정 ${pending.toLocaleString()}자 · 총합 ${(conf + pending).toLocaleString()}자 · 완료 ${done.toLocaleString()}자`);
+            });
+            lines.push('');
+
+            // 등록된 전체 작품 목록 — 위 "작품 정보"는 집필 카드/기간 일정이 걸린 작품만 나오므로,
+            // 집필 기록이 아직 없는 작품도 빠짐없이 나오게 masterWorks 전체를 기준으로 따로 뽑는다.
+            lines.push('=== 등록된 전체 작품 목록 (작품 등록에 입력한 글자수 기준, 웹툰 제외) ===');
+            const allRegisteredWorks = masterWorks.filter(w => !(w.genre || '').includes('웹툰'));
+            lines.push(`총 ${allRegisteredWorks.length}개`);
+            if (!allRegisteredWorks.length) lines.push('(없음)');
+            allRegisteredWorks
+                .slice()
+                .sort((a, b) => (workCharTotals[b.id] || 0) - (workCharTotals[a.id] || 0))
+                .forEach(w => {
+                    const withSpace = Number(w.goalWithSpace) || 0;
+                    const noSpace = Number(w.goalNoSpace) || 0;
+                    const extrasChars = (w.extras || []).reduce((sum, ex) => sum + (Number(ex.goalWithSpace) || Number(ex.goalNoSpace) || 0), 0);
+                    lines.push(`- [${w.genre || '장르 미상'}] ${w.title}: 공포 ${withSpace.toLocaleString()}자 · 공미 ${noSpace.toLocaleString()}자${extrasChars > 0 ? ` (외전 ${extrasChars.toLocaleString()}자 포함 총 ${(workCharTotals[w.id] || 0).toLocaleString()}자)` : ''}`);
+                    lines.push(`  계약일: ${w.contractDate || '-'} · 출간일: ${getPendingLabel(w)} · 권수: ${w.volumes || 1}권`);
+                });
+            lines.push('');
+
+            // 연간 글자수 통계 — 위 "확정/예정"은 일정(카드)에 잡아둔 목표치 기준이고,
+            // 여기는 글자수 관리(상세 기록 입력)에 실제로 기록한 글자수 기준이라 서로 다른 값이다.
+            lines.push('=== 연간 글자수 통계 (글자수 관리에 실제로 기록한 글자수 기준 — 위 확정/예정은 일정에 잡아둔 목표치라 서로 다름) ===');
+            const statYears = new Set();
+            Object.keys(writerDailyData).forEach(ds => { const y = ds.slice(0, 4); if (/^\d{4}$/.test(y)) statYears.add(y); });
+            Array.from(statYears).sort().forEach(y => {
+                const months = Array.from({ length: 12 }, () => ({ total: 0, byWork: {}, days: new Set() }));
+                const genreTotals = {};
+                let yearTotal = 0;
+                const yearDays = new Set();
+                Object.entries(writerDailyData).forEach(([ds, day]) => {
+                    if (!ds.startsWith(`${y}-`)) return;
+                    const mIdx = Number(ds.slice(5, 7)) - 1;
+                    if (mIdx < 0 || mIdx > 11) return;
+                    Object.entries(day?.works || {}).forEach(([key, val]) => {
+                        const sum = Object.values(val?.hours || {}).reduce((a, b) => a + (b.diff || 0), 0);
+                        if (sum <= 0) return;
+                        months[mIdx].total += sum;
+                        months[mIdx].byWork[key] = (months[mIdx].byWork[key] || 0) + sum;
+                        months[mIdx].days.add(ds);
+                        yearTotal += sum;
+                        yearDays.add(ds);
+                        const g = (key !== WRITER_BULK_UNASSIGNED_KEY && resolveWorkItem(key).genre) || '미지정';
+                        genreTotals[g] = (genreTotals[g] || 0) + sum;
+                    });
+                });
+                lines.push(`- ${y}년 총합: ${yearTotal.toLocaleString()}자 · 집필한 날 ${yearDays.size}일`);
+                Object.entries(genreTotals).sort((a, b) => b[1] - a[1]).forEach(([g, chars]) => {
+                    lines.push(`  · ${g}: ${chars.toLocaleString()}자`);
+                });
+                months.forEach((m, i) => {
+                    if (m.total <= 0) return;
+                    lines.push(`  [${MONTH_NAMES_KO[i]}] 총 ${m.total.toLocaleString()}자 · 집필한 날 ${m.days.size}일`);
+                    Object.entries(m.byWork).sort((a, b) => b[1] - a[1]).forEach(([key, chars]) => {
+                        const wg = (key !== WRITER_BULK_UNASSIGNED_KEY && resolveWorkItem(key).genre) || '';
+                        lines.push(`    - ${wg ? `[${wg}] ` : ''}${writerResolveDailyKeyLabel(key)}: ${chars.toLocaleString()}자`);
+                    });
+                });
+                lines.push('');
+            });
+
+            const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `집필기록_전체연도_${today}.txt`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+            meShowToast('집필 기록 파일을 저장했어요.');
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 정산 기록 전체를 연도 구분 없이 한 텍스트 파일로 내보내기
+        //   (챗GPT 등에 정산/수익 상담을 하기 좋게, 작품별·출판사별·장르별·연도별로 정리해서 내보낸다)
+        // ════════════════════════════════════════════════════════
+        function exportAllSettlementRecords() {
+            const lines = [];
+            const today = getYYYYMMDD(new Date());
+            const fmtDateTime = (dm) => {
+                const pad = n => String(n).padStart(2, '0');
+                return `${dm.getFullYear()}-${pad(dm.getMonth() + 1)}-${pad(dm.getDate())} ${pad(dm.getHours())}:${pad(dm.getMinutes())}`;
+            };
+            let lastModTxt = '-';
+            try {
+                if (isNodeEnvironment && fs.existsSync(dataFilePath)) lastModTxt = fmtDateTime(fs.statSync(dataFilePath).mtime);
+            } catch (e) {}
+            if (lastModTxt === '-') {
+                const raw = localStorage.getItem('lastModified_v6');
+                if (raw) { const dm = new Date(raw); if (!isNaN(dm.getTime())) lastModTxt = fmtDateTime(dm); }
+            }
+            lines.push('■ 정산 기록 전체 내보내기');
+            lines.push(`기준일: ${today} / 마지막 수정: ${lastModTxt}`);
+            lines.push('');
+
+            // 1) 작품 정보 — 정산 관련 필드 위주
+            lines.push(`=== 작품 정보 (${masterWorks.length}개) ===`);
+            if (!masterWorks.length) lines.push('(없음)');
+            masterWorks.forEach(w => {
+                const { totalProfit, totalSales } = getCumulativeWorkData(w.id);
+                const advTxt = w.advanceAmount ? `${Number(w.advanceAmount).toLocaleString()}만원${w.advanceDate ? ` (${w.advanceDate})` : ''}` : '없음';
+                lines.push(`\n- [${w.genre || '장르 미상'}] ${w.title}  (work_id: ${w.id})`);
+                lines.push(`  출판사: ${w.publisher || '-'}${w.settlementPublisher ? ` (정산처: ${w.settlementPublisher})` : ''} · 플랫폼: ${(workManage[w.id] || {}).launchPlatform || '-'} · 프로모션: ${(workManage[w.id] || {}).promotion || '-'}`);
+                lines.push(`  정산 비율: ${w.rate || 0}% · 선인세: ${advTxt}`);
+                lines.push(`  출간: ${getPendingLabel(w)}`);
+                lines.push(`  누적 순수익: ₩${formatCurrency(totalProfit)} · 추정 총매출: ₩${formatCurrency(totalSales)}`);
+            });
+            lines.push('');
+
+            // 2) 작품별 정산 기록 — 연도 상관없이 월별로 쭉, 0원인 달은 생략
+            lines.push('=== 작품별 정산 기록 (월별) ===');
+            let anyRecord = false;
+            masterWorks.forEach(w => {
+                const records = [];
+                Object.entries(monthlyData).forEach(([mKey, d]) => {
+                    const amt = Number(d[w.id]) || 0;
+                    if (amt) records.push({ month: mKey, amount: amt });
+                });
+                if (!records.length) return;
+                anyRecord = true;
+                records.sort((a, b) => a.month.localeCompare(b.month));
+                const total = records.reduce((s, r) => s + r.amount, 0);
+                lines.push(`\n- [${w.genre || '장르 미상'}] ${w.title}`);
+                records.forEach(r => lines.push(`  ${r.month}  ₩${formatCurrency(r.amount)}`));
+                lines.push(`  → 누적: ₩${formatCurrency(total)} (${records.length}개월)`);
+            });
+            if (!anyRecord) lines.push('(정산 기록 없음)');
+            lines.push('');
+
+            // 3) 출판사별 정산 요약
+            lines.push('=== 출판사별 정산 요약 ===');
+            const byPublisher = {};
+            Object.values(monthlyData).forEach(d => {
+                Object.entries(d).forEach(([wId, amt]) => {
+                    const w = masterWorks.find(x => x.id === wId);
+                    if (!w) return;
+                    const pub = w.settlementPublisher || w.publisher || '미지정';
+                    byPublisher[pub] = (byPublisher[pub] || 0) + (Number(amt) || 0);
+                });
+            });
+            const pubEntries = Object.entries(byPublisher).sort((a, b) => b[1] - a[1]);
+            if (!pubEntries.length) lines.push('(없음)');
+            pubEntries.forEach(([pub, amt]) => {
+                const pd = publisherData[pub] || {};
+                const detailParts = [];
+                if (pd.paymentDay) detailParts.push(`정산일 ${pd.paymentDay}`);
+                if (pd.standard) detailParts.push(`기준 ${pd.standard}`);
+                if (pd.site) detailParts.push(`사이트 ${pd.site}`);
+                lines.push(`- ${pub}: 누적 ₩${formatCurrency(amt)}${detailParts.length ? ` (${detailParts.join(' · ')})` : ''}`);
+            });
+            lines.push('');
+
+            // 4) 장르별 정산 요약
+            lines.push('=== 장르별 정산 요약 ===');
+            const byGenre = {};
+            Object.values(monthlyData).forEach(d => {
+                Object.entries(d).forEach(([wId, amt]) => {
+                    const w = masterWorks.find(x => x.id === wId);
+                    if (!w) return;
+                    const g = w.genre || '기타';
+                    if (!byGenre[g]) byGenre[g] = { total: 0, workIds: new Set() };
+                    byGenre[g].total += Number(amt) || 0;
+                    byGenre[g].workIds.add(wId);
+                });
+            });
+            const genreEntries = Object.entries(byGenre).sort((a, b) => b[1].total - a[1].total);
+            if (!genreEntries.length) lines.push('(없음)');
+            genreEntries.forEach(([g, v]) => {
+                const avg = v.workIds.size ? Math.round(v.total / v.workIds.size) : 0;
+                lines.push(`- ${g}: 작품 ${v.workIds.size}개 · 누적 ₩${formatCurrency(v.total)} · 작품당 평균 ₩${formatCurrency(avg)}`);
+            });
+            lines.push('');
+
+            // 5) 연도별 정산 요약
+            lines.push('=== 연도별 정산 요약 ===');
+            const byYear = {};
+            Object.entries(monthlyData).forEach(([mKey, d]) => {
+                const yr = mKey.split('-')[0];
+                const sum = Object.values(d).reduce((s, v) => s + (Number(v) || 0), 0);
+                byYear[yr] = (byYear[yr] || 0) + sum;
+            });
+            const yearKeys = Object.keys(byYear).sort();
+            if (!yearKeys.length) lines.push('(없음)');
+            yearKeys.forEach(yr => lines.push(`- ${yr}년: ₩${formatCurrency(byYear[yr])}`));
+            lines.push('');
+
+            // 6) 전체 요약
+            const grandTotal = Object.values(byYear).reduce((s, v) => s + v, 0);
+            lines.push('=== 요약 ===');
+            lines.push(`- 누적 순수익 총합: ₩${formatCurrency(grandTotal)}`);
+            lines.push(`- 연 평균: ₩${formatCurrency(yearKeys.length ? grandTotal / yearKeys.length : 0)}`);
+            lines.push(`- 등록된 작품 수: ${masterWorks.length}개`);
+            const workCountWithRecord = masterWorks.filter(w => Object.values(monthlyData).some(d => Number(d[w.id]) > 0)).length;
+            lines.push(`- 정산 기록이 있는 작품 수: ${workCountWithRecord}개`);
+            lines.push(`- 작품당 평균 누적 순수익: ₩${formatCurrency(workCountWithRecord ? grandTotal / workCountWithRecord : 0)}`);
+
+            const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `정산기록_전체연도_${today}.txt`;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+            meShowToast('정산 기록 파일을 저장했어요.');
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 연간 일정을 이미지(PNG)로 저장
+        //   그림만 있으면 읽는 쪽에서 알기 어려우니, 간트 차트 + 모든 일정을
+        //   날짜/일수/글자수까지 글로 적은 표를 함께 그려서 한 장에 담는다.
+        // ════════════════════════════════════════════════════════
+        function exportYearTimelineImage() {
+            const y = timelineYear;
+            const d = buildYearTimelineData(y);
+            const F = "'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif";
+            const W = 1720, PAD = 48, SCALE = 2;
+            const num = n => (Number(n) || 0).toLocaleString();
+            const dow = ds => ['일','월','화','수','목','금','토'][new Date(...ds.split('-').map((v,i)=>i===1?v-1:+v)).getDay()];
+            const fmt = ds => `${ds}(${dow(ds)})`;
+
+            // ── 표에 넣을 줄들을 먼저 만들어서 전체 높이를 계산한다
+            // 기간 일정은 '집필'과 '휴식 등(휴식·교정·여행·시놉기획)'으로 나눠서 각각 따로 보여준다
+            const buildSpanRow = ({ span: s, stats: st }) => {
+                const t = SPAN_TYPES[s.type || 'write'];
+                const rest = st.noChars ? '—'
+                    : (s.restMode === 'days'
+                        ? (s.restWeekdays?.length ? `매주 ${s.restWeekdays.map(i => SPAN_DOW_NAMES[i]).join('·')}` : '없음')
+                        : `주 ${s.restPerWeek || 0}회`);
+                const workTitle = s.workId ? (resolveWorkItem(s.workId).displayTitle || '-') : '-';
+                return [`${t.icon} ${t.label}`, s.title, workTitle,
+                        `${fmt(s.startDate)} ~ ${fmt(s.endDate)}`, `${st.totalDays}일`,
+                        st.noChars ? '—' : `${st.workDays}일`, rest,
+                        st.noChars ? '—' : `${num(st.totalChars)}자 (공미 ${num(Math.round(st.totalChars * NOSPACE_TO_WITHSPACE_RATIO))}자)`,
+                        st.noChars ? '—' : `${num(s.dailyChars)}자/일`, s.memo || ''];
+            };
+            const writeSpanRows = d.spans.filter(sp => (sp.span.type || 'write') === 'write').map(buildSpanRow);
+            const restSpanRows = d.spans.filter(sp => (sp.span.type || 'write') !== 'write').map(buildSpanRow);
+
+            const workRows = [];
+            d.works.forEach(w => {
+                w.segs.forEach((sg, i) => {
+                    const sd = tlIndexToDate(sg.startIdx, y), ed = tlIndexToDate(sg.endIdx, y);
+                    workRows.push([
+                        i === 0 ? w.title : '   ↳',
+                        i === 0 ? (w.genre || '-') : '',
+                        w.segs.length > 1 ? `${i+1}/${w.segs.length}` : '-',
+                        `${fmt(sd)} ~ ${fmt(ed)}`, `${sg.days}일`, `${num(sg.chars)}자`,
+                        sg.days ? `${num(Math.round(sg.chars / sg.days))}자/일` : '-',
+                        i === 0 ? `${num(w.totalChars)}자 / ${w.workDays}일` : '',
+                        i === 0 ? (w.catText || '-') : ''
+                    ]);
+                });
+            });
+
+            const monthRows = d.monthly.map((m, i) => [`${i+1}월`, `${num(m.chars)}자`, `${m.days.size}일`,
+                m.days.size ? `${num(Math.round(m.chars / m.days.size))}자/일` : '-']);
+
+            const restRows = d.restSegs.map(sg => {
+                const sd = tlIndexToDate(sg.startIdx, y), ed = tlIndexToDate(sg.endIdx, y);
+                return [`${fmt(sd)} ~ ${fmt(ed)}`, `${sg.days}일`];
+            });
+
+            // ── 간트 차트에 쓸 줄(lane) 배치 — 글씨 폭까지 재서 겹치면 아래로 내린다
+            const chartW = W - PAD * 2;
+            const xOf = idx => (idx / d.daysInYear) * chartW;
+
+            const canvas = document.createElement('canvas');
+            const c = canvas.getContext('2d');
+            c.font = `700 12px ${F}`; // 막대 라벨 폭 측정용
+
+            // 3일 이하 짧은 일정은 막대로 그리지 않는다 (표에는 그대로 다 나온다)
+            const gItems = d.items.filter(it => it.days > TL_MIN_DAYS);
+            gItems.forEach(it => {
+                it.gx = xOf(it.startIdx);
+                it.gw = Math.max(3, xOf(it.endIdx + 1) - it.gx);
+                it.glabel = it.kind === 'span'
+                    ? `${SPAN_TYPES[it.spanType].icon}${it.title} ${it.days}일${it.noChars ? '' : ` ${num(it.chars)}자`}`
+                    : `${it.title} ${it.days}일 ${num(it.chars)}자`;
+                const lw = c.measureText(it.glabel).width + 28; // 앞 여백 14 + 뒤 여백 12 + 여유
+                it.ginside = lw <= it.gw;
+                it.gside = 'right';
+                if (!it.ginside && it.gx + it.gw + 6 + lw > chartW) it.gside = 'left';
+                // 바깥 글씨가 차지할 폭까지 미리 자리로 잡아둔다
+                it.packX = (!it.ginside && it.gside === 'left') ? it.gx - lw - 6 : it.gx;
+                it.packW = it.ginside ? it.gw : (it.gside === 'left' ? lw + 6 + it.gw : it.gw + 6 + lw);
+            });
+
+            // 작품 일정을 위쪽에, 직접 만든 기간 일정은 그 아래(쉬는 구간 바로 위)에 모아 둔다
+            const packG = (list, startLane) => {
+                const laneEnd = [];
+                list.forEach(it => {
+                    let lane = laneEnd.findIndex(e => e <= it.packX + 0.5);
+                    if (lane === -1) { lane = laneEnd.length; laneEnd.push(0); }
+                    laneEnd[lane] = it.packX + it.packW;
+                    it.glane = startLane + lane;
+                });
+                return laneEnd.length;
+            };
+            const gWorkLanes = packG(gItems.filter(it => it.kind === 'work'), 0);
+            const gSpanLanes = packG(gItems.filter(it => it.kind === 'span'), gWorkLanes);
+            const laneCount = Math.max(1, gWorkLanes + gSpanLanes);
+            const BAR_H = 22, BAR_GAP = 6;
+
+            // ── 전체 높이 계산
+            const RH = 30, HH = 34, TITLE_H = 46;
+            const table = rows => rows.length ? TITLE_H + HH + rows.length * RH + 26 : 0;
+            let H = 132                                   // 헤더
+                  + 62                                    // 요약
+                  + 40 + laneCount * (BAR_H + BAR_GAP) + 46 + 30  // 간트(월축+막대+쉬는띠)
+                  + table(workRows) + table(writeSpanRows) + table(restSpanRows)
+                  + TITLE_H + HH + 12 * RH + 26           // 월별 표
+                  + table(restRows)
+                  + 60;                                   // 푸터
+
+            canvas.width = W * SCALE; canvas.height = H * SCALE;
+            c.scale(SCALE, SCALE);
+            c.textBaseline = 'middle';
+            c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H);
+
+            const text = (str, x, yy, { size = 14, weight = '400', color = '#334155', align = 'left', max = 0 } = {}) => {
+                c.font = `${weight} ${size}px ${F}`; c.fillStyle = color; c.textAlign = align;
+                let s = String(str ?? '');
+                if (max) { while (s && c.measureText(s).width > max) s = s.slice(0, -1); }
+                c.fillText(s, x, yy);
+                c.textAlign = 'left';
+            };
+            const rrect = (x, yy, w, h, r, fill, stroke) => {
+                c.beginPath(); c.moveTo(x+r, yy); c.arcTo(x+w, yy, x+w, yy+h, r); c.arcTo(x+w, yy+h, x, yy+h, r);
+                c.arcTo(x, yy+h, x, yy, r); c.arcTo(x, yy, x+w, yy, r); c.closePath();
+                if (fill) { c.fillStyle = fill; c.fill(); }
+                if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
+            };
+
+            let Y = 0;
+
+            // ── 헤더
+            c.fillStyle = '#fffbeb'; c.fillRect(0, 0, W, 116);
+            c.fillStyle = '#f59e0b'; c.fillRect(0, 0, W, 5);
+            text(`${y}년 집필 일정표`, PAD, 46, { size: 32, weight: '800', color: '#78350f' });
+            text(`작성일 ${getYYYYMMDD(new Date())} · 루시 다이어리 집필 관리`, PAD, 82, { size: 14, color: '#a16207' });
+            text(`작품 ${d.works.length}편 · 기간 일정 ${d.spans.length}건`, W - PAD, 46, { size: 16, weight: '700', color: '#92400e', align: 'right' });
+            text(`총 목표 ${num(d.totalChars)}자`, W - PAD, 78, { size: 22, weight: '800', color: '#b45309', align: 'right' });
+            Y = 132;
+
+            // ── 요약 박스
+            rrect(PAD, Y, chartW, 46, 10, '#f8fafc', '#e2e8f0');
+            const sumTxt = `1년 ${d.daysInYear}일  ·  일정 있는 날 ${d.busyDays}일  ·  비어 있는 날 ${d.daysInYear - d.busyDays}일  ·  일정 없는 2일 이상 구간 ${d.restSegs.length}개(총 ${d.restSegs.reduce((n,s)=>n+s.days,0)}일)  ·  글자수는 모두 공백 포함 목표치`;
+            text(sumTxt, PAD + 16, Y + 23, { size: 14, weight: '600', color: '#475569' });
+            Y += 62;
+
+            // ── 간트 차트: 월 축
+            const monthIdx = [];
+            for (let m = 0; m < 12; m++) monthIdx.push(tlDayIndex(`${y}-${String(m+1).padStart(2,'0')}-01`, y));
+            monthIdx.forEach((idx, m) => {
+                // 글씨는 그 달 한가운데, 세로 구분선은 달이 시작하는 경계에
+                const x = PAD + xOf(idx);
+                const nextX = PAD + xOf(m === 11 ? d.daysInYear : monthIdx[m + 1]);
+                text(`${m+1}월`, (x + nextX) / 2, Y + 12, { size: 13, weight: '700', color: '#64748b', align: 'center' });
+                c.strokeStyle = '#e2e8f0'; c.lineWidth = 1;
+                c.beginPath(); c.moveTo(x, Y + 24); c.lineTo(x, Y + 34 + laneCount * (BAR_H + BAR_GAP) + 34); c.stroke();
+            });
+            c.strokeStyle = '#e2e8f0'; c.lineWidth = 1;
+            c.beginPath(); c.moveTo(PAD + chartW, Y + 24); c.lineTo(PAD + chartW, Y + 34 + laneCount * (BAR_H + BAR_GAP) + 34); c.stroke();
+            c.fillStyle = '#cbd5e1'; c.fillRect(PAD, Y + 26, chartW, 3);
+            Y += 40;
+
+            // ── 간트 차트: 막대
+            gItems.forEach(it => {
+                const bx = PAD + it.gx, by = Y + it.glane * (BAR_H + BAR_GAP);
+                const isSpan = it.kind === 'span';
+                rrect(bx, by, it.gw, BAR_H, 4, isSpan ? spanColorSolid(it.color) : it.color + '80', '#00000012');
+                c.fillStyle = isSpan ? '#b45309' : '#0f766e';
+                c.fillRect(bx, by, 3, BAR_H);
+                // 자리 계산 때 정해둔 대로 막대 안 / 오른쪽 바깥 / 왼쪽 바깥에 글씨를 쓴다
+                const o = { size: 12, weight: '700', color: '#1e293b' };
+                if (it.ginside) text(it.glabel, bx + 14, by + BAR_H/2, o);
+                else if (it.gside === 'right') text(it.glabel, bx + it.gw + 6, by + BAR_H/2, { ...o, color: '#334155' });
+                else text(it.glabel, bx - 6, by + BAR_H/2, { ...o, color: '#334155', align: 'right' });
+            });
+            Y += laneCount * (BAR_H + BAR_GAP) + 14;
+
+            // ── 간트 차트: 쉬는 구간 띠
+            text('일정 없는 구간', PAD, Y + 10, { size: 12, weight: '700', color: '#94a3b8' });
+            Y += 22;
+            c.fillStyle = '#f8fafc'; c.fillRect(PAD, Y, chartW, 18);
+            d.restSegs.forEach(sg => {
+                const x = PAD + xOf(sg.startIdx), w = Math.max(2, xOf(sg.endIdx + 1) - xOf(sg.startIdx));
+                c.fillStyle = '#e2e8f0'; c.fillRect(x, Y, w, 18);
+                if (w > 34) text(`${sg.days}일`, x + 4, Y + 9, { size: 10, weight: '700', color: '#94a3b8' });
+            });
+            Y += 48;
+
+            // ── 표 그리기 공통
+            const drawTable = (title, cols, widths, rows, accent) => {
+                if (!rows.length) return;
+                text(title, PAD, Y + 16, { size: 18, weight: '800', color: accent });
+                Y += TITLE_H;
+                const xs = []; let cx = PAD;
+                widths.forEach(w => { xs.push(cx); cx += w; });
+                const tw = cx - PAD;
+
+                c.fillStyle = accent + '18'; c.fillRect(PAD, Y, tw, HH);
+                cols.forEach((t, i) => text(t, xs[i] + 10, Y + HH/2, { size: 13, weight: '800', color: accent, max: widths[i] - 16 }));
+                Y += HH;
+
+                rows.forEach((r, ri) => {
+                    if (ri % 2) { c.fillStyle = '#fafafa'; c.fillRect(PAD, Y, tw, RH); }
+                    c.strokeStyle = '#f1f5f9'; c.lineWidth = 1;
+                    c.beginPath(); c.moveTo(PAD, Y + RH); c.lineTo(PAD + tw, Y + RH); c.stroke();
+                    r.forEach((v, i) => {
+                        const isNum = /^[\d,]+(자|일)?(\/일)?$/.test(String(v));
+                        text(v, isNum ? xs[i] + widths[i] - 10 : xs[i] + 10, Y + RH/2, {
+                            size: 13, weight: i === 1 || i === 0 ? '700' : '400',
+                            color: v === '—' ? '#cbd5e1' : '#334155',
+                            align: isNum ? 'right' : 'left', max: widths[i] - 16
+                        });
+                    });
+                    Y += RH;
+                });
+                c.strokeStyle = '#e2e8f0'; c.strokeRect(PAD, Y - rows.length * RH - HH, tw, rows.length * RH + HH);
+                Y += 26;
+            };
+
+            drawTable('■ 확정 일정 (달력 카드 기준)', ['작품','장르','구간','집필 기간','일수','구간 글자수','평균','작품 합계','기타 작업'],
+                      [300, 150, 70, 300, 78, 140, 120, 210, 256], workRows, '#0f766e');
+
+            drawTable('■ 기간 일정 · 집필', ['종류','일정 제목','연결 작품','기간','총일수','집필일','쉬는 날','예상 글자수','하루 집필량','메모'],
+                      [95, 250, 215, 285, 78, 78, 130, 140, 120, 233], writeSpanRows, '#b45309');
+
+            drawTable('■ 기간 일정 · 휴식 등 (휴식·교정·여행·시놉기획)', ['종류','일정 제목','연결 작품','기간','총일수','집필일','쉬는 날','예상 글자수','하루 집필량','메모'],
+                      [95, 250, 215, 285, 78, 78, 130, 140, 120, 233], restSpanRows, '#92400e');
+
+            drawTable('■ 월별 목표', ['월','목표 글자수','집필 일수','하루 평균'],
+                      [140, 220, 180, 200], monthRows, '#4f46e5');
+
+            drawTable('■ 일정이 비어 있는 구간 (2일 이상)', ['기간','일수'], [420, 140], restRows, '#64748b');
+
+            // ── 푸터
+            text('※ 글자수는 공백 포함 목표치입니다. 기간 일정의 예상 글자수 = (총일수 − 쉬는 날) × 하루 집필량으로 계산했습니다. 초단편(현로 초단 · BL 초단)은 이 표에서 제외되어 있습니다.',
+                 PAD, H - 34, { size: 13, color: '#94a3b8' });
+
+            // ── 내려받기
+            canvas.toBlob(blob => {
+                if (!blob) { alert('이미지 생성에 실패했습니다.'); return; }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `집필일정_${y}년.png`;
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }, 'image/png');
+        }
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [NEW] 기간 일정(긴 일정) — 달력 위에 여러 날에 걸쳐 막대로 표시
+        // ════════════════════════════════════════════════════════
+        let currentEditSpanId = null;
+        let currentSpanColor = '#f0e0a8';
+        const SPAN_LANE_H = 24; // 막대 한 줄 높이(px)
+
+        // 날짜 문자열(YYYY-MM-DD) 유틸 — 시간대 밀림 방지를 위해 문자열로 직접 조립
+        function spanDateAdd(dateStr, days) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            const dt = new Date(y, m - 1, d + days);
+            return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+        }
+        function spanDayDiff(a, b) { // b - a (일수)
+            const [y1,m1,d1] = a.split('-').map(Number), [y2,m2,d2] = b.split('-').map(Number);
+            return Math.round((new Date(y2,m2-1,d2) - new Date(y1,m1-1,d1)) / 86400000);
+        }
+        // 같은 작품에 연결된 '집필' 기간 일정이 여러 개면 시작일 순서로 번호(1, 2…)와 누적 예상 글자수를 매긴다
+        // (예: 권태의 종말 1 · 66,000자 → 권태의 종말 2 · 40,000자 (누적 106,000자))
+        function getSpanSeqInfo(spanId) {
+            const span = writeSpans.find(x => x.id === spanId);
+            if (!span || !span.workId || (span.type || 'write') !== 'write') return null;
+            const list = writeSpans
+                .filter(x => x.workId === span.workId && (x.type || 'write') === 'write')
+                .sort((a, b) => a.startDate.localeCompare(b.startDate) || String(a.id).localeCompare(String(b.id)));
+            if (list.length < 2) return null;
+            const idx = list.findIndex(x => x.id === span.id);
+            if (idx < 0) return null;
+            let cumChars = 0;
+            for (let i = 0; i <= idx; i++) cumChars += calcSpanStats(list[i]).totalChars;
+            return { n: idx + 1, count: list.length, cumChars };
+        }
+        // 기간 일정의 '그 날' 하루 집필량 — 구간별 하루 글자수(dailyRanges: [{start,end,chars}])에 걸리는 날은 그 값,
+        // 아니면 기본 하루 집필량(dailyChars). 예: 평소 8천자, 11/20~11/30만 1만자
+        function spanDailyRanges(span) {
+            return (Array.isArray(span.dailyRanges) ? span.dailyRanges : []).filter(r => r && r.start && r.end);
+        }
+        function spanDailyCharsOn(span, ds) {
+            const r = spanDailyRanges(span).find(x => ds >= x.start && ds <= x.end);
+            return Math.max(0, Number(r ? r.chars : span.dailyChars) || 0);
+        }
+        // 집필형 기간 일정이 [rangeStart, rangeEnd] 구간과 겹치는 부분만큼의 예상 글자수 (쉬는 날은 빼고 계산)
+        function spanCharsInRange(span, rangeStart, rangeEnd) {
+            const overlapStart = span.startDate < rangeStart ? rangeStart : span.startDate;
+            const overlapEnd = span.endDate > rangeEnd ? rangeEnd : span.endDate;
+            if (overlapStart > overlapEnd) return 0;
+            const totalDays = spanDayDiff(span.startDate, span.endDate) + 1;
+            const [sy, sm, sd] = span.startDate.split('-').map(Number);
+            const restSet = span.restMode === 'days' ? new Set(span.restWeekdays || []) : null;
+            const restPerWeek = Math.min(7, Math.max(0, Number(span.restPerWeek) || 0));
+            const restEveryN = (!restSet && restPerWeek > 0) ? Math.round(7 / restPerWeek) : null;
+            let sum = 0;
+            for (let i = 0; i < totalDays; i++) {
+                const d = spanDateAdd(span.startDate, i);
+                if (d < overlapStart || d > overlapEnd) continue;
+                const dt = new Date(sy, sm - 1, sd + i);
+                const isRest = restSet ? restSet.has(dt.getDay()) : (restEveryN ? ((i + 1) % restEveryN === 0) : false);
+                if (!isRest) sum += spanDailyCharsOn(span, d);
+            }
+            return sum;
+        }
+
+        // spanCharsInRange와 같은 쉬는 날 규칙으로, 글자수 대신 '실제 집필 가능한 날 수'만 센다 (월별 목표의 예정 집필일수용)
+        function spanWorkDaysInRange(span, rangeStart, rangeEnd) {
+            const overlapStart = span.startDate < rangeStart ? rangeStart : span.startDate;
+            const overlapEnd = span.endDate > rangeEnd ? rangeEnd : span.endDate;
+            if (overlapStart > overlapEnd) return 0;
+            const totalDays = spanDayDiff(span.startDate, span.endDate) + 1;
+            const [sy, sm, sd] = span.startDate.split('-').map(Number);
+            const restSet = span.restMode === 'days' ? new Set(span.restWeekdays || []) : null;
+            const restPerWeek = Math.min(7, Math.max(0, Number(span.restPerWeek) || 0));
+            const restEveryN = (!restSet && restPerWeek > 0) ? Math.round(7 / restPerWeek) : null;
+            let days = 0;
+            for (let i = 0; i < totalDays; i++) {
+                const d = spanDateAdd(span.startDate, i);
+                if (d < overlapStart || d > overlapEnd) continue;
+                const dt = new Date(sy, sm - 1, sd + i);
+                const isRest = restSet ? restSet.has(dt.getDay()) : (restEveryN ? ((i + 1) % restEveryN === 0) : false);
+                if (!isRest) days++;
+            }
+            return days;
+        }
+
+        // 기간·휴일·하루 집필량으로 총 일수 / 집필 가능 일수 / 총 글자수 계산
+        // 종류가 '집필'이 아니면(교정·휴식·기타) 쉬는 날도 글자수도 따지지 않고 기간만 센다
+        function calcSpanStats(span) {
+            const totalDays = Math.max(1, spanDayDiff(span.startDate, span.endDate) + 1);
+            const type = span.type || 'write';
+            const conf = SPAN_TYPES[type] || SPAN_TYPES.write;
+
+            // 휴식·기타는 쉬는 날도 글자수도 따지지 않고 기간만 센다
+            if (!conf.rest) {
+                return { totalDays, restDays: 0, workDays: totalDays, totalChars: 0, noChars: true };
+            }
+
+            const daily = conf.chars ? Math.max(0, Number(span.dailyChars) || 0) : 0;
+            const midBreaks = Array.isArray(span.midBreaks) ? span.midBreaks.filter(b => b && b.start && b.end) : [];
+            const inMidBreak = (ds) => midBreaks.some(b => ds >= b.start && ds <= b.end);
+            const [sy, sm, sd] = span.startDate.split('-').map(Number);
+            let restDays;
+
+            if (span.restMode === 'days') {
+                const set = Array.isArray(span.restWeekdays) ? span.restWeekdays : [];
+                // 시작일부터 하루씩 짚어가며, 쉬는 요일이거나 중간 휴식 기간에 해당하는 날을 센다
+                restDays = 0;
+                for (let i = 0; i < totalDays; i++) {
+                    const dt = new Date(sy, sm - 1, sd + i);
+                    const ds = getYYYYMMDD(dt);
+                    if (set.includes(dt.getDay()) || inMidBreak(ds)) restDays++;
+                }
+            } else {
+                const rest = Math.min(7, Math.max(0, Number(span.restPerWeek) || 0));
+                restDays = Math.min(totalDays, Math.round(totalDays * rest / 7));
+                if (midBreaks.length) {
+                    // 비율 계산 방식은 특정 날짜를 모르니, 중간 휴식 날짜 수만큼 추가로 더해준다
+                    let midBreakDays = 0;
+                    for (let i = 0; i < totalDays; i++) {
+                        if (inMidBreak(getYYYYMMDD(new Date(sy, sm - 1, sd + i)))) midBreakDays++;
+                    }
+                    restDays = Math.min(totalDays, restDays + midBreakDays);
+                }
+            }
+
+            const workDays = Math.max(0, totalDays - restDays);
+            let totalChars = workDays * daily;
+            if (conf.chars && spanDailyRanges(span).length) {
+                // 구간별 하루 글자수가 있으면 날짜마다 그 날 분량으로 더한다
+                const set = span.restMode === 'days' && Array.isArray(span.restWeekdays) ? span.restWeekdays : null;
+                let sum = 0, cnt = 0;
+                for (let i = 0; i < totalDays; i++) {
+                    const dt = new Date(sy, sm - 1, sd + i);
+                    const ds = getYYYYMMDD(dt);
+                    if (inMidBreak(ds)) continue;
+                    if (set) { if (!set.includes(dt.getDay())) sum += spanDailyCharsOn(span, ds); }
+                    else { sum += spanDailyCharsOn(span, ds); cnt++; }
+                }
+                // '주 N회' 쉬기는 어느 날 쉬는지 정해져 있지 않아서, 그 기간 하루 분량의 평균 × 집필일로 계산
+                totalChars = set ? sum : Math.round(cnt ? sum / cnt * workDays : 0);
+            }
+            return { totalDays, restDays, workDays, totalChars, noChars: !conf.chars };
+        }
+
+        // 기간 일정 종류 — '집필'만 쉬는 날/글자수를 계산하고, 나머지는 기간만 표시
+        const SPAN_TYPES = {
+            write:    { label: '집필',      icon: '🖋️', hint: '쉬는 날과 하루 집필량으로 예상 글자수를 계산합니다. (작품을 안 정하면 유동 집필 슬롯으로 취급돼요.)', rest: true,  chars: true },
+            edit:     { label: '교정',      icon: '📝', hint: '쉬는 날은 고를 수 있고, 글자수는 계산하지 않습니다.', rest: true,  chars: false },
+            rest:     { label: '휴식',      icon: '☕', hint: '쉬는 기간으로만 표시합니다.', rest: false, chars: false },
+            trip:     { label: '여행',      icon: '✈️', hint: '기간만 표시합니다.', rest: false, chars: false },
+            synopsis: { label: '시놉/기획', icon: '📓', hint: '기간만 표시합니다. (시놉시스·기획 작업 등)', rest: false, chars: false },
+            etc:      { label: '기타',      icon: '💗', hint: '기간만 표시합니다. (자료조사·미팅 등)', rest: false, chars: false }
+        };
+        let currentSpanType = 'write';
+
+        function renderSpanTypeGroup() {

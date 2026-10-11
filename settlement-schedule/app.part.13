@@ -1,0 +1,3046 @@
+            const g = document.getElementById('span-type-group');
+            if (!g) return;
+            g.innerHTML = Object.entries(SPAN_TYPES).map(([key, t]) => {
+                const on = currentSpanType === key;
+                return `<button type="button" onclick="setSpanType('${key}')"
+                    class="py-2.5 rounded-xl border text-xs font-bold transition-colors"
+                    style="${on ? 'background:#f59e0b; border-color:#f59e0b; color:#fff;' : 'background:#f8fafc; border-color:#e2e8f0; color:#64748b;'}">
+                    ${t.icon} ${t.label}</button>`;
+            }).join('');
+            const hint = document.getElementById('span-type-hint');
+            if (hint) hint.textContent = SPAN_TYPES[currentSpanType].hint;
+        }
+
+        function setSpanType(type) {
+            currentSpanType = SPAN_TYPES[type] ? type : 'write';
+            renderSpanTypeGroup();
+            // 종류를 바꿔도 창 크기가 흔들리지 않도록 자리는 남기고 보이기만 감춘다
+            const conf = SPAN_TYPES[currentSpanType];
+            const setShown = (id, shown) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.style.visibility = shown ? 'visible' : 'hidden';
+                el.style.pointerEvents = shown ? '' : 'none';
+            };
+            setShown('span-daily-wrap', conf.chars);   // 글자수는 집필에만
+            setShown('span-rest-section', conf.rest);  // 쉬는 날은 집필·교정에
+            const midBreakPanel = document.getElementById('span-midbreak-panel');
+            if (midBreakPanel) midBreakPanel.style.visibility = conf.rest ? 'visible' : 'hidden';   // 중간 휴식도 집필·교정에만
+            updateSpanPreview();
+            updateSpanConfirmBtn();
+        }
+
+        // '확정' 버튼은 이미 저장된 '집필' 종류 기간 일정에, 작품이 연결돼 있을 때만 보여준다
+        function updateSpanConfirmBtn() {
+            const btn = document.getElementById('span-confirm-btn');
+            const splitGroup = document.getElementById('span-confirm-split-group');
+            if (!btn) return;
+            const workSel = document.getElementById('span-work-select');
+            const workId = workSel ? workSel.value : '';
+            const canConfirm = !!currentEditSpanId && currentSpanType === 'write' && !!workId;
+            btn.classList.toggle('hidden', !canConfirm);
+            if (splitGroup) {
+                splitGroup.classList.toggle('hidden', !canConfirm);
+                splitGroup.classList.toggle('flex', canConfirm);
+            }
+            updateSpanConfirmSplitBtns();
+        }
+
+        // 확정 버튼 옆 1장씩/2장씩 빠른 선택 — span-split-input과 값을 그대로 공유한다
+        function setSpanConfirmSplit(n) {
+            document.getElementById('span-split-input').value = n;
+            updateSpanPreview();
+            updateSpanConfirmSplitBtns();
+        }
+        function updateSpanConfirmSplitBtns() {
+            const input = document.getElementById('span-split-input');
+            if (!input) return;
+            const cur = Math.max(1, parseInt(input.value) || 1);
+            [1, 2].forEach(n => {
+                const btn = document.getElementById('span-confirm-split-' + n);
+                if (!btn) return;
+                const on = cur === n;
+                btn.className = `px-2.5 py-1.5 text-xs font-bold rounded-md transition-all ${on ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500'}`;
+            });
+        }
+
+        const SPAN_DOW_NAMES = ['일','월','화','수','목','금','토'];
+
+        // 하루 집필량 빠른 선택 (직접 입력도 가능)
+        const SPAN_DAILY_PRESETS = [4000, 5000, 6000, 7000, 8000, 9000, 10000];
+        const SPAN_DEFAULT_DAILY = 8000;      // 새 일정 기본 하루 집필량
+        const SPAN_DEFAULT_RESTDAYS = [2, 5]; // 새 일정 기본 휴식 요일 = 화 · 금
+
+        function renderSpanDailyPresets() {
+            const g = document.getElementById('span-daily-preset-group');
+            if (!g) return;
+            const cur = parseInt(document.getElementById('span-daily-input').value) || 0;
+            const isCustom = !SPAN_DAILY_PRESETS.includes(cur);
+            const btn = (label, on, onclick) =>
+                `<button type="button" onclick="${onclick}" class="py-2 rounded-lg border text-[11px] font-bold transition-colors"
+                    style="${on ? 'background:#f59e0b; border-color:#f59e0b; color:#fff;' : 'background:#f8fafc; border-color:#e2e8f0; color:#64748b;'}">${label}</button>`;
+            g.innerHTML = SPAN_DAILY_PRESETS.map(v =>
+                btn(v >= 10000 ? '1만자' : `${v/1000}천자`, cur === v, `selectSpanDaily(${v})`)
+            ).join('') + btn('직접입력', isCustom, `selectSpanDaily('custom')`);
+        }
+
+        function selectSpanDaily(val) {
+            const input = document.getElementById('span-daily-input');
+            if (val !== 'custom') input.value = val;
+            input.focus();
+            if (val === 'custom') input.select();
+            syncSpanDailyHighlight();
+        }
+
+        // 직접 타이핑했을 때도 어떤 버튼이 켜져야 하는지 맞춰준다
+        function syncSpanDailyHighlight() {
+            renderSpanDailyPresets();
+            updateSpanPreview();
+        }
+        let currentSpanRestMode = 'count';
+        let currentSpanRestWeekdays = [];
+        let currentSpanMidBreaks = [];   // 기간 중간에 통째로 쉬는 구간들 [{start,end}, ...]
+        let currentSpanDailyRanges = []; // 구간별 하루 글자수 [{start,end,chars}, ...]
+        function renderSpanDailyRangeList() {
+            const el = document.getElementById('span-dailyrange-list');
+            if (!el) return;
+            if (!currentSpanDailyRanges.length) { el.innerHTML = ''; return; }
+            const inCls = 'p-1.5 bg-slate-50 rounded-lg border border-slate-200 text-xs outline-none focus:border-amber-400';
+            el.innerHTML = currentSpanDailyRanges.map((r, i) => `
+                <div class="flex items-center gap-1">
+                    <input type="date" value="${r.start || ''}" onchange="updateSpanDailyRange(${i}, 'start', this.value)" class="flex-1 min-w-0 ${inCls}">
+                    <span class="text-slate-400 text-xs shrink-0">~</span>
+                    <input type="date" value="${r.end || ''}" onchange="updateSpanDailyRange(${i}, 'end', this.value)" class="flex-1 min-w-0 ${inCls}">
+                    <input type="number" value="${r.chars ?? ''}" min="0" step="500" oninput="updateSpanDailyRange(${i}, 'chars', this.value, true)" class="w-20 text-right ${inCls}">
+                    <span class="text-xs text-slate-500 shrink-0">자</span>
+                    <button type="button" onclick="removeSpanDailyRangeRow(${i})" class="text-slate-300 hover:text-rose-500 shrink-0 w-5"><i class="fa-solid fa-xmark"></i></button>
+                </div>`).join('');
+        }
+        function addSpanDailyRangeRow() {
+            const start = document.getElementById('span-start-input').value || getYYYYMMDD(new Date());
+            const end = document.getElementById('span-end-input').value || start;
+            const base = parseInt(document.getElementById('span-daily-input').value) || SPAN_DEFAULT_DAILY;
+            currentSpanDailyRanges.push({ start, end, chars: base + 2000 });
+            renderSpanDailyRangeList();
+            updateSpanPreview();
+        }
+        function updateSpanDailyRange(i, field, value, noRerender) {
+            const r = currentSpanDailyRanges[i];
+            if (!r) return;
+            r[field] = field === 'chars' ? Math.max(0, parseInt(value) || 0) : value;
+            if (r.start && r.end && r.end < r.start) r.end = r.start;
+            if (!noRerender) renderSpanDailyRangeList();   // 숫자 입력 중엔 다시 그리지 않아 커서가 안 튐
+            updateSpanPreview();
+        }
+        function removeSpanDailyRangeRow(i) {
+            currentSpanDailyRanges.splice(i, 1);
+            renderSpanDailyRangeList();
+            updateSpanPreview();
+        }
+
+        function renderSpanMidBreakList() {
+            const el = document.getElementById('span-midbreak-list');
+            if (!el) return;
+            if (!currentSpanMidBreaks.length) {
+                el.innerHTML = '<p class="text-[11px] text-slate-300 text-center py-2">아직 추가된 휴식 기간이 없어요.</p>';
+                return;
+            }
+            el.innerHTML = currentSpanMidBreaks.map((b, i) => `
+                <div class="flex items-center gap-1">
+                    <input type="date" value="${b.start || ''}" onchange="updateSpanMidBreak(${i}, 'start', this.value)" class="flex-1 min-w-0 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs outline-none focus:border-amber-400">
+                    <span class="text-slate-400 text-xs shrink-0">~</span>
+                    <input type="date" value="${b.end || ''}" onchange="updateSpanMidBreak(${i}, 'end', this.value)" class="flex-1 min-w-0 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs outline-none focus:border-amber-400">
+                    <button type="button" onclick="removeSpanMidBreakRow(${i})" class="text-slate-300 hover:text-rose-500 shrink-0 w-5"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            `).join('');
+        }
+        function addSpanMidBreakRow() {
+            const start = document.getElementById('span-start-input').value || getYYYYMMDD(new Date());
+            currentSpanMidBreaks.push({ start, end: start });
+            renderSpanMidBreakList();
+            updateSpanPreview();
+        }
+        function updateSpanMidBreak(i, field, value) {
+            if (!currentSpanMidBreaks[i]) return;
+            currentSpanMidBreaks[i][field] = value;
+            if (currentSpanMidBreaks[i].end < currentSpanMidBreaks[i].start) currentSpanMidBreaks[i].end = currentSpanMidBreaks[i].start;
+            renderSpanMidBreakList();
+            updateSpanPreview();
+        }
+        function removeSpanMidBreakRow(i) {
+            currentSpanMidBreaks.splice(i, 1);
+            renderSpanMidBreakList();
+            updateSpanPreview();
+        }
+
+        function setSpanRestMode(mode) {
+            currentSpanRestMode = mode;
+            const cBtn = document.getElementById('span-rest-mode-count');
+            const dBtn = document.getElementById('span-rest-mode-days');
+            const on = 'bg-white text-amber-600 shadow-sm', off = 'text-slate-500';
+            cBtn.className = `px-3 py-1 text-xs font-bold rounded-md transition-all ${mode==='count'?on:off}`;
+            dBtn.className = `px-3 py-1 text-xs font-bold rounded-md transition-all ${mode==='days'?on:off}`;
+            document.getElementById('span-rest-count-box').classList.toggle('hidden', mode !== 'count');
+            document.getElementById('span-rest-days-box').classList.toggle('hidden', mode !== 'days');
+            renderSpanWeekdayGroup();
+            renderSpanDailyPresets();   // 글자수 값은 건드리지 않고 강조 표시만 갱신
+            updateSpanPreview();
+        }
+
+        function renderSpanWeekdayGroup() {
+            const g = document.getElementById('span-weekday-group');
+            if (!g) return;
+            g.innerHTML = SPAN_DOW_NAMES.map((n, i) => {
+                const on = currentSpanRestWeekdays.includes(i);
+                const base = i === 0 ? '#f43f5e' : i === 6 ? '#3b82f6' : '#64748b';
+                return `<button type="button" onclick="toggleSpanWeekday(${i})"
+                    class="py-2 rounded-lg border text-xs font-bold transition-colors"
+                    style="${on ? 'background:#f59e0b; border-color:#f59e0b; color:#fff;' : `background:#f8fafc; border-color:#e2e8f0; color:${base};`}">
+                    ${on ? '✓ ' : ''}${n}</button>`;
+            }).join('');
+        }
+
+        function toggleSpanWeekday(i) {
+            currentSpanRestWeekdays = currentSpanRestWeekdays.includes(i)
+                ? currentSpanRestWeekdays.filter(x => x !== i)
+                : [...currentSpanRestWeekdays, i].sort();
+            renderSpanWeekdayGroup();
+            updateSpanPreview();
+        }
+
+
+        function openWriteSpanModal(id, dateStr, jumpToMonth) {
+            closeWriteModal();
+            currentEditSpanId = id || null;
+
+            // 작품 연결 드롭다운 — 집필 카드 모달과 동일하게 출간일이 지나지 않은 작품(+외전)만
+            const sel = document.getElementById('span-work-select');
+            const genrePriority = (g) => {
+                if (g === 'BL 장편') return 0;
+                if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2;
+                if (g === 'BL 초단') return 3;
+                if (g.includes('웹툰')) return 4;
+                if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5;
+                return 99;
+            };
+            let workItems = getActiveWorkItems(false, false);
+            workItems.sort((a, b) => {
+                const p = genrePriority(a.genre) - genrePriority(b.genre);
+                if (p !== 0) return p;
+                return a.displayTitle.localeCompare(b.displayTitle, 'ko');
+            });
+            sel.innerHTML = `<option value="">— 작품 연결 안 함 —</option>` +
+                workItems.map(it => `<option value="${it.id}">[${it.genre}] ${it.displayTitle}</option>`).join('');
+
+            if (id) {
+                const span = writeSpans.find(s => s.id === id);
+                if (!span) return;
+                // 연간 일정 한눈에 보기에서 박스를 눌러 들어온 경우에만, 뒤에 있는 집필 관리 달력도
+                // 이 기간 일정이 시작하는 '월'로 같이 옮겨둔다 (모달 닫으면 바로 그 달이 보이게).
+                // 집필 관리 달력에서 막대를 누른 경우엔 보던 달 그대로 둔다.
+                if (jumpToMonth && span.startDate) {
+                    const [sy, sm] = span.startDate.split('-').map(Number);
+                    writeCalDate = new Date(sy, sm - 1, 1);
+                    try { renderWriteCalendar(); } catch (e) {}
+                }
+                document.getElementById('write-span-modal-title').innerText = "📏 기간 일정 관리";
+                document.getElementById('span-title-input').value = span.title || '';
+                // 이미 연결해둔 작품이 출간 완료로 목록에서 빠졌더라도 연결이 풀리지 않게 임시로 넣어준다
+                if (span.workId && !Array.from(sel.options).some(o => o.value === span.workId)) {
+                    const r = resolveWorkItem(span.workId);
+                    if (r.displayTitle) sel.insertAdjacentHTML('beforeend', `<option value="${span.workId}">${r.displayTitle} (출간됨)</option>`);
+                }
+                sel.value = span.workId || '';
+                document.getElementById('span-start-input').value = span.startDate;
+                document.getElementById('span-end-input').value = span.endDate;
+                document.getElementById('span-rest-input').value = span.restPerWeek ?? 1;
+                document.getElementById('span-daily-input').value = span.dailyChars ?? SPAN_DEFAULT_DAILY;
+                document.getElementById('span-split-input').value = span.dailySplit ?? 1;
+                document.getElementById('span-memo-input').value = span.memo || '';
+                currentSpanRestWeekdays = Array.isArray(span.restWeekdays) ? [...span.restWeekdays] : [];
+                currentSpanMidBreaks = Array.isArray(span.midBreaks) ? span.midBreaks.map(b => ({ ...b })) : [];
+                currentSpanDailyRanges = spanDailyRanges(span).map(r => ({ ...r }));
+                selectSpanColor(span.color || '#f0e0a8');
+                setSpanRestMode(span.restMode === 'days' ? 'days' : 'count');
+                setSpanType(span.type || 'write');
+                document.getElementById('span-delete-btn').classList.remove('hidden');
+            } else {
+                const start = dateStr || getYYYYMMDD(new Date());
+                document.getElementById('write-span-modal-title').innerText = "📏 기간 일정 추가";
+                document.getElementById('span-title-input').value = '';
+                sel.value = '';
+                document.getElementById('span-start-input').value = start;
+                document.getElementById('span-end-input').value = spanDateAdd(start, 6); // 기본 일주일
+                document.getElementById('span-rest-input').value = 1;
+                document.getElementById('span-daily-input').value = SPAN_DEFAULT_DAILY;
+                document.getElementById('span-split-input').value = 1;
+                document.getElementById('span-memo-input').value = '';
+                currentSpanRestWeekdays = [...SPAN_DEFAULT_RESTDAYS];   // 기본: 화·금 휴식
+                currentSpanMidBreaks = [];
+                currentSpanDailyRanges = [];
+                selectSpanColor('#f0e0a8');
+                setSpanRestMode('days');
+                setSpanType('write');
+                document.getElementById('span-delete-btn').classList.add('hidden');
+            }
+
+            renderSpanMidBreakList();
+            renderSpanDailyRangeList();
+            renderSpanDailyPresets();
+            updateSpanPreview();
+            updateSpanConfirmBtn();
+            updateSpanWorkInfoPanel();
+            document.getElementById('write-span-modal').classList.add('open');
+        }
+
+        function closeWriteSpanModal() { document.getElementById('write-span-modal').classList.remove('open'); }
+
+        // 기간 일정 모달 왼쪽에 붙는 '작품 정보' 패널 (읽기 전용) — 집필 목표 모달의 패널과 같은 구조를 그대로 쓴다
+        function updateSpanWorkInfoPanel() {
+            const panel = document.getElementById('span-workinfo-panel');
+            if (!panel) return;
+            const workId = document.getElementById('span-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) { panel.style.visibility = 'hidden'; return; }
+            panel.style.visibility = 'visible';
+
+            document.getElementById('swi-title').textContent = w.title || '(제목 없음)';
+            const genreCol = getGenreColor(w.genre);
+            const genreBadge = document.getElementById('swi-genre-badge');
+            genreBadge.textContent = w.genre || '-';
+            genreBadge.style.background = hexToRgba(genreCol, 0.16);
+            genreBadge.style.color = genreCol;
+            document.getElementById('swi-header').style.background = `linear-gradient(135deg, ${mixWithWhite(genreCol, 0.65)}, ${mixWithWhite(genreCol, 0.9)})`;
+            document.getElementById('swi-publisher').textContent = w.publisher || '-';
+            document.getElementById('swi-manuscript-date').value = w.manuscriptDate || '';
+            document.getElementById('swi-goal-withspace').value = w.goalWithSpace || '';
+            document.getElementById('swi-goal-nospace').value = w.goalNoSpace || '';
+
+            const pendingBox = document.getElementById('swi-pending');
+            const dateInput = document.getElementById('swi-publish-date');
+            const monthInput = document.getElementById('swi-pending-month');
+            pendingBox.checked = !!w.isPending;
+            if (w.isPending) {
+                dateInput.classList.add('hidden'); dateInput.value = '';
+                monthInput.classList.remove('hidden'); monthInput.value = w.pendingMonth || '';
+            } else {
+                dateInput.classList.remove('hidden'); dateInput.value = w.publishDate || '';
+                monthInput.classList.add('hidden'); monthInput.value = '';
+            }
+        }
+
+        // 기간 일정 모달의 작품 정보 패널 — 목표 글자수 수정 (집필 목표 모달의 wwiUpdateGoal과 동일한 동작)
+        function swiUpdateGoal(field) {
+            const workId = document.getElementById('span-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            const withSpaceEl = document.getElementById('swi-goal-withspace');
+            const noSpaceEl = document.getElementById('swi-goal-nospace');
+            if (field === 'withspace') {
+                const v = Math.max(0, parseInt(withSpaceEl.value) || 0);
+                w.goalWithSpace = v;
+                if (v > 0) { w.goalNoSpace = Math.round(v * NOSPACE_TO_WITHSPACE_RATIO); noSpaceEl.value = w.goalNoSpace; }
+            } else {
+                const v = Math.max(0, parseInt(noSpaceEl.value) || 0);
+                w.goalNoSpace = v;
+                if (v > 0) { w.goalWithSpace = Math.round(v / NOSPACE_TO_WITHSPACE_RATIO); withSpaceEl.value = w.goalWithSpace; }
+            }
+            save();
+            if (typeof updateWriteVolumeInfo === 'function') updateWriteVolumeInfo();
+            updateUI();
+        }
+        function swiTogglePending(checkbox) {
+            const dateInput = document.getElementById('swi-publish-date');
+            const monthInput = document.getElementById('swi-pending-month');
+            if (checkbox.checked) {
+                dateInput.classList.add('hidden'); dateInput.value = '';
+                monthInput.classList.remove('hidden');
+            } else {
+                dateInput.classList.remove('hidden');
+                monthInput.classList.add('hidden'); monthInput.value = '';
+            }
+            swiUpdatePublishDate();
+        }
+        function swiUpdatePublishDate() {
+            const workId = document.getElementById('span-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            const isPending = document.getElementById('swi-pending').checked;
+            w.isPending = isPending;
+            w.pendingMonth = isPending ? (document.getElementById('swi-pending-month').value || '') : '';
+            w.publishDate = isPending ? '' : (document.getElementById('swi-publish-date').value || '');
+            save();
+            updateUI();
+        }
+        function swiUpdateManuscriptDate() {
+            const workId = document.getElementById('span-work-select').value;
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            const oldDate = w.manuscriptDate;
+            const newDate = document.getElementById('swi-manuscript-date').value || '';
+            w.manuscriptDate = newDate;
+            syncManuscriptTaskSchedule(w, oldDate, newDate);
+            save();
+            updateUI();
+        }
+
+        function selectSpanColor(color) {
+            currentSpanColor = color;
+            document.querySelectorAll('.span-color-btn').forEach(btn => {
+                const active = btn.dataset.color === color;
+                btn.style.borderColor = active ? '#475569' : 'transparent';
+            });
+        }
+        // 막대 색상 중 그라데이션(CSS linear-gradient 문자열)은 <canvas>나 border처럼 단색만 받는 자리에서는
+        // 못 쓰기 때문에, 그 안의 첫 번째 색을 대신 뽑아 쓴다. 일반 단색 값이면 그대로 돌려준다.
+        function spanColorSolid(color) {
+            if (typeof color === 'string' && color.indexOf('gradient') > -1) {
+                const m = color.match(/#[0-9a-fA-F]{6}/);
+                return m ? m[0] : '#f0e0a8';
+            }
+            return color || '#f0e0a8';
+        }
+
+        // 모달에서 값이 바뀔 때마다 "총 며칠 / 며칠 집필 / 몇 자" 미리보기 갱신
+        function updateSpanPreview() {
+            const start = document.getElementById('span-start-input').value;
+            const end = document.getElementById('span-end-input').value;
+            const el = document.getElementById('span-preview');
+            if (!start || !end) { el.innerHTML = '<span class="text-slate-400">시작일과 종료일을 입력해주세요.</span>'; return; }
+            if (end < start) { el.innerHTML = '<span class="text-rose-500 font-bold">종료일이 시작일보다 빠릅니다.</span>'; return; }
+
+            const st = calcSpanStats({
+                startDate: start, endDate: end,
+                type: currentSpanType,
+                restMode: currentSpanRestMode,
+                restWeekdays: currentSpanRestWeekdays,
+                restPerWeek: document.getElementById('span-rest-input').value,
+                dailyChars: document.getElementById('span-daily-input').value,
+                midBreaks: currentSpanMidBreaks,
+                dailyRanges: currentSpanDailyRanges
+            });
+
+            const t = SPAN_TYPES[currentSpanType];
+            const restLabel = currentSpanRestMode === 'days'
+                ? (currentSpanRestWeekdays.length
+                    ? `매주 ${currentSpanRestWeekdays.map(i => SPAN_DOW_NAMES[i]).join('·')}요일 휴식 → 쉬는 날 <b class="text-slate-700">${st.restDays}일</b>`
+                    : `<span class="text-slate-400">쉬는 요일을 선택하지 않아 매일 작업으로 계산</span>`)
+                : `쉬는 날 <b class="text-slate-700">${st.restDays}일</b>`;
+
+            // 교정: 쉬는 날은 계산하되 글자수는 표시하지 않는다
+            if (st.noChars && t.rest) {
+                el.innerHTML = `${t.icon} <b class="text-slate-700">${t.label}</b> 일정
+                    &nbsp;·&nbsp; 기간 <b class="text-slate-700">${st.totalDays}일</b>
+                    &nbsp;·&nbsp; ${restLabel}<br>
+                    작업 가능 <b class="text-amber-600 text-base">${st.workDays}일</b>
+                    <span class="text-xs text-slate-400">(글자수는 계산하지 않습니다)</span>`;
+                return;
+            }
+
+            // 휴식·기타: 기간만
+            if (st.noChars) {
+                el.innerHTML = `${t.icon} <b class="text-slate-700">${t.label}</b> 일정
+                    &nbsp;·&nbsp; 기간 <b class="text-amber-600 text-base">${st.totalDays}일</b><br>
+                    <span class="text-xs text-slate-400">쉬는 날과 글자수는 계산하지 않습니다.</span>`;
+                return;
+            }
+
+            const daily = Number(document.getElementById('span-daily-input').value) || 0;
+            el.innerHTML = `기간 <b class="text-slate-700">${st.totalDays}일</b>
+                &nbsp;·&nbsp; ${restLabel}
+                &nbsp;·&nbsp; 집필 <b class="text-slate-700">${st.workDays}일</b><br>
+                예상 집필량 <b class="text-amber-600 text-base">${st.totalChars.toLocaleString()}자</b>
+                <span class="text-xs text-slate-400">(공미 약 ${Math.round(st.totalChars * NOSPACE_TO_WITHSPACE_RATIO).toLocaleString()}자)</span>
+                <span class="text-xs text-slate-400">${currentSpanDailyRanges.some(r => r.start && r.end) ? '(구간별 하루 글자수 반영)' : `(${st.workDays}일 × ${daily.toLocaleString()}자)`}</span>`;
+
+            const splitHint = document.getElementById('span-split-hint');
+            if (splitHint) {
+                const split = Math.max(1, parseInt(document.getElementById('span-split-input').value) || 1);
+                splitHint.textContent = split <= 1
+                    ? `카드 1개당 ${daily.toLocaleString()}자`
+                    : `확정하면 하루에 카드 ${split}개 (약 ${Math.round(daily / split).toLocaleString()}자씩) 생성`;
+            }
+            updateSpanConfirmSplitBtns();
+        }
+
+        function saveWriteSpan() {
+            const title = document.getElementById('span-title-input').value.trim();
+            const startDate = document.getElementById('span-start-input').value;
+            const endDate = document.getElementById('span-end-input').value;
+            if (!startDate || !endDate) { alert('시작일과 종료일을 입력해주세요.'); return; }
+            if (endDate < startDate) { alert('종료일이 시작일보다 빠릅니다.'); return; }
+
+            const data = {
+                title,   // 비워두면 그냥 빈 채로 저장 (종류 이름으로 자동 채우지 않음)
+                workId: document.getElementById('span-work-select').value,
+                startDate, endDate,
+                type: currentSpanType,
+                restMode: currentSpanRestMode,
+                restWeekdays: [...currentSpanRestWeekdays],
+                restPerWeek: Math.min(7, Math.max(0, parseInt(document.getElementById('span-rest-input').value) || 0)),
+                midBreaks: currentSpanMidBreaks.filter(b => b.start && b.end).map(b => ({ ...b })),
+                dailyRanges: currentSpanDailyRanges.filter(r => r.start && r.end).map(r => ({ start: r.start, end: r.end, chars: Math.max(0, parseInt(r.chars) || 0) })),
+                dailyChars: Math.max(0, parseInt(document.getElementById('span-daily-input').value) || 0),
+                dailySplit: Math.max(1, parseInt(document.getElementById('span-split-input').value) || 1),
+                color: currentSpanColor,
+                memo: document.getElementById('span-memo-input').value
+            };
+
+            if (currentEditSpanId) {
+                const idx = writeSpans.findIndex(s => s.id === currentEditSpanId);
+                if (idx > -1) writeSpans[idx] = { ...writeSpans[idx], ...data };
+            } else {
+                writeSpans.push({ id: 'wsp_' + Date.now() + Math.floor(Math.random()*1000), ...data });
+            }
+
+            save(); closeWriteSpanModal(); renderWriteCalendar(); refreshOpenYearTimeline();
+        }
+
+        function deleteWriteSpan() {
+            if (!currentEditSpanId) return;
+            if (!confirm('이 기간 일정을 삭제하시겠습니까?')) return;
+            writeSpans = writeSpans.filter(s => s.id !== currentEditSpanId);
+            save(); closeWriteSpanModal(); renderWriteCalendar(); refreshOpenYearTimeline();
+        }
+
+        // 기간 일정 박스를 눌러 편집 모달을 열 때, 뒤의 연간 일정 창은 닫지 않고 그대로 둔다
+        // (드래그와 클릭을 구분해야 해서 즉시 닫을 수가 없음). 대신 저장/삭제/확정 후에
+        // 뒤에 그 창이 열려있으면 최신 내용으로 다시 그려준다.
+        function refreshOpenYearTimeline() {
+            const m = document.getElementById('year-timeline-modal');
+            if (m && m.classList.contains('open')) renderYearTimeline();
+        }
+
+        // 기간 일정을 '확정'하면, 그 기간의 쉬는 날을 뺀 날짜마다 실제 집필 카드(writeSchedules)를 만들어준다.
+        // 이미 그 작품 카드가 있는 날짜는 중복 생성하지 않고 건너뛴다 (다시 눌러도 안전).
+        function confirmWriteSpan() {
+            const span = writeSpans.find(s => s.id === currentEditSpanId);
+            if (!span) return;
+            const conf = SPAN_TYPES[span.type || 'write'] || SPAN_TYPES.write;
+            if (!conf.chars) { alert('집필 종류의 기간 일정만 카드로 확정할 수 있어요.'); return; }
+            if (!span.workId) { alert('작품을 연결해야 확정할 수 있어요.'); return; }
+
+            const split = Math.max(1, parseInt(span.dailySplit) || 1);
+            const dailyChars = span.dailyChars || 0;
+            // 하루치를 카드 여러 개로 나눌 때, 딱 안 떨어지면 앞쪽 카드들이 1자씩 더 가져가서 하루 합계는 항상 맞춘다
+            const cardsFor = (chars) => {
+                const baseChars = Math.floor(chars / split);
+                const remainder = chars - baseChars * split;
+                return Array.from({ length: split }, (_, k) => baseChars + (k < remainder ? 1 : 0));
+            };
+            const hasRanges = spanDailyRanges(span).length > 0;
+            const midBreaks = Array.isArray(span.midBreaks) ? span.midBreaks.filter(b => b && b.start && b.end) : [];
+
+            const st = calcSpanStats(span);
+            const splitNote = split > 1 ? `\n(하루 분량을 카드 ${split}개로 나눠서)` : '';
+            const dailyNote = hasRanges ? `하루 ${dailyChars.toLocaleString()}자 · 구간별 하루 글자수 반영` : `하루 ${dailyChars.toLocaleString()}자`;
+            if (!confirm(`이 기간의 집필일 ${st.workDays}일에 카드를 만들까요?\n(${dailyNote}, 이미 카드가 있는 날은 건너뜁니다)${splitNote}`)) return;
+
+            const totalDays = st.totalDays;
+            const [sy, sm, sd] = span.startDate.split('-').map(Number);
+            const restSet = span.restMode === 'days' ? new Set(span.restWeekdays || []) : null;
+            // '주 N회' 모드는 특정 요일이 아니라 횟수 기준이라, 시작일부터 순서대로 균등한 간격으로 하루씩 쉬는 걸로 맞춘다
+            const restPerWeek = Math.min(7, Math.max(0, Number(span.restPerWeek) || 0));
+            const restEveryN = (!restSet && restPerWeek > 0) ? Math.round(7 / restPerWeek) : null;
+
+            let created = 0, skipped = 0;
+            for (let i = 0; i < totalDays; i++) {
+                const dt = new Date(sy, sm - 1, sd + i);
+                const dateStr = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+                const isRest = restSet ? restSet.has(dt.getDay()) : (restEveryN ? ((i + 1) % restEveryN === 0) : false);
+                if (isRest) continue;
+                if (midBreaks.some(b => dateStr >= b.start && dateStr <= b.end)) continue;   // 중간 휴식 기간은 카드 안 만듦
+
+                if (!writeSchedules[dateStr]) writeSchedules[dateStr] = [];
+                if (writeSchedules[dateStr].some(s => s.workId === span.workId)) { skipped++; continue; }
+
+                const perCard = cardsFor(spanDailyCharsOn(span, dateStr));
+                perCard.forEach((goal, k) => {
+                    writeSchedules[dateStr].push({
+                        id: 'ws_' + Date.now() + Math.floor(Math.random() * 100000) + '_' + i + '_' + k,
+                        date: dateStr, workId: span.workId, category: '', goal,
+                        memo: span.title || '', isCompleted: false, volumeId: '',
+                        spanId: span.id // 어느 '기간 일정'을 확정해서 생긴 카드인지 표시 (내보내기에서 구분용)
+                    });
+                });
+                created += perCard.length;
+            }
+
+            save(); closeWriteSpanModal(); renderWriteCalendar(); refreshOpenYearTimeline();
+            meShowToast(`집필 카드 ${created}개를 만들었어요.${skipped ? ` (이미 있던 ${skipped}일은 건너뜀)` : ''}`);
+        }
+
+        // 막대는 그린 순간의 칸 위치를 재서 붙이는데, 그 뒤에 달력 크기가 바뀌면(스크롤바가 생겨 폭이 줄거나 글꼴이 늦게
+        // 로드돼서 긴 제목이 두 줄로 바뀌는 등) 위쪽 주가 길어져 아래 막대들이 위로 밀려 보였다 — 드래그해야 제자리로 왔음.
+        // 달력 크기가 바뀔 때마다 막대 위치를 다시 잰다.
+        let _writeCalResizeObs = null, _writeCalResizeRaf = 0;
+        function watchWriteCalendarResize() {
+            const el = document.getElementById('write-calendar-body');
+            if (!el || typeof ResizeObserver === 'undefined') return;
+            if (_writeCalResizeObs && _writeCalResizeObs._el === el) return;   // 이미 보고 있음
+            if (_writeCalResizeObs) _writeCalResizeObs.disconnect();
+            let last = '';
+            _writeCalResizeObs = new ResizeObserver(entries => {
+                const r = entries[0].contentRect;
+                const key = Math.round(r.width) + 'x' + Math.round(r.height);
+                if (key === last) return;
+                last = key;
+                if (spanMoveState || spanResizeState) return;   // 드래그 중에는 드래그 쪽에서 다시 그림
+                cancelAnimationFrame(_writeCalResizeRaf);
+                _writeCalResizeRaf = requestAnimationFrame(() => renderWriteSpans());
+            });
+            _writeCalResizeObs._el = el;
+            _writeCalResizeObs.observe(el);
+            if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => renderWriteSpans());
+        }
+
+        // 달력 위에 기간 막대를 겹쳐 그린다.
+        // 실제 셀의 위치/크기를 재서 배치하기 때문에 셀 높이가 달라져도 정확히 맞는다.
+        function renderWriteSpans() {
+            const container = document.getElementById('write-calendar-body');
+            if (!container) return;
+            container.style.position = 'relative';
+
+            const old = document.getElementById('write-span-layer');
+            if (old) old.remove();
+
+            const cells = Array.from(container.querySelectorAll('[data-date]'));
+            if (!cells.length) return;
+
+            // 막대 자리를 비워두기 위해 셀 내부 블록 영역의 위쪽 여백을 일단 초기화
+            cells.forEach(c => { const b = c.querySelector('.flex-1'); if (b) b.style.paddingTop = ''; });
+
+            const idxOf = {};
+            cells.forEach((c, i) => { if (!(c.dataset.date in idxOf)) idxOf[c.dataset.date] = i; });
+            const firstDate = cells[0].dataset.date, lastDate = cells[cells.length-1].dataset.date;
+
+            // 이번 달력 화면에 걸쳐 있는 기간 일정만 추림
+            const visible = writeSpans
+                .filter(s => s.startDate <= lastDate && s.endDate >= firstDate)
+                .sort((a, b) => a.startDate.localeCompare(b.startDate) || b.endDate.localeCompare(a.endDate));
+            if (!visible.length) return;
+
+            // 겹치는 막대는 아래 줄(lane)로 밀어서 서로 가리지 않게 배치
+            const laneLastIdx = [];
+            const placed = visible.map(s => {
+                const si = idxOf[s.startDate] ?? 0;
+                const ei = idxOf[s.endDate] ?? (cells.length - 1);
+                let lane = laneLastIdx.findIndex(last => last < si);
+                if (lane === -1) { lane = laneLastIdx.length; laneLastIdx.push(ei); }
+                else laneLastIdx[lane] = ei;
+                return { span: s, si, ei, lane };
+            });
+
+            // 주(행)별로 필요한 줄 수를 구해서, 그 주의 셀 내용을 아래로 밀어준다
+            const maxLaneByRow = {};
+            placed.forEach(p => {
+                for (let r = Math.floor(p.si/7); r <= Math.floor(p.ei/7); r++) {
+                    maxLaneByRow[r] = Math.max(maxLaneByRow[r] ?? -1, p.lane);
+                }
+            });
+            cells.forEach((c, i) => {
+                const r = Math.floor(i/7);
+                if (maxLaneByRow[r] === undefined) return;
+                const b = c.querySelector('.flex-1');
+                if (b) b.style.paddingTop = ((maxLaneByRow[r] + 1) * SPAN_LANE_H + 2) + 'px';
+            });
+
+            // 여백을 준 뒤 실제 좌표를 잰다
+            const layer = document.createElement('div');
+            layer.id = 'write-span-layer';
+            layer.style.cssText = 'position:absolute; left:0; top:0; right:0; bottom:0; pointer-events:none; z-index:5;';
+            container.appendChild(layer);
+
+            placed.forEach(p => {
+                const s = p.span;
+                const st = calcSpanStats(s);
+                const sType = SPAN_TYPES[s.type || 'write'];
+                // 연결한 작품이 있으면 카드에 작품 이름도 같이 보여준다
+                const seq = getSpanSeqInfo(s.id);
+                const spanWork = s.workId ? ((resolveWorkItem(s.workId).displayTitle || '') + (seq ? ` ${seq.n}` : '')) : '';
+                const spanTitle = (s.title && s.title !== '(제목 없음)') ? s.title : '';
+                const headText = `${sType.icon} ${spanTitle}${spanTitle && spanWork ? ' · ' : ''}${spanWork}`;
+                const cumText = (seq && seq.n > 1) ? ` (누적 ${seq.cumChars.toLocaleString()}자)` : '';
+                const daysTxt = (sType.rest && st.workDays !== st.totalDays)
+                    ? `${st.totalDays}일 / ${sType.chars ? '집필' : '작업'} ${st.workDays}일`
+                    : `${st.totalDays}일`;
+                const label = st.noChars
+                    ? `${headText} · ${daysTxt}`
+                    : `${headText} · ${daysTxt} · ${st.totalChars.toLocaleString()}자${cumText}`;
+                // 이 달력 화면 안에 실제 시작일/종료일이 들어와 있는지 (밖이면 잘린 모양으로 표시)
+                const startsInView = s.startDate >= firstDate;
+                const endsInView = s.endDate <= lastDate;
+
+                // 주 단위로 잘라서 각각 막대를 그림
+                for (let r = Math.floor(p.si/7); r <= Math.floor(p.ei/7); r++) {
+                    const segStart = Math.max(p.si, r*7);
+                    const segEnd = Math.min(p.ei, r*7 + 6);
+                    const a = cells[segStart], z = cells[segEnd];
+                    if (!a || !z) continue;
+
+                    const header = a.querySelector('.flex.items-center');
+                    const topBase = header ? (header.offsetTop + header.offsetHeight) : 28;
+
+                    const isFirstSeg = segStart === p.si;      // 화면상 첫 조각
+                    const isLastSeg  = segEnd === p.ei;        // 화면상 마지막 조각
+                    const isHead = isFirstSeg && startsInView; // 진짜 시작일이 여기 있는가
+                    const isTail = isLastSeg && endsInView;    // 진짜 종료일이 여기 있는가
+
+                    const bar = document.createElement('div');
+                    bar.className = 'write-span-bar';
+                    bar.style.cssText = `position:absolute; pointer-events:${(spanResizeState || spanMoveState) ? 'none' : 'auto'}; cursor:${spanMoveState ? 'grabbing' : 'grab'};
+                        left:${a.offsetLeft + 3}px;
+                        top:${a.offsetTop + topBase + p.lane * SPAN_LANE_H}px;
+                        width:${z.offsetLeft + z.offsetWidth - a.offsetLeft - 6}px;
+                        height:${SPAN_LANE_H - 4}px;
+                        background:${s.color || '#f0e0a8'};
+                        border-radius:${isHead ? '6px' : '0'} ${isTail ? '6px' : '0'} ${isTail ? '6px' : '0'} ${isHead ? '6px' : '0'};
+                        display:flex; align-items:center; overflow:hidden;
+                        font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; font-size:11px; font-weight:600; color:#475569;
+                        letter-spacing:0.4px; word-spacing:1px;
+                        box-shadow:0 1px 2px rgba(0,0,0,0.06);`;
+                    bar.title = label + (s.memo ? `\n${s.memo}` : '');
+                    // 첫 조각에만 전체 정보를 쓰고, 이어지는 조각은 제목만 간단히
+                    const segText = isFirstSeg ? `${startsInView ? '' : '◀ '}${label}` : `↪ ${sType.icon} ${spanTitle || spanWork}`;
+                    bar.innerHTML = `<span style="padding:0 10px 0 16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${segText}</span>`;
+                    // 막대 몸통을 잡고 끌면 일정 전체가 통째로 옮겨진다 (그냥 클릭하면 편집 창)
+                    bar.onmousedown = (e) => startSpanMove(e, s.id);
+                    bar.ontouchstart = (e) => startSpanMove(e, s.id);
+                    bar.onclick = (e) => e.stopPropagation();
+
+                    // 양쪽 끝을 잡고 늘리거나 줄이는 핸들 (실제 시작/종료일이 화면에 보일 때만)
+                    if (isHead) bar.appendChild(makeSpanHandle(s.id, 'start'));
+                    if (isTail) bar.appendChild(makeSpanHandle(s.id, 'end'));
+
+                    layer.appendChild(bar);
+                }
+            });
+        }
+
+        function makeSpanHandle(spanId, edge) {
+            const h = document.createElement('div');
+            h.style.cssText = `position:absolute; top:0; bottom:0; ${edge === 'start' ? 'left:0' : 'right:0'}; width:14px;
+                cursor:ew-resize; background:rgba(0,0,0,0.06);`;
+            h.onclick = (e) => e.stopPropagation();
+            h.onmousedown = (e) => { e.stopPropagation(); startSpanResize(e, spanId, edge); };
+            h.ontouchstart = (e) => { e.stopPropagation(); startSpanResize(e, spanId, edge); };
+            return h;
+        }
+
+        // 마우스든 터치든 같은 방식으로 좌표를 꺼낸다 (아이패드 등 터치 기기 지원용)
+        function pointerXY(e) {
+            if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            if (e.changedTouches && e.changedTouches.length) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        // 막대 끝을 드래그해서 기간을 늘리고 줄이는 처리
+        let spanResizeState = null;
+
+        // 막대 몸통을 드래그해서 일정 전체를 통째로 옮기는 처리
+        let spanMoveState = null;
+
+        // 연간 집필 일정(타임라인)에서 '기간 일정' 막대를 드래그해서 날짜를 옮기는 처리
+        // (다른 일정들은 건드리지 않고 드래그한 막대만 이동한다)
+        let timelineSpanMoveState = null;
+
+        function tlDateLabel(dateStr) {
+            const [, m, d] = dateStr.split('-');
+            return `${Number(m)}/${Number(d)}`;
+        }
+
+        // 연간 일정에서 '확정 일정' 막대를 클릭하면, 그 일정이 시작하는 날짜로 집필 관리 달력을 옮겨둔다
+        function jumpWriteCalendarToDate(dateStr) {
+            const [y, m] = dateStr.split('-').map(Number);
+            writeCalDate = new Date(y, m - 1, 1);
+            try { renderWriteCalendar(); } catch (e) {}
+        }
+
+        // 기간 일정 막대는 드래그로 날짜를 옮긴다
+        function startTimelineSpanMove(e, spanId) {
+            if (e.type === 'mousedown' && e.button !== 0) return;
+            const span = writeSpans.find(s => s.id === spanId);
+            if (!span) return;
+            e.preventDefault(); e.stopPropagation();
+
+            const body = document.getElementById('year-timeline-body');
+            const avail = Math.max(600, (body.clientWidth || 1400) - TL_PAD * 2);
+            const sumColW = Math.round(avail / 13);
+            const totalW = avail - sumColW;
+            const daysInYear = tlDaysInYear(timelineYear);
+
+            timelineSpanMoveState = {
+                spanId, x0: pointerXY(e).x,
+                startDate: span.startDate, endDate: span.endDate,
+                totalW, daysInYear, moved: false
+            };
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onTimelineSpanMove);
+            document.addEventListener('mouseup', endTimelineSpanMove);
+            document.addEventListener('touchmove', onTimelineSpanMove, { passive: false });
+            document.addEventListener('touchend', endTimelineSpanMove);
+        }
+
+        function onTimelineSpanMove(e) {
+            const st = timelineSpanMoveState;
+            if (!st) return;
+            const p = pointerXY(e);
+            if (!st.moved && Math.abs(p.x - st.x0) < 4) return;
+            e.preventDefault();
+
+            const deltaPx = p.x - st.x0;
+            const deltaDays = Math.round(deltaPx / st.totalW * st.daysInYear);
+            const span = writeSpans.find(s => s.id === st.spanId);
+            if (!span) return;
+
+            const ns = spanDateAdd(st.startDate, deltaDays);
+            const ne = spanDateAdd(st.endDate, deltaDays);
+            const changed = span.startDate !== ns || span.endDate !== ne;
+            if (changed) { span.startDate = ns; span.endDate = ne; }
+            st.moved = true;
+            document.body.style.cursor = 'grabbing';
+
+            // 드래그 중 지금 며칠로 옮겨지는 중인지 커서 옆에 작게 보여준다
+            let badge = document.getElementById('tl-drag-date-badge');
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.id = 'tl-drag-date-badge';
+                badge.style.cssText = 'position:fixed; z-index:99999; background:#1e293b; color:#fff; font-size:12px; font-weight:800; padding:4px 10px; border-radius:6px; pointer-events:none; transform:translate(-50%,-130%); white-space:nowrap;';
+                document.body.appendChild(badge);
+            }
+            badge.textContent = `${tlDateLabel(ns)} ~ ${tlDateLabel(ne)}`;
+            badge.style.left = p.x + 'px';
+            badge.style.top = p.y + 'px';
+
+            if (changed) renderYearTimeline();
+        }
+
+        function endTimelineSpanMove(e) {
+            document.removeEventListener('mousemove', onTimelineSpanMove);
+            document.removeEventListener('mouseup', endTimelineSpanMove);
+            document.removeEventListener('touchmove', onTimelineSpanMove);
+            document.removeEventListener('touchend', endTimelineSpanMove);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            const badge = document.getElementById('tl-drag-date-badge');
+            if (badge) badge.remove();
+
+            const st = timelineSpanMoveState;
+            timelineSpanMoveState = null;
+            if (!st) return;
+
+            if (st.moved) { save(); renderYearTimeline(); }
+            else openWriteSpanModal(st.spanId, null, true);   // 옮기지 않았으면 그냥 클릭 → 편집 창 (뒤 달력도 그 달로)
+        }
+
+        // 연간 집필 일정에서 '기간 일정' 막대의 양쪽 끝을 드래그해서 시작일/종료일만 조절하는 처리
+        let timelineSpanResizeState = null;
+
+        function startTimelineSpanResize(e, spanId, edge) {
+            if (e.type === 'mousedown' && e.button !== 0) return;
+            const span = writeSpans.find(s => s.id === spanId);
+            if (!span) return;
+            e.preventDefault(); e.stopPropagation();
+
+            const body = document.getElementById('year-timeline-body');
+            const avail = Math.max(600, (body.clientWidth || 1400) - TL_PAD * 2);
+            const sumColW = Math.round(avail / 13);
+            const totalW = avail - sumColW;
+            const daysInYear = tlDaysInYear(timelineYear);
+
+            timelineSpanResizeState = {
+                spanId, edge, x0: pointerXY(e).x,
+                startDate: span.startDate, endDate: span.endDate,
+                totalW, daysInYear, moved: false
+            };
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = 'ew-resize';
+            document.addEventListener('mousemove', onTimelineSpanResize);
+            document.addEventListener('mouseup', endTimelineSpanResize);
+            document.addEventListener('touchmove', onTimelineSpanResize, { passive: false });
+            document.addEventListener('touchend', endTimelineSpanResize);
+        }
+
+        function onTimelineSpanResize(e) {
+            const st = timelineSpanResizeState;
+            if (!st) return;
+            const p = pointerXY(e);
+
+            const deltaPx = p.x - st.x0;
+            const deltaDays = Math.round(deltaPx / st.totalW * st.daysInYear);
+            if (!st.moved && deltaDays === 0) return;
+            e.preventDefault();
+            const span = writeSpans.find(s => s.id === st.spanId);
+            if (!span) return;
+
+            let ns = span.startDate, ne = span.endDate, label;
+            if (st.edge === 'start') {
+                ns = spanDateAdd(st.startDate, deltaDays);
+                if (ns > span.endDate) ns = span.endDate;   // 시작일이 종료일을 넘어가지 않게 (최소 하루)
+                label = tlDateLabel(ns);
+            } else {
+                ne = spanDateAdd(st.endDate, deltaDays);
+                if (ne < span.startDate) ne = span.startDate;
+                label = tlDateLabel(ne);
+            }
+            if (span.startDate === ns && span.endDate === ne) return;
+            span.startDate = ns; span.endDate = ne;
+            st.moved = true;
+
+            let badge = document.getElementById('tl-drag-date-badge');
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.id = 'tl-drag-date-badge';
+                badge.style.cssText = 'position:fixed; z-index:99999; background:#1e293b; color:#fff; font-size:12px; font-weight:800; padding:4px 10px; border-radius:6px; pointer-events:none; transform:translate(-50%,-130%); white-space:nowrap;';
+                document.body.appendChild(badge);
+            }
+            badge.textContent = label;
+            badge.style.left = p.x + 'px';
+            badge.style.top = p.y + 'px';
+
+            renderYearTimeline();
+        }
+
+        function endTimelineSpanResize() {
+            document.removeEventListener('mousemove', onTimelineSpanResize);
+            document.removeEventListener('mouseup', endTimelineSpanResize);
+            document.removeEventListener('touchmove', onTimelineSpanResize);
+            document.removeEventListener('touchend', endTimelineSpanResize);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            const badge = document.getElementById('tl-drag-date-badge');
+            if (badge) badge.remove();
+
+            const st = timelineSpanResizeState;
+            timelineSpanResizeState = null;
+            if (st && st.moved) { save(); renderYearTimeline(); }
+        }
+
+        // 커서 아래에 있는 날짜 칸의 날짜를 찾는다.
+        // 칸과 칸 사이 틈에 커서가 놓여도 끊기지 않도록, 못 찾으면 가장 가까운 칸을 고른다.
+        function dateUnderPointer(e) {
+            const p = pointerXY(e);
+            const el = document.elementFromPoint(p.x, p.y);
+            const hit = el && el.closest ? el.closest('#write-calendar-body [data-date]') : null;
+            if (hit) return hit.dataset.date;
+
+            const cells = document.querySelectorAll('#write-calendar-body [data-date]');
+            let best = null, bestDist = Infinity;
+            cells.forEach(c => {
+                const r = c.getBoundingClientRect();
+                const dx = Math.max(r.left - p.x, 0, p.x - r.right);
+                const dy = Math.max(r.top - p.y, 0, p.y - r.bottom);
+                const d = dx * dx + dy * dy;
+                if (d < bestDist) { bestDist = d; best = c; }
+            });
+            // 달력에서 한참 벗어난 곳이면 무시
+            return (best && bestDist <= 60 * 60) ? best.dataset.date : null;
+        }
+
+        function startSpanMove(e, spanId) {
+            if (e.type === 'mousedown' && e.button !== 0) return;
+            const span = writeSpans.find(s => s.id === spanId);
+            if (!span) return;
+            e.preventDefault();
+
+            // 막대가 마우스/터치 히트 테스트를 가리지 않도록 잠시 통과시킨다
+            document.querySelectorAll('.write-span-bar').forEach(b => b.style.pointerEvents = 'none');
+            const anchor = dateUnderPointer(e);
+            document.querySelectorAll('.write-span-bar').forEach(b => b.style.pointerEvents = 'auto');
+            if (!anchor) return;
+
+            const p0 = pointerXY(e);
+            spanMoveState = {
+                spanId, anchor,
+                startDate: span.startDate, endDate: span.endDate,
+                x0: p0.x, y0: p0.y, moved: false
+            };
+            document.querySelectorAll('.write-span-bar').forEach(b => b.style.pointerEvents = 'none');
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onSpanMoveMove);
+            document.addEventListener('mouseup', endSpanMove);
+            document.addEventListener('touchmove', onSpanMoveMove, { passive: false });
+            document.addEventListener('touchend', endSpanMove);
+        }
+
+        function onSpanMoveMove(e) {
+            if (!spanMoveState) return;
+            const p = pointerXY(e);
+            // 살짝 흔들린 정도는 클릭으로 본다
+            if (!spanMoveState.moved &&
+                Math.abs(p.x - spanMoveState.x0) < 4 && Math.abs(p.y - spanMoveState.y0) < 4) return;
+            e.preventDefault();
+
+            const date = dateUnderPointer(e);
+            if (!date) return;
+            const delta = spanDayDiff(spanMoveState.anchor, date);   // 처음 잡은 날 대비 며칠 이동했나
+            const span = writeSpans.find(s => s.id === spanMoveState.spanId);
+            if (!span) return;
+
+            const ns = spanDateAdd(spanMoveState.startDate, delta);
+            const ne = spanDateAdd(spanMoveState.endDate, delta);
+            if (span.startDate === ns && span.endDate === ne) return;
+
+            span.startDate = ns; span.endDate = ne;   // 기간 길이는 그대로 두고 통째로 이동
+            spanMoveState.moved = true;
+            document.body.style.cursor = 'grabbing';
+            renderWriteSpans();
+        }
+
+        function endSpanMove(e) {
+            document.removeEventListener('mousemove', onSpanMoveMove);
+            document.removeEventListener('mouseup', endSpanMove);
+            document.removeEventListener('touchmove', onSpanMoveMove);
+            document.removeEventListener('touchend', endSpanMove);
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+            const st = spanMoveState;
+            spanMoveState = null;
+            document.querySelectorAll('.write-span-bar').forEach(b => b.style.pointerEvents = 'auto');
+            if (!st) return;
+
+            if (st.moved) { save(); renderWriteCalendar(); }
+            else openWriteSpanModal(st.spanId, null);   // 옮기지 않았으면 그냥 클릭 → 편집 창
+        }
+        function startSpanResize(e, spanId, edge) {
+            e.preventDefault(); e.stopPropagation();
+            const span = writeSpans.find(s => s.id === spanId);
+            if (!span) return;
+            spanResizeState = { spanId, edge, startDate: span.startDate, endDate: span.endDate, moved: false };
+            // 드래그 중에는 막대가 마우스/터치 히트 테스트를 가로채지 못하게 막아야
+            // 커서 아래의 '날짜 칸'을 제대로 찾을 수 있다
+            document.querySelectorAll('.write-span-bar').forEach(b => b.style.pointerEvents = 'none');
+            document.body.style.cursor = 'ew-resize';
+            document.body.style.userSelect = 'none';
+            document.addEventListener('mousemove', onSpanResizeMove);
+            document.addEventListener('mouseup', endSpanResize);
+            document.addEventListener('touchmove', onSpanResizeMove, { passive: false });
+            document.addEventListener('touchend', endSpanResize);
+        }
+
+        function onSpanResizeMove(e) {
+            if (!spanResizeState) return;
+            e.preventDefault();
+            // 커서 아래에 있는 날짜 칸을 찾아서 그 날짜로 끝을 옮긴다
+            const date = dateUnderPointer(e);
+            if (!date) return;
+            const span = writeSpans.find(s => s.id === spanResizeState.spanId);
+            if (!span) return;
+
+            if (spanResizeState.edge === 'start') {
+                if (date > span.endDate) return;   // 시작일이 종료일을 넘어가지 않게
+                if (span.startDate === date) return;
+                span.startDate = date;
+            } else {
+                if (date < span.startDate) return; // 종료일이 시작일보다 앞서지 않게
+                if (span.endDate === date) return;
+                span.endDate = date;
+            }
+            spanResizeState.moved = true;
+            renderWriteSpans(); // 드래그 중에는 막대만 다시 그려서 가볍게 처리
+        }
+
+        function endSpanResize() {
+            document.removeEventListener('mousemove', onSpanResizeMove);
+            document.removeEventListener('mouseup', endSpanResize);
+            document.removeEventListener('touchmove', onSpanResizeMove);
+            document.removeEventListener('touchend', endSpanResize);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            if (spanResizeState && spanResizeState.moved) { save(); renderWriteCalendar(); }
+            spanResizeState = null;
+            document.querySelectorAll('.write-span-bar').forEach(b => b.style.pointerEvents = 'auto');
+        }
+
+        // 🟢 [NEW] 집필 분류 항목 관리 (스케줄 관리의 분류 관리와 동일한 방식이지만 서로 연동되지 않음)
+        function openWriteCategoryManager() {
+            renderWriteCategoryManagerList();
+            document.getElementById('write-category-manager-modal').classList.add('open');
+        }
+        function closeWriteCategoryManager() {
+            document.getElementById('write-category-manager-modal').classList.remove('open');
+            editingWriteCategoryIndex = null;
+            document.getElementById('new-write-category-input').value = '';
+            const btn = document.getElementById('btn-add-update-write-category');
+            btn.innerText = '추가';
+            btn.onclick = addNewWriteCategory;
+            // 관리 창에서 바뀐 목록을 집필 목표 모달의 드롭다운과 설정 화면에도 반영
+            renderWriteCategorySelectOptions();
+            renderWriteCategoryColorList();
+        }
+
+        // 🟢 [NEW] 작품별 '작업 완료' 수동 표시 — 출간일 전이라도 집필/스케줄 작품 목록에서 숨기기
+        function openWorkDoneModal() {
+            renderWorkDoneList();
+            document.getElementById('work-done-modal').classList.add('open');
+        }
+        function closeWorkDoneModal() {
+            document.getElementById('work-done-modal').classList.remove('open');
+        }
+        function renderWorkDoneList() {
+            const list = document.getElementById('work-done-list');
+            const today = getYYYYMMDD(new Date());
+            const genrePriority = (g) => {
+                if (g === 'BL 장편') return 0;
+                if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2;
+                if (g === 'BL 초단') return 3;
+                if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5;
+                return 99;
+            };
+            // 웹툰 제외, 이미 출간일 지난 작품(본편/외전 각각) 제외 — 그런 항목은 이미 목록에서 자동으로 빠지니 여기서 켜고 끌 필요가 없음
+            // 외전도 본편과 별개로 집필/스케줄 작품 목록에 뜨므로, 여기서도 각각 따로 줄을 만든다
+            const rows = [];
+            masterWorks.forEach(w => {
+                if (w.genre.includes('웹툰')) return;
+                const mainPast = !w.isPending && w.publishDate && w.publishDate < today;
+                if (!mainPast) rows.push({ workId: w.id, extraId: null, title: w.title, genre: w.genre, done: !!w.workDone });
+                (w.extras || []).forEach(ex => {
+                    const exPast = ex.publishDate && ex.publishDate < today;
+                    if (!exPast) rows.push({ workId: w.id, extraId: ex.id, title: `${w.title} [${ex.name}]`, genre: w.genre, done: !!ex.workDone });
+                });
+            });
+            rows.sort((a, b) => {
+                const p = genrePriority(a.genre) - genrePriority(b.genre);
+                if (p !== 0) return p;
+                return a.title.localeCompare(b.title, 'ko');
+            });
+            // 장르별로 네모 박스 하나씩 묶어서 표시
+            const groups = [];
+            rows.forEach(r => {
+                let g = groups.find(x => x.genre === r.genre);
+                if (!g) { g = { genre: r.genre, rows: [] }; groups.push(g); }
+                g.rows.push(r);
+            });
+            list.innerHTML = groups.map(g => `
+                <div class="border border-slate-200 rounded-xl p-3">
+                    <p class="text-xs font-bold text-slate-500 mb-2">${escapeHtml(g.genre)}</p>
+                    <div class="space-y-1.5">
+                        ${g.rows.map(r => `
+                            <label class="flex items-center justify-between gap-2 cursor-pointer">
+                                <span class="text-sm text-slate-600 min-w-0 truncate">${escapeHtml(r.title)}</span>
+                                <input type="checkbox" ${r.done ? 'checked' : ''} onchange="toggleWorkDone('${r.workId}', ${r.extraId ? `'${r.extraId}'` : 'null'}, this.checked)" class="w-5 h-5 accent-emerald-500 cursor-pointer shrink-0">
+                            </label>`).join('')}
+                    </div>
+                </div>`).join('');
+        }
+        function toggleWorkDone(workId, extraId, done) {
+            const w = masterWorks.find(x => x.id === workId);
+            if (!w) return;
+            if (extraId) {
+                const ex = (w.extras || []).find(x => x.id === extraId);
+                if (!ex) return;
+                ex.workDone = done;
+            } else {
+                w.workDone = done;
+            }
+            save();
+            // 지금 열려있는 집필/스케줄 모달의 작품 목록도 바로 갱신
+            if (typeof renderWriteModalWorkSelect === 'function') { try { renderWriteModalWorkSelect(); } catch(e) {} }
+            if (typeof renderTaskModalWorkSelect === 'function') { try { renderTaskModalWorkSelect(); } catch(e) {} }
+        }
+
+        function renderWriteCategoryManagerList() {
+            const list = document.getElementById('write-category-manager-list');
+            if (!list) return;
+            list.innerHTML = writeCategoryList.map((cat, idx) => `
+                <tr class="draggable-write-category cursor-move hover:bg-slate-50" draggable="true" data-index="${idx}">
+                    <td class="px-4 py-3 text-center text-slate-300"><i class="fa-solid fa-grip-vertical"></i></td>
+                    <td class="px-4 py-3 font-medium">${cat}</td>
+                    <td class="px-4 py-3 text-center flex justify-center gap-2">
+                        <button onclick="editWriteCategory(${idx})" class="text-slate-400 hover:text-blue-500 text-xs"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="removeWriteCategory(${idx})" class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>`).join('');
+            addWriteCategoryDragEvents();
+        }
+
+        function addWriteCategoryDragEvents() {
+            let dragSrcCat = null;
+            document.querySelectorAll('.draggable-write-category').forEach(row => {
+                row.addEventListener('dragstart', e => { dragSrcCat = row; row.classList.add('opacity-50'); });
+                row.addEventListener('dragover', e => e.preventDefault());
+                row.addEventListener('drop', e => {
+                    e.preventDefault();
+                    if (dragSrcCat !== row) {
+                        const allRows = [...document.querySelectorAll('.draggable-write-category')];
+                        const srcIdx = allRows.indexOf(dragSrcCat), dstIdx = allRows.indexOf(row);
+                        const movedItem = writeCategoryList.splice(srcIdx, 1)[0];
+                        writeCategoryList.splice(dstIdx, 0, movedItem);
+                        save(); renderWriteCategoryManagerList();
+                    }
+                });
+                row.addEventListener('dragend', () => row.classList.remove('opacity-50'));
+            });
+        }
+
+        function editWriteCategory(idx) {
+            if (writeCategoryList[idx] === WRITE_MEMO_CATEGORY) { alert("'메모'는 체크리스트용 기본 분류라 이름을 바꿀 수 없어요. (색상은 바꿀 수 있어요)"); return; }
+            editingWriteCategoryIndex = idx;
+            document.getElementById('new-write-category-input').value = writeCategoryList[idx];
+            const btn = document.getElementById('btn-add-update-write-category');
+            btn.innerText = '수정';
+            btn.onclick = updateWriteCategory;
+        }
+
+        function updateWriteCategory() {
+            const input = document.getElementById('new-write-category-input');
+            const newName = input.value.trim();
+            if (!newName) return;
+            const oldName = writeCategoryList[editingWriteCategoryIndex];
+            if (newName !== oldName && writeCategoryList.some(c => c.trim() === newName)) { alert("이미 있는 분류명이에요."); return; }
+
+            writeCategoryList[editingWriteCategoryIndex] = newName;
+
+            // 색상 설정 키 이전
+            if (WRITE_COLORS[oldName] !== undefined && newName !== oldName) {
+                WRITE_COLORS[newName] = WRITE_COLORS[oldName];
+                delete WRITE_COLORS[oldName];
+            }
+
+            // 기존에 저장된 집필 기록들의 분류명도 함께 변경
+            if (newName !== oldName) {
+                Object.keys(writeSchedules).forEach(dateStr => {
+                    (writeSchedules[dateStr] || []).forEach(s => { if (s.category === oldName) s.category = newName; });
+                });
+            }
+
+            save();
+            editingWriteCategoryIndex = null;
+            input.value = '';
+            const btn = document.getElementById('btn-add-update-write-category');
+            btn.innerText = '추가';
+            btn.onclick = addNewWriteCategory;
+            renderWriteCategoryManagerList();
+            renderWriteCalendar();
+        }
+
+        function addNewWriteCategory() {
+            const input = document.getElementById('new-write-category-input');
+            const name = input.value.trim();
+            if (!name) return;
+            if (writeCategoryList.some(c => c.trim() === name)) { alert("이미 있는 분류명이에요."); return; }
+            writeCategoryList.push(name);
+            if (WRITE_COLORS[name] === undefined) WRITE_COLORS[name] = '#94a3b8';
+            save();
+            input.value = '';
+            renderWriteCategoryManagerList();
+        }
+
+        function removeWriteCategory(idx) {
+            const name = writeCategoryList[idx];
+            if (name === WRITE_MEMO_CATEGORY) { alert("'메모'는 체크리스트용 기본 분류라 삭제할 수 없어요."); return; }
+            if (!confirm("이 분류를 삭제하시겠습니까? (이미 저장된 집필 기록의 분류명은 그대로 남아요)")) return;
+            writeCategoryList.splice(idx, 1);
+            delete WRITE_COLORS[name];
+            save();
+            renderWriteCategoryManagerList();
+        }
+
+        function deleteWriteSchedule() {
+            if(!currentEditWriteId) return;
+            if(confirm("이 일정을 삭제하시겠습니까?")) {
+                writeSchedules[currentEditWriteDate] = writeSchedules[currentEditWriteDate].filter(s => s.id !== currentEditWriteId);
+                if(writeSchedules[currentEditWriteDate].length === 0) delete writeSchedules[currentEditWriteDate];
+                save(); closeWriteModal(); renderWriteCalendar();
+            }
+        }
+
+        // 🟢 [NEW] 스케줄(Task) 관리 모달 기능
+        let currentEditTaskDate = null;
+        let currentEditTaskId = null;
+
+        function openTaskModal(dateStr) {
+            currentEditTaskDate = dateStr; currentEditTaskId = null;
+            document.getElementById('task-modal-title').innerText = "📅 세부 일정 추가";
+            document.getElementById('task-modal-date').innerText = dateStr;
+            
+            currentTaskModalGenre = '전체';
+            renderTaskModalGenreTabs();
+            renderTaskModalWorkSelect();
+            document.getElementById('task-work-select').value = "";
+            
+            renderTaskCategorySelectOptions();
+            document.getElementById('task-category-select').value = taskCategoryList[0] || "";
+            document.getElementById('task-memo-input').value = "";
+            document.getElementById('task-is-completed').checked = false;
+            document.getElementById('task-complete-container').classList.add('hidden');
+            document.getElementById('task-delete-btn').classList.add('hidden');
+            
+            document.getElementById('task-schedule-modal').classList.add('open');
+        }
+
+        function openTaskEditModal(id, dateStr) {
+            const item = taskSchedules[dateStr]?.find(t => t.id === id);
+            if(!item) return;
+            currentEditTaskDate = dateStr; currentEditTaskId = id;
+            document.getElementById('task-modal-title').innerText = "🛠 세부 일정 관리";
+            document.getElementById('task-modal-date').innerText = dateStr;
+            
+            const work = masterWorks.find(w => w.id === item.workId);
+            currentTaskModalGenre = work ? work.genre : '전체';
+            renderTaskModalGenreTabs();
+            renderTaskModalWorkSelect();
+            document.getElementById('task-work-select').value = item.workId;
+            
+            renderTaskCategorySelectOptions();
+            document.getElementById('task-category-select').value = item.category;
+            document.getElementById('task-memo-input').value = item.memo || "";
+            document.getElementById('task-is-completed').checked = item.isCompleted;
+            
+            document.getElementById('task-complete-container').classList.remove('hidden');
+            document.getElementById('task-delete-btn').classList.remove('hidden');
+            
+            document.getElementById('task-schedule-modal').classList.add('open');
+        }
+
+        function closeTaskModal() { document.getElementById('task-schedule-modal').classList.remove('open'); }
+
+        function saveTaskSchedule() {
+            const dateStr = currentEditTaskDate;
+            const workId = document.getElementById('task-work-select').value;
+            const category = document.getElementById('task-category-select').value;
+            const memo = document.getElementById('task-memo-input').value;
+            const isCompleted = document.getElementById('task-is-completed').checked;
+
+            if(!workId && !memo.trim()) { alert("작품을 선택하거나 할 일 내용을 메모에 입력해주세요."); return; }
+
+            if(!taskSchedules[dateStr]) taskSchedules[dateStr] = [];
+
+            if(currentEditTaskId) {
+                const idx = taskSchedules[dateStr].findIndex(t => t.id === currentEditTaskId);
+                if(idx > -1) {
+                    taskSchedules[dateStr][idx] = { id: currentEditTaskId, date: dateStr, workId, category, memo, isCompleted };
+                }
+            } else {
+                taskSchedules[dateStr].push({
+                    id: 'ts_' + Date.now() + Math.floor(Math.random()*1000), date: dateStr, workId, category, memo, isCompleted
+                });
+            }
+
+            save(); closeTaskModal(); renderTaskCalendar();
+        }
+
+        function deleteTaskSchedule() {
+            if(!currentEditTaskId) return;
+            if(confirm("이 일정을 삭제하시겠습니까?")) {
+                taskSchedules[currentEditTaskDate] = taskSchedules[currentEditTaskDate].filter(t => t.id !== currentEditTaskId);
+                if(taskSchedules[currentEditTaskDate].length === 0) delete taskSchedules[currentEditTaskDate];
+                save(); closeTaskModal(); renderTaskCalendar();
+            }
+        }
+
+        // 🟢 [NEW] 분류(카테고리) 항목 관리
+        function renderTaskCategorySelectOptions() {
+            const select = document.getElementById('task-category-select');
+            if (!select) return;
+            const prevValue = select.value;
+            select.innerHTML = taskCategoryList.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+            if (taskCategoryList.includes(prevValue)) select.value = prevValue;
+        }
+
+        function openTaskCategoryManager() {
+            renderTaskCategoryManagerList();
+            document.getElementById('task-category-manager-modal').classList.add('open');
+        }
+        function closeTaskCategoryManager() {
+            document.getElementById('task-category-manager-modal').classList.remove('open');
+            editingTaskCategoryIndex = null;
+            document.getElementById('new-task-category-input').value = '';
+            const btn = document.getElementById('btn-add-update-task-category');
+            btn.innerText = '추가';
+            btn.onclick = addNewTaskCategory;
+            // 관리 창에서 바뀐 목록을 세부 일정 모달의 드롭다운에도 반영
+            renderTaskCategorySelectOptions();
+            renderTaskCategoryColorList();
+        }
+
+        function renderTaskCategoryManagerList() {
+            const list = document.getElementById('task-category-manager-list');
+            if (!list) return;
+            list.innerHTML = taskCategoryList.map((cat, idx) => {
+                const isProtected = PROTECTED_TASK_CATEGORIES.includes(cat);
+                return `
+                <tr class="draggable-task-category cursor-move hover:bg-slate-50" draggable="true" data-index="${idx}">
+                    <td class="px-4 py-3 text-center text-slate-300"><i class="fa-solid fa-grip-vertical"></i></td>
+                    <td class="px-4 py-3 font-medium">${cat}${isProtected ? ' <i class="fa-solid fa-lock text-slate-300 text-xs" title="웹툰 관리 탭과 자동 연동되는 분류라 이름 변경/삭제가 안 돼요"></i>' : ''}</td>
+                    <td class="px-4 py-3 text-center flex justify-center gap-2">
+                        ${isProtected
+                            ? `<i class="fa-solid fa-pen text-slate-200"></i><i class="fa-solid fa-trash text-slate-200"></i>`
+                            : `<button onclick="editTaskCategory(${idx})" class="text-slate-400 hover:text-blue-500 text-xs"><i class="fa-solid fa-pen"></i></button>
+                               <button onclick="removeTaskCategory(${idx})" class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button>`
+                        }
+                    </td>
+                </tr>`;
+            }).join('');
+            addTaskCategoryDragEvents();
+        }
+
+        function addTaskCategoryDragEvents() {
+            let dragSrcCat = null;
+            document.querySelectorAll('.draggable-task-category').forEach(row => {
+                row.addEventListener('dragstart', e => { dragSrcCat = row; row.classList.add('opacity-50'); });
+                row.addEventListener('dragover', e => e.preventDefault());
+                row.addEventListener('drop', e => {
+                    e.preventDefault();
+                    if (dragSrcCat !== row) {
+                        const allRows = [...document.querySelectorAll('.draggable-task-category')];
+                        const srcIdx = allRows.indexOf(dragSrcCat), dstIdx = allRows.indexOf(row);
+                        const movedItem = taskCategoryList.splice(srcIdx, 1)[0];
+                        taskCategoryList.splice(dstIdx, 0, movedItem);
+                        save(); renderTaskCategoryManagerList();
+                    }
+                });
+                row.addEventListener('dragend', () => row.classList.remove('opacity-50'));
+            });
+        }
+
+        function editTaskCategory(idx) {
+            editingTaskCategoryIndex = idx;
+            document.getElementById('new-task-category-input').value = taskCategoryList[idx];
+            const btn = document.getElementById('btn-add-update-task-category');
+            btn.innerText = '수정';
+            btn.onclick = updateTaskCategory;
+        }
+
+        function updateTaskCategory() {
+            const input = document.getElementById('new-task-category-input');
+            const newName = input.value.trim();
+            if (!newName) return;
+            const oldName = taskCategoryList[editingTaskCategoryIndex];
+            if (newName !== oldName && PROTECTED_TASK_CATEGORIES.includes(oldName)) {
+                alert(`"${oldName}"은(는) 웹툰 관리 탭과 이름으로 자동 연동되는 분류라 이름을 바꿀 수 없어요.`);
+                return;
+            }
+            if (newName !== oldName && taskCategoryList.some(c => c.trim() === newName)) { alert("이미 있는 분류명이에요."); return; }
+
+            taskCategoryList[editingTaskCategoryIndex] = newName;
+
+            // 색상 설정 키 이전
+            if (TASK_COLORS[oldName] !== undefined && newName !== oldName) {
+                TASK_COLORS[newName] = TASK_COLORS[oldName];
+                delete TASK_COLORS[oldName];
+            }
+
+            // 기존에 저장된 일정들의 분류명도 함께 변경
+            if (newName !== oldName) {
+                Object.keys(taskSchedules).forEach(dateStr => {
+                    (taskSchedules[dateStr] || []).forEach(t => { if (t.category === oldName) t.category = newName; });
+                });
+            }
+
+            save();
+            editingTaskCategoryIndex = null;
+            input.value = '';
+            const btn = document.getElementById('btn-add-update-task-category');
+            btn.innerText = '추가';
+            btn.onclick = addNewTaskCategory;
+            renderTaskCategoryManagerList();
+            renderTaskCalendar();
+        }
+
+        function addNewTaskCategory() {
+            const input = document.getElementById('new-task-category-input');
+            const name = input.value.trim();
+            if (!name) return;
+            if (taskCategoryList.some(c => c.trim() === name)) { alert("이미 있는 분류명이에요."); return; }
+            taskCategoryList.push(name);
+            if (TASK_COLORS[name] === undefined) TASK_COLORS[name] = '#64748b';
+            save();
+            input.value = '';
+            renderTaskCategoryManagerList();
+        }
+
+        function removeTaskCategory(idx) {
+            const name = taskCategoryList[idx];
+            if (PROTECTED_TASK_CATEGORIES.includes(name)) {
+                alert(`"${name}"은(는) 웹툰 관리 탭과 이름으로 자동 연동되는 분류라 삭제할 수 없어요.`);
+                return;
+            }
+            if (!confirm("이 분류를 삭제하시겠습니까? (이미 저장된 일정의 분류명은 그대로 남아요)")) return;
+            taskCategoryList.splice(idx, 1);
+            delete TASK_COLORS[name];
+            save();
+            renderTaskCategoryManagerList();
+        }
+
+        // 🟢 [NEW] 드래그 앤 드롭 구현
+        function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+        function handleDragEnter(e) { e.preventDefault(); if(e.currentTarget.dataset.date) e.currentTarget.classList.add('cal-drag-over'); }
+        function handleDragLeave(e) { if(e.currentTarget.dataset.date) e.currentTarget.classList.remove('cal-drag-over'); }
+
+        function handleWriteDragStart(e, id, dateStr) {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'write', id, originDate: dateStr }));
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        function handleTaskDragStart(e, id, dateStr) {
+            e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'task', id, originDate: dateStr }));
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleWriteDrop(e, cell) {
+            e.preventDefault(); cell.classList.remove('cal-drag-over');
+            const targetDate = cell.dataset.date;
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if(data.type !== 'write' || data.originDate === targetDate) return;
+                
+                let idx = writeSchedules[data.originDate]?.findIndex(s => s.id === data.id);
+                if(idx > -1) {
+                    let item = writeSchedules[data.originDate].splice(idx, 1)[0];
+                    item.date = targetDate;
+                    if(writeSchedules[data.originDate].length === 0) delete writeSchedules[data.originDate];
+                    
+                    if(!writeSchedules[targetDate]) writeSchedules[targetDate] = [];
+                    writeSchedules[targetDate].push(item);
+                    save(); renderWriteCalendar();
+                }
+            } catch(err) {}
+        }
+
+        function handleTaskDrop(e, cell) {
+            e.preventDefault(); cell.classList.remove('cal-drag-over');
+            const targetDate = cell.dataset.date;
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if(data.type !== 'task' || data.originDate === targetDate) return;
+                
+                let idx = taskSchedules[data.originDate]?.findIndex(t => t.id === data.id);
+                if(idx > -1) {
+                    let item = taskSchedules[data.originDate].splice(idx, 1)[0];
+                    item.date = targetDate;
+                    if(taskSchedules[data.originDate].length === 0) delete taskSchedules[data.originDate];
+                    
+                    if(!taskSchedules[targetDate]) taskSchedules[targetDate] = [];
+                    taskSchedules[targetDate].push(item);
+                    save(); renderTaskCalendar();
+                }
+            } catch(err) {}
+        }
+
+        // 🟢 [NEW] 카드 위에 드롭 → 같은/다른 날짜 안에서 순서 변경
+        // 카드의 위쪽 절반에 놓으면 그 카드 앞, 아래쪽 절반이면 뒤에 삽입
+        function handleCardDragOver(e, cardEl) {
+            e.preventDefault();
+            e.stopPropagation();           // 셀(cell)의 dragover로 전파 방지
+            e.dataTransfer.dropEffect = 'move';
+            const r = cardEl.getBoundingClientRect();
+            const after = e.clientY > r.top + r.height / 2;
+            cardEl.classList.remove('cal-drop-before', 'cal-drop-after');
+            cardEl.classList.add(after ? 'cal-drop-after' : 'cal-drop-before');
+        }
+        function handleCardDragLeave(e, cardEl) {
+            cardEl.classList.remove('cal-drop-before', 'cal-drop-after');
+        }
+
+        // store(writeSchedules/taskSchedules)에서 항목을 targetDate의 특정 위치로 이동
+        function moveScheduleItem(store, data, targetDate, targetId, insertAfter) {
+            const fromIdx = store[data.originDate]?.findIndex(x => x.id === data.id);
+            if (fromIdx === undefined || fromIdx < 0) return false;
+            if (data.id === targetId) return false;   // 자기 자신 위에 놓음
+
+            const item = store[data.originDate].splice(fromIdx, 1)[0];
+            item.date = targetDate;
+            if (store[data.originDate].length === 0 && data.originDate !== targetDate) {
+                delete store[data.originDate];
+            }
+            if (!store[targetDate]) store[targetDate] = [];
+
+            // 기준 카드의 현재 위치를 다시 찾아 그 앞/뒤에 삽입
+            let targetIdx = store[targetDate].findIndex(x => x.id === targetId);
+            if (targetIdx < 0) { store[targetDate].push(item); return true; }
+            if (insertAfter) targetIdx += 1;
+            store[targetDate].splice(targetIdx, 0, item);
+            return true;
+        }
+
+        function handleWriteCardDrop(e, cardEl, targetId, targetDate) {
+            e.preventDefault(); e.stopPropagation();
+            const insertAfter = cardEl.classList.contains('cal-drop-after');
+            cardEl.classList.remove('cal-drop-before', 'cal-drop-after');
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (data.type !== 'write') return;
+                if (moveScheduleItem(writeSchedules, data, targetDate, targetId, insertAfter)) {
+                    save(); renderWriteCalendar();
+                }
+            } catch(err) {}
+        }
+        function handleTaskCardDrop(e, cardEl, targetId, targetDate) {
+            e.preventDefault(); e.stopPropagation();
+            const insertAfter = cardEl.classList.contains('cal-drop-after');
+            cardEl.classList.remove('cal-drop-before', 'cal-drop-after');
+            try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+                if (data.type !== 'task') return;
+                if (moveScheduleItem(taskSchedules, data, targetDate, targetId, insertAfter)) {
+                    save(); renderTaskCalendar();
+                }
+            } catch(err) {}
+        }
+
+
+        // ════════════════════════════════════════════════════════
+        // 🟢 [WRITER] 상세 기록 입력 & 월별 달력 기능
+        // ════════════════════════════════════════════════════════
+
+        function writerGetStorageKey(w, partId) {
+            if (!partId || partId === 'main') return w.title;
+            return w.title + '::' + partId;
+        }
+        function writerGetDayWorkData(dateStr, storageKey) {
+            return writerDailyData[dateStr]?.works?.[storageKey] || null;
+        }
+        function writerGetDayTotal(dateStr) {
+            let sum = 0;
+            const worksObj = writerDailyData[dateStr]?.works;
+            if (worksObj) for (const t in worksObj) sum += Object.values(worksObj[t]?.hours || {}).reduce((a,b)=>a+(b.diff||0), 0);
+            return sum;
+        }
+        // 집필 관리(writeSchedules)에 세워둔 그 날의 목표 글자수 합계 (교정/시놉시스/기타 제외)
+        function writerGetDayGoal(dateStr) {
+            const schedules = writeSchedules[dateStr]; if (!schedules) return 0;
+            let sum = 0;
+            schedules.forEach(s => { if (!s.category) sum += Number(s.goal) || 0; });
+            return sum;
+        }
+        // storageKey의 실제 누적 글자수 합계 (기준점 반영 전 원본 값)
+        // beforeDate를 넘기면 그 날짜 이전(해당 날짜 미포함)까지 기록된 글자수만 합산한다.
+        function writerGetWorkRawTotal(storageKey, beforeDate) {
+            let sum = 0;
+            for (let date in writerDailyData) {
+                if (beforeDate && date >= beforeDate) continue;
+                const wd = writerGetDayWorkData(date, storageKey);
+                if (wd?.hours) sum += Object.values(wd.hours).reduce((a,b)=>a+(b.diff||0), 0);
+            }
+            return sum;
+        }
+        // 특정 날짜 이후로 그 작품에 쓴 글자수 (권별 진행률 계산용)
+        // 달력 한 번 그릴 때 카드마다 부르므로 결과를 캐시해 둔다
+        let writerWrittenSinceCache = {};
+        function writerGetWorkWrittenSince(storageKey, sinceDate) {
+            if (!sinceDate) return writerGetWorkTotal(storageKey);
+            const ck = storageKey + '|' + sinceDate;
+            if (writerWrittenSinceCache[ck] !== undefined) return writerWrittenSinceCache[ck];
+            const v = Math.max(0, writerGetWorkRawTotal(storageKey) - writerGetWorkRawTotal(storageKey, sinceDate));
+            writerWrittenSinceCache[ck] = v;
+            return v;
+        }
+
+        // 원고의 '현재 글자수 위치' — 가장 마지막으로 기록한 칸의 숫자를 그대로 쓴다.
+        // 증가분(diff)을 더하는 방식은 지웠다 다시 쓰면 실제 원고보다 부풀기 때문에,
+        // 진행률은 원고 길이와 똑같이 맞추기 위해 이 값을 기준으로 한다.
+        // beforeDate를 넘기면 그 날짜 이전까지의 마지막 위치를 돌려준다.
+        function writerGetWorkPosition(storageKey, beforeDate) {
+            const dates = Object.keys(writerDailyData)
+                .filter(d => !beforeDate || d < beforeDate)
+                .sort();
+            for (let i = dates.length - 1; i >= 0; i--) {
+                const wd = writerGetDayWorkData(dates[i], storageKey);
+                if (!wd?.hours) continue;
+                // 그 날 마지막으로 적은 칸을 뒤에서부터 찾는다 (예전 새벽 기록까지 포함)
+                for (let h = WRITER_HOURS_SCAN.length - 1; h >= 0; h--) {
+                    const cell = wd.hours[WRITER_HOURS_SCAN[h]];
+                    if (!cell) continue;
+                    const now = parseFloat(cell.now);
+                    if (!isNaN(now) && cell.now !== '') return now;
+                    const prev = parseFloat(cell.prev);
+                    if (!isNaN(prev) && cell.prev !== '') return prev;
+                }
+            }
+            return 0;
+        }
+
+        // 그 날 기록된 원고 위치 (그 날 마지막으로 적은 칸의 숫자)
+        function writerGetPositionOnDate(storageKey, dateStr) {
+            const wd = writerGetDayWorkData(dateStr, storageKey);
+            if (!wd?.hours) return null;
+            for (let h = WRITER_HOURS_SCAN.length - 1; h >= 0; h--) {
+                const cell = wd.hours[WRITER_HOURS_SCAN[h]];
+                if (!cell) continue;
+                const now = parseFloat(cell.now);
+                if (!isNaN(now) && cell.now !== '') return now;
+                const prev = parseFloat(cell.prev);
+                if (!isNaN(prev) && cell.prev !== '') return prev;
+            }
+            return null;
+        }
+
+        // 달력 카드에 적어둔 권을 보고 '그 날 어느 권을 쓰고 있었는지' 타임라인을 만든다.
+        // 1권 → 2권 → 다시 1권처럼 왔다 갔다 해도 그대로 따라간다.
+        function buildVolumeTimeline(workId) {
+            const marks = [];
+            Object.values(writeSchedules).forEach(list => (list || []).forEach(x => {
+                if (x.workId === workId && !x.category && x.volumeId) marks.push({ date: x.date, vol: x.volumeId });
+            }));
+            marks.sort((a, b) => a.date.localeCompare(b.date));
+            return marks;
+        }
+
+        // 그 날 쓰고 있던 권 (그 날짜 이전의 가장 최근 카드가 속한 권)
+        function activeVolumeOn(marks, dateStr) {
+            let v = '';
+            for (const m of marks) { if (m.date <= dateStr) v = m.vol; else break; }
+            return v;
+        }
+
+        // 그 권을 쓰던 날들 중 마지막으로 기록된 원고 위치
+        function writerGetVolumePosition(workId, volId) {
+            if (!volId) return writerGetWorkPosition(workId);
+            const marks = buildVolumeTimeline(workId);
+            const dates = Object.keys(writerDailyData).sort();
+            let pos = 0;
+            for (const d of dates) {
+                if (activeVolumeOn(marks, d) !== volId) continue;
+                const p = writerGetPositionOnDate(workId, d);
+                if (p !== null) pos = p;
+            }
+            return pos;
+        }
+
+        // 달력 한 번 그릴 때 카드마다 부르므로 결과를 캐시한다
+        let writerPositionCache = {};
+        function writerGetVolumePositionCached(workId, volId) {
+            const ck = workId + '|v|' + (volId || '');
+            if (writerPositionCache[ck] === undefined) {
+                writerPositionCache[ck] = writerGetVolumePosition(workId, volId);
+            }
+            return writerPositionCache[ck];
+        }
+
+        // '지금부터 카운터' 기준점(writeCounterBase)은 예전엔 '증가분 합계'로 저장돼 있었다.
+        // 지금은 진행률을 '원고 위치'로 재기 때문에, 기준점도 같은 단위로 한 번 다시 계산해준다.
+        // (그대로 두면 기준점이 훨씬 커서 진행률이 0%로 보인다)
+        function migrateCounterBaseToPosition() {
+            let changed = false;
+            Object.keys(writeCounterBase || {}).forEach(key => {
+                const resetDate = writeCounterResetDate[key];
+                const fixed = resetDate ? writerGetWorkPosition(key, resetDate) : 0;
+                if (writeCounterBase[key] !== fixed) { writeCounterBase[key] = fixed; changed = true; }
+            });
+            if (changed) { try { save(); } catch (e) {} }
+        }
+
+        // 권을 나눴다가 다시 합친(무권으로 만든) 작품은 원고 위치가 권마다 0자부터 다시 세어져 있어서,
+        // 마지막 위치 하나만 보면 이전 권에서 쓴 분량을 놓친다. 그래서 권을 합친 작품만(writeMergedVolumeWorks)
+        // 위치 대신 실제로 그날그날 입력한 글자수(diff)를 전부 더해서 쓴다 — 권을 나눈 적 없는
+        // 작품은 그대로 원고 위치 방식을 쓴다(동작 변경 없음).
+        function writerSumDiffsForWork(storageKey, sinceDate) {
+            let sum = 0;
+            Object.keys(writerDailyData).forEach(d => {
+                if (sinceDate && d < sinceDate) return;
+                const wd = writerGetDayWorkData(d, storageKey);
+                if (!wd?.hours) return;
+                Object.values(wd.hours).forEach(cell => { sum += Number(cell?.diff) || 0; });
+            });
+            return Math.max(0, sum);
+        }
+        // 집필관리 카운터/진행률에 쓰이는 값. "지금부터 카운터" 초기화 기준점을 뺀 값을 반환한다.
+        // (writerDailyData 자체의 글자수 기록은 그대로 유지되고, 여기서 보여지는 진행률만 초기화됨)
+        function writerGetWorkTotal(storageKey) {
+            // 권을 나눈 작품은 각 권에서 쓴 분량을 합쳐야 '작품 전체 진행률'이 된다.
+            // (권마다 원고를 0자부터 새로 세기 때문에 마지막 위치 하나만 보면 안 된다)
+            const vols = writeVolumes[storageKey] || [];
+            if (vols.length) {
+                let sum = 0;
+                vols.forEach(v => {
+                    const p = writerGetVolumePositionCached(storageKey, v.id);
+                    const g = Number(v.goal) || 0;
+                    sum += g ? Math.min(p, g) : p;   // 목표를 넘겨 쓴 건 그 권 목표까지만 인정
+                });
+                return sum;
+            }
+            if (writeMergedVolumeWorks[storageKey]) {
+                return writerSumDiffsForWork(storageKey, writeCounterResetDate[storageKey]);
+            }
+            const pos = writerGetWorkPosition(storageKey);
+            const base = writeCounterBase[storageKey] || 0;
+            return Math.max(0, pos - base);
+        }
+        // [NEW] "지금부터 카운터" 리셋 모달 — 기준 날짜를 고를 수 있게 함
+        let writeCounterResetTargetKey = null;
+        function openWriteCounterResetModal(storageKey) {
+            if (!storageKey) { alert('먼저 작품을 선택해주세요.'); return; }
+            writeCounterResetTargetKey = storageKey;
+            const input = document.getElementById('write-counter-reset-date-input');
+            input.value = writeCounterResetDate[storageKey] || getYYYYMMDD(new Date());
+            document.getElementById('write-counter-reset-modal').classList.add('open');
+        }
+        function closeWriteCounterResetModal() {
+            document.getElementById('write-counter-reset-modal').classList.remove('open');
+            writeCounterResetTargetKey = null;
+        }
+        // 선택한 날짜부터 카운터를 0자로 다시 센다. 그 날짜 이전 기록은 통계에 그대로 남기고,
+        // 진행률/누적 표시(writeCounterBase)와 달력의 누적 목표 블록(writeCounterResetDate)을 함께 갱신한다.
+        function confirmWriteCounterReset() {
+            const storageKey = writeCounterResetTargetKey;
+            if (!storageKey) return;
+            const dateStr = document.getElementById('write-counter-reset-date-input').value;
+            if (!dateStr) { alert('날짜를 선택해주세요.'); return; }
+            const baseRaw = writerGetWorkPosition(storageKey, dateStr);
+            if (!confirm(`${dateStr}부터 카운터를 0자로 초기화할까요?\n\n· 그 전에 기록된 글자수(${baseRaw.toLocaleString()}자)는 통계에 그대로 남습니다.\n· 집필 관리에 표시되는 누적/진행률과 달력의 누적 목표(괄호 안 숫자)가 이 날짜부터 다시 셉니다.`)) return;
+            writeCounterBase[storageKey] = baseRaw;
+            writeCounterResetDate[storageKey] = dateStr;
+            clearVolumesBeforeCounterReset();   // 그 이전 카드의 권 지정은 떼어낸다
+            save();
+            try { writerUpdateDailyStats(true); } catch(e) {}
+            try { renderWriteCalendar(); } catch(e) {}
+            closeWriteCounterResetModal();
+        }
+        // ── 작품 진행률 도넛 위에 올렸을 때: 권별로 얼마나 썼는지 보여준다
+        function showWorkVolumeTip(e) {
+            const storageKey = document.getElementById('w-dailyWorkSelector')?.value;
+            if (!storageKey) return;
+            const tip = document.getElementById('pay-tooltip');
+            const content = document.getElementById('pay-tooltip-content');
+            if (!tip || !content) return;
+
+            const resolved = resolveWorkItem(storageKey);
+            const vols = writeVolumes[storageKey] || [];
+            const color = getGenreColor(resolved.genre) || '#87ada1';
+            const goal = resolved.goalWithSpace || 0;
+            const total = writerGetWorkTotal(storageKey);
+
+            let rows = '';
+            if (vols.length) {
+                vols.forEach(v => {
+                    const p = writerGetVolumePositionCached(storageKey, v.id);
+                    const g = Number(v.goal) || 0;
+                    const pct = g ? Math.min(100, Math.round(p / g * 100)) : 0;
+                    rows += `<div class="flex items-center justify-between gap-3 text-[11px] py-0.5">
+                        <span class="flex items-center gap-1.5 truncate" style="min-width:0">
+                            <span class="w-2 h-2 rounded-full inline-block shrink-0" style="background:${color}"></span>
+                            <span class="truncate text-slate-600">${v.name}</span>
+                        </span>
+                        <span class="shrink-0 text-slate-700"><b>${p.toLocaleString()}</b>${g ? ` / ${g.toLocaleString()}자` : '자'}
+                            ${g ? `<span class="text-slate-400 ml-1">${pct}%</span>` : ''}</span>
+                    </div>`;
+                });
+            } else {
+                rows = `<div class="text-[11px] text-slate-400 py-0.5">권을 나누지 않은 작품입니다.</div>`;
+            }
+
+            content.innerHTML = `<div class="text-xs font-bold text-slate-700 mb-1.5">${resolved.displayTitle || ''} · 권별 집필량</div>`
+                + rows
+                + `<div class="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                     <span class="text-slate-500 font-bold">합계</span>
+                     <span class="text-slate-700 font-bold">${total.toLocaleString()}${goal ? ` / ${goal.toLocaleString()}자` : '자'}</span>
+                   </div>`;
+            tip.classList.remove('hidden');
+            moveWorkVolumeTip(e);
+        }
+        function moveWorkVolumeTip(e) {
+            const tip = document.getElementById('pay-tooltip');
+            if (!tip || tip.classList.contains('hidden')) return;
+            const pad = 14;
+            let x = e.clientX + pad, y = e.clientY + pad;
+            const r = tip.getBoundingClientRect();
+            if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - pad;
+            if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - pad;
+            tip.style.left = Math.max(8, x) + 'px';
+            tip.style.top = Math.max(8, y) + 'px';
+        }
+        function hideWorkVolumeTip() {
+            const tip = document.getElementById('pay-tooltip');
+            if (tip) tip.classList.add('hidden');
+        }
+
+        // 하루 작품별 글자수 분해 (도넛 조각/호버용)
+        function writerGetDayWorkBreakdown(dateStr) {
+            const worksObj = writerDailyData[dateStr]?.works; const out = [];
+            if (worksObj) for (const sk in worksObj) {
+                const chars = Object.values(worksObj[sk]?.hours || {}).reduce((a,b)=>a+(b.diff||0), 0);
+                if (chars <= 0) continue;
+                let title = sk, color = null;
+                if (sk.includes('::')) { const [wId,exId]=sk.split('::'); const w=masterWorks.find(x=>x.id===wId); const ex=w?.extras?.find(e=>e.id===exId); title = w ? (w.title + (ex?` [${ex.name}]`:'')) : sk; if(w) color=getGenreColor(w.genre); }
+                else { const w=masterWorks.find(x=>x.id===sk); title = w ? w.title : sk; if(w) color=getGenreColor(w.genre); }
+                out.push({ title, chars, color });
+            }
+            out.sort((a,b)=>b.chars-a.chars);
+            return out;
+        }
+        function showWriterDayTip(e, ds) {
+            const tip = document.getElementById('pay-tooltip'); const content = document.getElementById('pay-tooltip-content'); if(!tip||!content) return;
+            const bd = writerGetDayWorkBreakdown(ds); if (!bd.length) { hideWriterDayTip(); return; }
+            const total = bd.reduce((a,b)=>a+b.chars,0);
+            content.innerHTML = `<div class="text-xs font-bold text-slate-700 mb-1.5">${ds} · 총 ${total.toLocaleString()}자</div>` +
+                bd.map(b=>`<div class="flex items-center justify-between gap-3 text-[11px] py-0.5"><span class="flex items-center gap-1.5 truncate" style="min-width:0"><span class="w-2 h-2 rounded-full inline-block shrink-0" style="background:${b.color||'#87ada1'}"></span><span class="truncate text-slate-600">${b.title}</span></span><span class="font-bold text-slate-700 shrink-0">${b.chars.toLocaleString()}자</span></div>`).join('');
+            tip.classList.remove('hidden');
+            const tw = 224, th = tip.offsetHeight || 120;
+            let left = e.clientX + 14, top = e.clientY + 14;
+            if (left + tw > window.innerWidth - 8) left = e.clientX - tw - 14;
+            if (top + th > window.innerHeight - 8) top = e.clientY - th - 14;
+            tip.style.left = Math.max(8,left)+'px'; tip.style.top = Math.max(8,top)+'px';
+        }
+        function hideWriterDayTip() { const tip = document.getElementById('pay-tooltip'); if(tip) tip.classList.add('hidden'); }
+        // 인사이트 탭 "집필 활동" 월별 막대그래프 툴팁 (네이티브 title 속성은 모바일 터치에서 안 떠서 커스텀으로)
+        function showInsightMonthTip(e, i, v) {
+            const tip = document.getElementById('pay-tooltip'); const content = document.getElementById('pay-tooltip-content'); if (!tip || !content) return;
+            content.innerHTML = `<div class="text-xs font-bold text-slate-700">${MONTH_NAMES_KO[i]} · ${Number(v).toLocaleString()}자</div>`;
+            tip.classList.remove('hidden');
+            const tw = 224, th = tip.offsetHeight || 40;
+            let left = e.clientX + 14, top = e.clientY + 14;
+            if (left + tw > window.innerWidth - 8) left = e.clientX - tw - 14;
+            if (top + th > window.innerHeight - 8) top = e.clientY - th - 14;
+            tip.style.left = Math.max(8, left) + 'px'; tip.style.top = Math.max(8, top) + 'px';
+        }
+        function writerGetYYYYMMDD(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+        function writerGetKoreanDate(d) { return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`; }
+
+        function writerDonutTooltipEl() {
+            let tip = document.getElementById('donut-hover-tooltip');
+            if (!tip) {
+                tip = document.createElement('div');
+                tip.id = 'donut-hover-tooltip';
+                tip.className = 'fixed z-[9999] pointer-events-none';
+                tip.style.cssText = 'transition:opacity .1s; opacity:0; background:#1e293b; color:#fff; font-weight:700; font-size:12px; padding:6px 10px; border-radius:8px; box-shadow:0 8px 20px rgba(0,0,0,.25); white-space:nowrap;';
+                document.body.appendChild(tip);
+            }
+            return tip;
+        }
+        function writerCreateDoughnut(canvasId, current, goal, color, breakdown) {
+            const canvas = document.getElementById(canvasId); if (!canvas) return;
+            const existing = Chart.getChart(canvas); if (existing) try { existing.destroy(); } catch(e) {}
+            let data, bg;
+            const remainingChars = Math.max((goal||0) - current, 0);
+            let remainingIndex = -1;
+            if (breakdown && breakdown.length) {
+                const remaining = remainingChars;
+                data = breakdown.map(b=>b.chars); bg = breakdown.map(b=> b.color || color);
+                if (remaining > 0) { data.push(remaining); bg.push('#e2e8f0'); remainingIndex = data.length - 1; }
+            } else {
+                const per = Math.min((current/(goal||1))*100, 100);
+                data = [per, 100-per]; bg = [color, '#e2e8f0'];
+                if (remainingChars > 0) remainingIndex = 1;
+            }
+            new Chart(canvas, {
+                type: 'doughnut',
+                data: { datasets: [{ data, backgroundColor: bg, borderWidth: 0 }] },
+                options: {
+                    cutout: '68%', responsive: true, maintainAspectRatio: false, layout: { padding: 2 },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            enabled: false,
+                            filter: (ctx) => ctx.dataIndex === remainingIndex,
+                            external: (context) => {
+                                const tip = writerDonutTooltipEl();
+                                const items = context.tooltip.dataPoints;
+                                if (context.tooltip.opacity === 0 || !items || !items.length) {
+                                    tip.style.opacity = 0; return;
+                                }
+                                tip.textContent = `남은 글자수: ${remainingChars.toLocaleString()}자`;
+                                const rect = canvas.getBoundingClientRect();
+                                tip.style.left = (rect.left + rect.width/2) + 'px';
+                                tip.style.top = (rect.top - 8) + 'px';
+                                tip.style.transform = 'translate(-50%, -100%)';
+                                tip.style.opacity = 1;
+                            }
+                        }
+                    },
+                    animation: false
+                }
+            });
+        }
+
+        function writerMovePrevDay() { writerViewDate.setDate(writerViewDate.getDate()-1); writerRenderDaily(); }
+        function writerMoveNextDay() { writerViewDate.setDate(writerViewDate.getDate()+1); writerRenderDaily(); }
+        function writerGoToday() { writerViewDate = new Date(); writerRenderDaily(); }
+
+        // ══ 상세 집필 탭: 날짜로 바로 이동하는 미니 달력 팝업 ══════════
+        let writerPickerDate = new Date();
+        function toggleWriterDatePicker(){
+            const pop = document.getElementById('writer-datepicker-popover');
+            if (!pop) return;
+            const isHidden = pop.classList.contains('hidden');
+            if (isHidden) {
+                writerPickerDate = new Date(writerViewDate.getFullYear(), writerViewDate.getMonth(), 1);
+                renderWriterDatePicker();
+                pop.classList.remove('hidden');
+                document.addEventListener('click', writerDatePickerOutsideClick, true);
+            } else {
+                pop.classList.add('hidden');
+                document.removeEventListener('click', writerDatePickerOutsideClick, true);
+            }
+        }
+        function writerDatePickerOutsideClick(e){
+            const pop = document.getElementById('writer-datepicker-popover');
+            const btn = document.getElementById('writer-datepicker-btn');
+            if (!pop || pop.classList.contains('hidden')) return;
+            // composedPath로 클릭이 실제로 팝업/버튼 내부에서 발생했는지 확인 (innerHTML 재생성으로 노드가 바뀌어도 안전)
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            if (path.includes(pop) || (btn && path.includes(btn))) return;
+            if (pop.contains(e.target) || (btn && btn.contains(e.target))) return;
+            pop.classList.add('hidden');
+            document.removeEventListener('click', writerDatePickerOutsideClick, true);
+        }
+        function writerDatePickerMove(delta, event){
+            if (event) event.stopPropagation();
+            writerPickerDate.setMonth(writerPickerDate.getMonth() + delta);
+            renderWriterDatePicker();
+        }
+        function writerDatePickerJump(y, m, day){
+            writerViewDate = new Date(y, m, day);
+            writerRenderDaily();
+            const pop = document.getElementById('writer-datepicker-popover');
+            if (pop) pop.classList.add('hidden');
+            document.removeEventListener('click', writerDatePickerOutsideClick);
+        }
+        function renderWriterDatePicker(){
+            const pop = document.getElementById('writer-datepicker-popover');
+            if (!pop) return;
+            const y = writerPickerDate.getFullYear(), m = writerPickerDate.getMonth();
+            const firstDay = new Date(y, m, 1).getDay();
+            const lastDate = new Date(y, m+1, 0).getDate();
+            const today = new Date(); const todayStr = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+            const selStr = `${writerViewDate.getFullYear()}-${writerViewDate.getMonth()}-${writerViewDate.getDate()}`;
+            let cells = '';
+            for (let i = 0; i < firstDay; i++) cells += `<div></div>`;
+            for (let d = 1; d <= lastDate; d++) {
+                const cellStr = `${y}-${m}-${d}`;
+                const isToday = cellStr === todayStr;
+                const isSel = cellStr === selStr;
+                cells += `<button onclick="writerDatePickerJump(${y},${m},${d})" class="w-9 h-9 rounded-lg text-sm flex items-center justify-center transition-colors ${isSel ? 'text-white font-bold' : isToday ? 'font-bold' : 'text-slate-600 hover:bg-slate-100'}" style="${isSel ? 'background:var(--primary)' : isToday ? 'background:var(--primary-light); color:var(--primary)' : ''}">${d}</button>`;
+            }
+            pop.innerHTML = `
+                <div class="flex items-center justify-between mb-3">
+                    <button onclick="writerDatePickerMove(-1, event)" class="w-7 h-7 rounded-lg hover:bg-slate-100 text-slate-500 flex items-center justify-center"><i class="fa-solid fa-chevron-left text-xs"></i></button>
+                    <span class="text-sm font-bold text-slate-700">${y}년 ${m+1}월</span>
+                    <button onclick="writerDatePickerMove(1, event)" class="w-7 h-7 rounded-lg hover:bg-slate-100 text-slate-500 flex items-center justify-center"><i class="fa-solid fa-chevron-right text-xs"></i></button>
+                </div>
+                <div class="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400 mb-1">
+                    <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+                </div>
+                <div class="grid grid-cols-7 gap-1">${cells}</div>`;
+        }
+        function writerCalPrev() { writerCalDate.setMonth(writerCalDate.getMonth()-1); writerRenderCalendar(); }
+        function writerCalNext() { writerCalDate.setMonth(writerCalDate.getMonth()+1); writerRenderCalendar(); }
+        function writerCalToday() { writerCalDate = new Date(); writerRenderCalendar(); }
+
+        // ══ 월간 글자수 일괄 입력 (작품 미지정, 순수 글자수 기록) ══════════════════════════════
+        function openWriterBulkMonthModal(){
+            const y = writerCalDate.getFullYear(), m = writerCalDate.getMonth();
+            document.getElementById('writer-bulk-month-display').textContent = `${y}년 ${m+1}월`;
+            const input = document.getElementById('writer-bulk-month-chars');
+            input.value = '';
+            document.getElementById('writer-bulk-month-preview').textContent = '';
+            document.getElementById('writer-bulk-month-modal').classList.add('open');
+        }
+        function closeWriterBulkMonthModal(){
+            document.getElementById('writer-bulk-month-modal').classList.remove('open');
+        }
+        function formatBulkMonthInput(input){
+            const num = Number(String(input.value).replace(/[^0-9]/g, '')) || 0;
+            input.value = num ? num.toLocaleString() : '';
+            const y = writerCalDate.getFullYear(), m = writerCalDate.getMonth();
+            const lastDate = new Date(y, m+1, 0).getDate();
+            const preview = document.getElementById('writer-bulk-month-preview');
+            if (num > 0) {
+                const perDay = Math.round(num / lastDate);
+                preview.textContent = `하루 평균 약 ${perDay.toLocaleString()}자씩 ${lastDate}일에 나눠서 기록돼요.`;
+            } else {
+                preview.textContent = '';
+            }
+        }
+        function saveWriterBulkMonth(){
+            const storageKey = WRITER_BULK_UNASSIGNED_KEY;
+            const totalChars = Number(String(document.getElementById('writer-bulk-month-chars').value).replace(/[^0-9]/g, '')) || 0;
+            if (totalChars <= 0) { alert('글자수를 입력해주세요.'); return; }
+
+            const y = writerCalDate.getFullYear(), m = writerCalDate.getMonth();
+            const lastDate = new Date(y, m+1, 0).getDate();
+            const BULK_HOUR = 12; // 일괄 입력은 12시 슬롯에 기록
+
+            // 이미 미지정 기록이 있는 날은 건너뛰어 기존 입력을 덮어쓰지 않음
+            const targetDays = [];
+            for (let d = 1; d <= lastDate; d++) {
+                const ds = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const existing = writerDailyData[ds]?.works?.[storageKey];
+                const existingTotal = existing ? Object.values(existing.hours || {}).reduce((s,h)=>s+(Number(h?.diff)||0),0) : 0;
+                if (existingTotal > 0) continue;
+                targetDays.push(ds);
+            }
+            if (targetDays.length === 0) {
+                alert('이번 달은 이미 일괄 입력한 기록이 있어서 덮어쓸 수 없어요. 다른 달을 선택하거나, 기존 기록을 먼저 지워주세요.');
+                return;
+            }
+
+            const perDay = Math.floor(totalChars / targetDays.length);
+            let remainder = totalChars - perDay * targetDays.length; // 나머지는 마지막 날에 더해 총량을 정확히 맞춤
+
+            targetDays.forEach((ds, idx) => {
+                let amount = perDay + (idx === targetDays.length - 1 ? remainder : 0);
+                if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+                if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+                writerDailyData[ds].works[storageKey].hours[BULK_HOUR] = { prev: 0, now: amount, diff: amount };
+            });
+
+            save(true);
+            closeWriterBulkMonthModal();
+            writerRenderCalendar();
+            if (document.getElementById('tab-daily')?.classList.contains('active')) writerRenderDaily();
+            const skippedCount = lastDate - targetDays.length;
+            const msg = skippedCount > 0
+                ? `${targetDays.length}일에 글자수를 나눠 기록했어요. (이미 기록 있던 ${skippedCount}일은 건너뛰었어요)`
+                : `${targetDays.length}일에 글자수를 나눠 기록했어요.`;
+            alert(msg);
+        }
+
+        // ══ 이전 글자수 불러오기 → 오늘 첫 칸 [이전] 이월 ══════════
+        function writerFindLastNowBefore(storageKey, beforeDate) {
+            // beforeDate(Date) 이전 날들 중 가장 최근 마지막 글자수 탐색 (최대 365일)
+            const search = new Date(beforeDate);
+            for (let i = 0; i < 365; i++) {
+                search.setDate(search.getDate() - 1);
+                const ds = writerGetYYYYMMDD(search);
+                const hours = writerDailyData[ds]?.works?.[storageKey]?.hours;
+                if (!hours) continue;
+                for (let j = WRITER_HOURS.length - 1; j >= 0; j--) {
+                    const hd = hours[WRITER_HOURS[j]];
+                    if (hd && hd.now !== '' && hd.now !== null && hd.now !== undefined) {
+                        return { lastNow: hd.now, foundDate: ds };
+                    }
+                }
+            }
+            return null;
+        }
+        // 오늘(targetDate) 안에서 targetHour보다 이전 시간대 중 가장 마지막으로 입력된 now 값을 우선 찾고,
+        // 없으면 과거 날짜로 거슬러 탐색 → 항상 "마지막으로 기록된 글자수"를 가져옴
+        function writerFindLastNowSmart(storageKey, targetDate, targetHour) {
+            const ds = writerGetYYYYMMDD(targetDate);
+            const todayHours = writerDailyData[ds]?.works?.[storageKey]?.hours;
+            if (todayHours) {
+                const targetIdx = WRITER_HOURS.indexOf(targetHour);
+                for (let j = targetIdx - 1; j >= 0; j--) {
+                    const hd = todayHours[WRITER_HOURS[j]];
+                    if (hd && hd.now !== '' && hd.now !== null && hd.now !== undefined) {
+                        return { lastNow: hd.now, foundDate: ds };
+                    }
+                }
+            }
+            return writerFindLastNowBefore(storageKey, targetDate);
+        }
+
+        function writerCarryYesterdayLast() {
+            const storageKey = document.getElementById('w-dailyWorkSelector').value;
+            if (!storageKey) { alert('작품을 먼저 선택해주세요.'); return; }
+            // 커서가 있는 시간 행 사용, 없으면 8시(첫 칸) 폴백
+            const targetH = (writerLastFocusedHour !== null && WRITER_HOURS.includes(writerLastFocusedHour))
+                ? writerLastFocusedHour : WRITER_HOURS[0];
+            const found = writerFindLastNowSmart(storageKey, writerViewDate, targetH);
+            if (!found) { alert('이 작품의 이전 기록이 없습니다.'); return; }
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+            if (!writerDailyData[ds].works[storageKey].hours[targetH]) writerDailyData[ds].works[storageKey].hours[targetH] = { prev:'', now:'', diff:0 };
+            const fd = writerDailyData[ds].works[storageKey].hours[targetH];
+            fd.prev = found.lastNow;
+            fd.diff = fd.now !== '' ? Math.max(0, (parseFloat(fd.now)||0) - (parseFloat(found.lastNow)||0)) : 0;
+            syncWriteCompletionFromDaily(ds, storageKey);
+            save(); writerRenderDailyTable();
+        }
+
+        function writerCarryYesterdayLastMini() {
+            const storageKey = document.getElementById('writer-mini-selector').value;
+            if (!storageKey) { alert('작품을 먼저 선택해주세요.'); return; }
+            const targetH = (writerMiniLastFocusedHour !== null && WRITER_HOURS.includes(writerMiniLastFocusedHour))
+                ? writerMiniLastFocusedHour : WRITER_HOURS[0];
+            const found = writerFindLastNowSmart(storageKey, writerViewDate, targetH);
+            if (!found) { alert('이 작품의 이전 기록이 없습니다.'); return; }
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+            if (!writerDailyData[ds].works[storageKey].hours[targetH]) writerDailyData[ds].works[storageKey].hours[targetH] = { prev:'', now:'', diff:0 };
+            const fd = writerDailyData[ds].works[storageKey].hours[targetH];
+            fd.prev = found.lastNow;
+            fd.diff = fd.now !== '' ? Math.max(0, (parseFloat(fd.now)||0) - (parseFloat(found.lastNow)||0)) : 0;
+            syncWriteCompletionFromDaily(ds, storageKey);
+            save(); writerMiniRenderTable(); writerMiniUpdateStats();
+        }
+
+        function writerUpdateTime(val) {
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            writerDailyData[ds].time = val;
+            save();
+        }
+
+        function writerMiniAutoCarry(h, idx, val) {
+            // 메인 함수 재사용 (selector도 미니창 것 사용하도록 임시 변경)
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const storageKey = document.getElementById('writer-mini-selector').value;
+            if (!storageKey || val === '' || val === null) return;
+            const nextIdx = idx + 1;
+            if (nextIdx >= WRITER_HOURS.length) return;
+            const nextH = WRITER_HOURS[nextIdx];
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+            if (!writerDailyData[ds].works[storageKey].hours[nextH]) writerDailyData[ds].works[storageKey].hours[nextH] = { prev:'', now:'', diff:0 };
+            const nextHData = writerDailyData[ds].works[storageKey].hours[nextH];
+            const prevHData = writerDailyData[ds].works[storageKey].hours[h] || {};
+            if (nextHData.prev === '' || nextHData.prev === String(prevHData._lastAutoCarry)) {
+                nextHData.prev = val;
+                nextHData._lastAutoCarry = val;
+                const now = parseFloat(nextHData.now) || 0;
+                nextHData.diff = (nextHData.now !== '') ? Math.max(0, now - (parseFloat(val) || 0)) : 0;
+                save();
+                writerMiniRenderTable();
+                writerMiniUpdateStats();
+            }
+        }
+
+        function writerAutoCarryNow(h, idx, val) {
+            if (val === '' || val === null) return; // 지우면 이월 안 함
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const storageKey = document.getElementById('w-dailyWorkSelector').value;
+            if (!storageKey) return;
+            // 다음 시간 찾기
+            const nextIdx = idx + 1;
+            if (nextIdx >= WRITER_HOURS.length) return;
+            const nextH = WRITER_HOURS[nextIdx];
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+            if (!writerDailyData[ds].works[storageKey].hours[nextH]) writerDailyData[ds].works[storageKey].hours[nextH] = { prev:'', now:'', diff:0 };
+            const nextHData = writerDailyData[ds].works[storageKey].hours[nextH];
+            // 다음 칸의 prev가 비어있거나 이전 now와 같을 때만 자동 채움 (직접 입력한 값은 건드리지 않음)
+            const prevHData = writerDailyData[ds].works[storageKey].hours[h] || {};
+            // 이전 prev 값을 저장해서 비교
+            if (nextHData.prev === '' || nextHData.prev === String(prevHData._lastAutoCarry)) {
+                nextHData.prev = val;
+                nextHData._lastAutoCarry = val;
+                // 다음 칸 UI 업데이트
+                const nextRow = document.querySelector(`#w-diff_${nextH}`)?.closest('tr');
+                if (nextRow) {
+                    const prevInput = nextRow.querySelectorAll('input')[0];
+                    if (prevInput) prevInput.value = val;
+                }
+                // diff 재계산
+                const now = parseFloat(nextHData.now) || 0;
+                const prev = parseFloat(val) || 0;
+                nextHData.diff = (nextHData.now !== '') ? Math.max(0, now - prev) : 0;
+                const dc = document.getElementById(`w-diff_${nextH}`);
+                if (dc) dc.textContent = nextHData.diff;
+            }
+        }
+
+        // 상세 기록 입력(집필량 실제 기록)에 글자수를 채우면, 그날의 '집필 목표' 카드도
+        // 자동으로 완료 처리한다. (반대로 지운다고 완료가 풀리진 않음 — 실수로 지웠다고
+        // 이미 완료로 표시해둔 걸 되돌리면 곤란하므로)
+        function syncWriteCompletionFromDaily(ds, storageKey) {
+            const wd = writerDailyData[ds]?.works?.[storageKey];
+            if (!wd) return 0;
+            const total = Object.values(wd.hours || {}).reduce((n, hh) => n + (Number(hh.diff) || 0), 0);
+            if (total <= 0) return 0;
+            const list = writeSchedules[ds];
+            if (!list) return 0;
+            let count = 0;
+            list.forEach(s => {
+                if (s.workId === storageKey && !s.category && !s.isCompleted) {
+                    s.isCompleted = true;
+                    count++;
+                }
+            });
+            if (count) {
+                const cb = document.getElementById('write-is-completed');
+                if (cb && currentEditWriteDate === ds) cb.checked = true;
+            }
+            return count;
+        }
+
+        // 이미 실제 글자수를 채워놨는데 아직 완료 처리가 안 되어있던 지난 카드들을 한 번에 정리
+        function bulkSyncWriteCompletionFromDaily() {
+            if (!confirm('상세 기록에 글자수가 채워져 있는 모든 날짜의 집필 목표 카드를 완료 처리할까요?\n(이미 완료된 카드는 그대로 두고, 글자수가 0인 날은 건드리지 않습니다)')) return;
+            let total = 0;
+            Object.keys(writerDailyData).forEach(ds => {
+                const works = writerDailyData[ds]?.works || {};
+                Object.keys(works).forEach(storageKey => {
+                    total += syncWriteCompletionFromDaily(ds, storageKey);
+                });
+            });
+            if (total > 0) { save(); renderWriteCalendar(); }
+            alert(total > 0 ? `${total}개 카드를 완료 처리했어요.` : '완료 처리할 카드가 없어요 (이미 다 되어있거나, 글자수가 0이에요).');
+        }
+
+        function writerUpdateH(h, field, val) {
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const storageKey = document.getElementById('w-dailyWorkSelector').value;
+            if (!storageKey) return;
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works) writerDailyData[ds].works = {};
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+            const hData = writerDailyData[ds].works[storageKey].hours[h] || { prev:'', now:'', diff:0 };
+            hData[field] = val === '' ? '' : parseInt(val);
+            hData.diff = Math.max((parseInt(hData.now)||0) - (parseInt(hData.prev)||0), 0);
+            writerDailyData[ds].works[storageKey].hours[h] = hData;
+            syncWriteCompletionFromDaily(ds, storageKey);
+            const diffCell = document.getElementById(`w-diff_${h}`); if (diffCell) diffCell.textContent = hData.diff;
+            // 미니창도 동기화
+            const miniDiff = document.getElementById(`mini-diff_${h}`); if (miniDiff) miniDiff.textContent = hData.diff;
+            if (writerMiniOpen) writerMiniUpdateStats();
+            writerUpdateDailyStats(false);
+            clearTimeout(writerDebounceTimer);
+            writerDebounceTimer = setTimeout(() => { 
+                save(); 
+                writerUpdateDailyStats(true);
+                // 집필 관리 탭이 열려있으면 리렌더
+                if (document.getElementById('tab-write')?.classList.contains('active')) renderWriteCalendar();
+            }, 300);
+        }
+
+        // ════ 상세 기록 입력 미니창 모드 ════
+        let writerMiniOpen = false;
+        let writerMiniSavedWindowSize = null;
+        let writerMiniLastFocusedHour = null;
+
+        function openWriterMiniMode() {
+            // 사이드바 숨기기
+            const sidebar = document.querySelector('aside');
+            const main = document.querySelector('main');
+            if (sidebar) sidebar.style.display = 'none';
+            if (main) {
+                main.style.display = 'none';
+            }
+            // body 배경 투명하게
+            document.body.style.background = 'transparent';
+            document.documentElement.style.background = 'transparent';
+
+            // Electron 환경에서 창 크기 조절 + 항상 위로
+            try {
+                if (typeof window.electronAPI !== 'undefined') {
+                    if (window.electronAPI.resizeWindow) {
+                        writerMiniSavedWindowSize = { w: window.outerWidth, h: window.outerHeight, x: window.screenX, y: window.screenY };
+                        window.electronAPI.resizeWindow(420, 580, 'mini');
+                    }
+                    if (window.electronAPI.setAlwaysOnTop) {
+                        window.electronAPI.setAlwaysOnTop(true);
+                    }
+                } else if (typeof window.resizeTo === 'function') {
+                    writerMiniSavedWindowSize = { w: window.outerWidth, h: window.outerHeight };
+                    window.resizeTo(420, 580);
+                }
+            } catch (e) { console.log('Window API not supported'); }
+
+            const panel = document.getElementById('writer-mini-panel');
+            panel.classList.remove('hidden');
+            panel.style.display = 'flex';
+            panel.style.top = '0';
+            panel.style.right = '0';
+            panel.style.left = 'auto';
+            panel.style.width = '100vw';
+            panel.style.height = '100vh';
+            panel.style.maxHeight = '100vh';
+            panel.style.borderRadius = '0';
+
+            writerMiniOpen = true;
+            writerMiniRender();
+
+            // 미니창 이동 시 위치 저장 (500ms 간격으로 체크)
+            if (window._miniPosTracker) clearInterval(window._miniPosTracker);
+            window._miniPosTracker = setInterval(() => {
+                if (!writerMiniOpen) { clearInterval(window._miniPosTracker); return; }
+                try {
+                    if (window.electronAPI?.saveMiniPosition) {
+                        window.electronAPI.saveMiniPosition(window.screenX, window.screenY, window.outerWidth, window.outerHeight);
+                    }
+                } catch(e) {}
+            }, 500);
+        }
+
+        function closeWriterMiniMode() {
+            // 사이드바 + 메인 복원
+            const sidebar = document.querySelector('aside');
+            const main = document.querySelector('main');
+            if (sidebar) sidebar.style.display = '';
+            if (main) main.style.display = '';
+            document.body.style.background = '';
+            document.documentElement.style.background = '';
+
+            // 창 크기 복원 + 항상 위로 해제
+            try {
+                if (typeof window.electronAPI !== 'undefined') {
+                    if (window.electronAPI.setAlwaysOnTop) {
+                        window.electronAPI.setAlwaysOnTop(false);
+                    }
+                    if (window.electronAPI.resizeWindow && writerMiniSavedWindowSize) {
+                        window.electronAPI.resizeWindow(writerMiniSavedWindowSize.w, writerMiniSavedWindowSize.h, 'restore');
+                    }
+                } else if (typeof window.resizeTo === 'function' && writerMiniSavedWindowSize) {
+                    window.resizeTo(writerMiniSavedWindowSize.w, writerMiniSavedWindowSize.h);
+                }
+            } catch (e) {}
+
+            const panel = document.getElementById('writer-mini-panel');
+            panel.style.display = 'none';
+            panel.classList.add('hidden');
+            panel.style.borderRadius = '';
+            panel.style.width = '';
+            panel.style.height = '';
+            panel.style.maxHeight = '';
+            panel.style.top = '';
+            panel.style.left = '';
+            panel.style.right = '';
+
+            writerMiniOpen = false;
+            if (window._miniPosTracker) { clearInterval(window._miniPosTracker); window._miniPosTracker = null; }
+            // 메인 화면 다시 렌더
+            if (document.getElementById('tab-daily')?.classList.contains('active')) writerRenderDaily();
+        }
+
+        function writerMiniMovePrev() {
+            writerViewDate.setDate(writerViewDate.getDate() - 1);
+            writerMiniRender();
+        }
+        function writerMiniMoveNext() {
+            writerViewDate.setDate(writerViewDate.getDate() + 1);
+            writerMiniRender();
+        }
+        function writerMiniMoveToday() {
+            writerViewDate = new Date();
+            writerMiniRender();
+        }
+
+        function writerMiniRender() {
+            if (!writerMiniOpen) return;
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            // 날짜 표시
+            const d = writerViewDate;
+            const dateLabel = `${d.getMonth()+1}/${d.getDate()} (${'일월화수목금토'[d.getDay()]})`;
+            document.getElementById('writer-mini-date').textContent = dateLabel;
+
+            // 작품 선택 동기화
+            const mainSel = document.getElementById('w-dailyWorkSelector');
+            const miniSel = document.getElementById('writer-mini-selector');
+            const curVal = miniSel.value || mainSel.value;
+            
+            const genrePriority = (genre) => {
+                if (genre === 'BL 장편') return 0;
+                if (genre === '현로 장편') return 1;
+                if (genre === '현로 초단') return 2;
+                if (genre === 'BL 초단') return 3;
+                if (genre.includes('웹툰')) return 4;
+                if (genre.includes('장편')) return 0.5;
+                if (genre.includes('초단')) return 2.5;
+                return 99;
+            };
+            const items = getActiveWorkItems(false, false)
+                .sort((a,b) => {
+                    const p = genrePriority(a.genre) - genrePriority(b.genre);
+                    if (p !== 0) return p;
+                    return a.displayTitle.localeCompare(b.displayTitle, 'ko');
+                });
+            miniSel.innerHTML = '<option value="">작품 선택</option>' + items.map(it =>
+                `<option value="${it.id}">[${it.genre}] ${it.displayTitle}</option>`
+            ).join('');
+            if (curVal && Array.from(miniSel.options).some(o => o.value === curVal)) miniSel.value = curVal;
+
+            writerMiniRenderTable();
+            writerMiniUpdateStats();
+        }
+
+        function writerMiniSelectWork(val) {
+            // 메인 select와 동기화
+            const mainSel = document.getElementById('w-dailyWorkSelector');
+            mainSel.value = val;
+            writerMiniRenderTable();
+            writerMiniUpdateStats();
+            if (document.getElementById('tab-daily')?.classList.contains('active')) writerRenderDailyTable();
+        }
+
+        function writerMiniRenderTable() {
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const storageKey = document.getElementById('writer-mini-selector').value;
+            const cont = document.getElementById('writer-mini-table-container');
+            if (!storageKey) {
+                cont.innerHTML = '<p class="text-center text-slate-400 text-xs py-6">작품을 선택하세요</p>';
+                return;
+            }
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works) writerDailyData[ds].works = {};
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+
+            const wd = writerDailyData[ds].works[storageKey];
+            const rows = WRITER_HOURS.map((h, idx) => {
+                const hData = wd.hours?.[h] || { prev:'', now:'', diff:0 };
+                return `<tr class="border-b border-slate-50">
+                    <td class="py-0.5 text-[11px] text-slate-500 font-medium text-center">${h}시</td>
+                    <td class="py-0.5 px-0.5"><input type="number" inputmode="decimal" value="${hData.prev}" onfocus="writerMiniLastFocusedHour=${h}" oninput="writerMiniUpdateH(${h},'prev',this.value)" class="w-full px-1 py-1 text-center border border-slate-200 rounded text-[11px] font-semibold outline-none focus:ring-1 focus:ring-[var(--primary)] bg-white"></td>
+                    <td class="py-0.5 px-0.5"><input type="number" inputmode="decimal" value="${hData.now}" onfocus="writerMiniLastFocusedHour=${h}" oninput="writerMiniUpdateH(${h},'now',this.value)" onchange="writerMiniAutoCarry(${h},${idx},this.value)" class="w-full px-1 py-1 text-center border border-slate-200 rounded text-[11px] font-semibold outline-none focus:ring-1 focus:ring-[var(--primary)] bg-white"></td>
+                    <td id="mini-diff_${h}" class="py-0.5 text-center text-[11px] font-bold" style="color:var(--primary)">${hData.diff||0}</td>
+                </tr>`;
+            }).join('');
+            cont.innerHTML = `<table class="w-full border-collapse" style="table-layout:fixed;">
+                <colgroup>
+                    <col style="width:18%">
+                    <col style="width:32%">
+                    <col style="width:32%">
+                    <col style="width:18%">
+                </colgroup>
+                <thead>
+                    <tr class="bg-slate-50">
+                        <th class="py-1 text-center text-[10px] font-bold text-slate-400">시간</th>
+                        <th class="py-1 text-center text-[10px] font-bold text-slate-400">이전</th>
+                        <th class="py-1 text-center text-[10px] font-bold text-slate-400">현재</th>
+                        <th class="py-1 text-center text-[10px] font-bold text-slate-400">합계</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+        }
+
+        function writerMiniUpdateH(h, field, val) {
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const storageKey = document.getElementById('writer-mini-selector').value;
+            if (!storageKey) return;
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+            if (!writerDailyData[ds].works[storageKey].hours[h]) writerDailyData[ds].works[storageKey].hours[h] = { prev:'', now:'', diff:0 };
+            const hData = writerDailyData[ds].works[storageKey].hours[h];
+            hData[field] = val;
+            const prev = parseFloat(hData.prev) || 0, now = parseFloat(hData.now) || 0;
+            hData.diff = (hData.prev !== '' && hData.now !== '') ? Math.max(0, now - prev) : 0;
+            syncWriteCompletionFromDaily(ds, storageKey);
+            const dc = document.getElementById(`mini-diff_${h}`);
+            if (dc) dc.textContent = hData.diff;
+            // 메인 화면 input도 동기화
+            const mainDc = document.getElementById(`w-diff_${h}`);
+            if (mainDc) mainDc.textContent = hData.diff;
+            
+            writerMiniUpdateStats();
+            clearTimeout(writerDebounceTimer);
+            writerDebounceTimer = setTimeout(() => {
+                save();
+                if (document.getElementById('tab-daily')?.classList.contains('active')) writerUpdateDailyStats(true);
+                if (document.getElementById('tab-write')?.classList.contains('active')) renderWriteCalendar();
+            }, 300);
+        }
+
+        function writerMiniUpdateStats() {
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const dayTotal = writerGetDayTotal(ds);
+            // 그날 집필관리에 잡아둔 실제 목표를 쓴다 (없는 날만 기본 목표로 대체)
+            const dayGoal = writerGetDayGoal(ds);
+            const goal = dayGoal > 0 ? dayGoal : writerGlobalDailyGoal;
+            document.getElementById('writer-mini-total').textContent = `${dayTotal.toLocaleString()} / ${goal.toLocaleString()}자`;
+            const pct = goal > 0 ? Math.min((dayTotal / goal) * 100, 100) : 0;
+            document.getElementById('writer-mini-progress').style.width = pct + '%';
+        }
+
+
+        // 리사이즈
+        function setupWriterMiniResize() {
+            const handle = document.getElementById('writer-mini-resize');
+            const panel = document.getElementById('writer-mini-panel');
+            if (handle.dataset.resizeSetup) return;
+            handle.dataset.resizeSetup = 'true';
+            let startX, startY, startW, startH, resizing = false;
+            handle.addEventListener('mousedown', (e) => {
+                resizing = true;
+                startX = e.clientX; startY = e.clientY;
+                startW = panel.offsetWidth; startH = panel.offsetHeight;
+                e.preventDefault(); e.stopPropagation();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!resizing) return;
+                const newW = Math.max(280, startW + (e.clientX - startX));
+                const newH = Math.max(300, startH + (e.clientY - startY));
+                panel.style.width = newW + 'px';
+                panel.style.height = newH + 'px';
+                panel.style.maxHeight = 'none';
+            });
+            document.addEventListener('mouseup', () => { resizing = false; });
+        }
+        // ═════════════════════════
+
+        // 코지 테마: 왼쪽 위에 큰 영문 제목 (스케줄·집필 관리의 큰 월 이름처럼) + 보고 있는 날의 글자수 칩
+        function renderDailyCozyHero() {
+            const box = document.getElementById('daily-cozy-hero');
+            if (!box) return;
+            if (!document.body.classList.contains('theme-cozy')) { box.innerHTML = ''; return; }
+            const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            const d = writerViewDate, ds = writerGetYYYYMMDD(d);
+            let total = 0, goal = 0;
+            try { total = writerGetDayTotal(ds) || 0; goal = writerGetDayGoal(ds) || 0; } catch (e) {}
+            const goalTxt = goal > 0 ? ` / 목표 ${goal.toLocaleString()}자` : '';
+            box.innerHTML = `<div class="left"><div class="eyebrow">daily record</div>
+                <div class="row"><span class="mname">Writing</span></div></div>
+                <div class="chips"><span class="chip">♥ 오늘 ${total.toLocaleString()}자${goalTxt}</span></div>`;
+        }
+        function writerRenderDaily(preferLastWorkKey) {
+            document.getElementById('w-currentDateDisplay').textContent = writerGetKoreanDate(writerViewDate);
+            const sel = document.getElementById('w-dailyWorkSelector');
+            const curVal = sel.value;
+            const genrePriority = (g) => {
+                if (g === 'BL 장편') return 0; if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2; if (g === 'BL 초단') return 3;
+                if (g.includes('웹툰')) return 4; if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5; return 99;
+            };
+            const items = getActiveWorkItems(false).sort((a,b) => {
+                const p = genrePriority(a.genre) - genrePriority(b.genre);
+                return p !== 0 ? p : a.displayTitle.localeCompare(b.displayTitle, 'ko');
+            });
+            // 글자수 관리 달력에서 특정 날짜를 클릭해 이동했는데, 그날 주로 쓴 작품이 이미 완결(출간일 지남)이라
+            // 목록에서 걸러져 있으면 선택이 안 먹혔다 — 그 경우엔 완결이어도 임시로 목록에 끼워 넣는다.
+            // (파일 변경 감지로 잠시 후 다시 그려질 때도 유지되도록, 지금 이미 선택돼 있는 값도 같이 챙긴다)
+            const mustKeep = new Set([writerJumpToWorkKey, curVal].filter(Boolean));
+            mustKeep.forEach(id => {
+                if (!items.some(it => it.id === id)) {
+                    const pastMatch = getActiveWorkItems(false, true).find(it => it.id === id);
+                    if (pastMatch) items.push(pastMatch);
+                }
+            });
+            sel.innerHTML = `<option value="">작품을 선택하세요</option>` + items.map(it =>
+                `<option value="${it.id}">[${it.genre}] ${it.displayTitle}</option>`).join('');
+            // 미니창 등 외부에서 작품이 바뀐 경우 그 값을 우선 적용, 아니면 현재값 유지 → 없으면 마지막 사용 작품
+            if (writerJumpToWorkKey && Array.from(sel.options).some(o => o.value === writerJumpToWorkKey)) sel.value = writerJumpToWorkKey;
+            else if (preferLastWorkKey && writerLastWorkKey && Array.from(sel.options).some(o => o.value === writerLastWorkKey)) sel.value = writerLastWorkKey;
+            else if (curVal && Array.from(sel.options).some(o => o.value === curVal)) sel.value = curVal;
+            else if (writerLastWorkKey && Array.from(sel.options).some(o => o.value === writerLastWorkKey)) sel.value = writerLastWorkKey;
+            writerJumpToWorkKey = null;
+            writerRenderDailyTable();
+        }
+
+        function writerRenderDailyTable() {
+            try { renderDailyCozyHero(); } catch (e) {}
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const sel = document.getElementById('w-dailyWorkSelector');
+            const storageKey = sel.value;
+            const cont = document.getElementById('w-dailyTableContainer');
+
+            // 마지막 사용 작품 저장 (값이 바뀐 경우에만 파일에 기록 → 미니창과 연동)
+            if (storageKey && storageKey !== writerLastWorkKey) {
+                writerLastWorkKey = storageKey;
+                localStorage.setItem('writerLastWorkKey_v6', storageKey);
+                save(true);
+            }
+
+            if (!storageKey) { 
+                cont.innerHTML = '<p class="text-center text-slate-400 text-sm py-10">작품을 선택하세요</p>'; 
+                writerUpdateDailyStats(true); return; 
+            }
+
+            if (!writerDailyData[ds]) writerDailyData[ds] = { works: {} };
+            if (!writerDailyData[ds].works) writerDailyData[ds].works = {};
+            if (!writerDailyData[ds].works[storageKey]) writerDailyData[ds].works[storageKey] = { hours: {} };
+
+            const wd = writerDailyData[ds].works[storageKey];
+            const rows = WRITER_HOURS.map((h, idx) => {
+                const hData = wd.hours?.[h] || { prev:'', now:'', diff:0 };
+                const inputStyle = `"w-full px-2 py-1 text-center border border-slate-200 rounded text-[12px] font-semibold outline-none focus:ring-1 focus:ring-[var(--primary)] focus:border-transparent bg-white transition-all"`;
+                const noSpinner = `style="-moz-appearance:textfield;" onwheel="this.blur()"`;
+                return `<tr class="border-b border-slate-50 hover:bg-slate-50/50">
+                    <td class="py-0.5 px-2 text-[12px] text-slate-500 font-medium w-12 text-center">${h}시</td>
+                    <td class="py-0.5 px-1.5"><input type="number" inputmode="decimal" value="${hData.prev}" ${noSpinner} onfocus="writerLastFocusedHour=${h}; writerLastFocusedField='prev'" oninput="writerUpdateH(${h},'prev',this.value)" class=${inputStyle}></td>
+                    <td class="py-0.5 px-1.5"><input type="number" inputmode="decimal" value="${hData.now}" ${noSpinner} onfocus="writerLastFocusedHour=${h}; writerLastFocusedField='now'" oninput="writerUpdateH(${h},'now',this.value)" onchange="writerAutoCarryNow(${h},${idx},this.value)" class=${inputStyle}></td>
+                    <td id="w-diff_${h}" class="py-0.5 px-2 text-center text-[12px] font-bold w-16" style="color:var(--primary)">${hData.diff||0}</td>
+                </tr>`;
+            }).join('');
+
+            cont.innerHTML = `<table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-100">
+                        <th class="py-2 px-2 text-center text-xs font-bold text-slate-400 w-12">시간</th>
+                        <th class="py-2 px-1.5 text-center text-xs font-bold text-slate-400">이전</th>
+                        <th class="py-2 px-1.5 text-center text-xs font-bold text-slate-400">현재</th>
+                        <th class="py-2 px-2 text-center text-xs font-bold text-slate-400 w-16">집필량</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+
+            const ti = document.getElementById('w-dailyTimeInput');
+            const ti2 = document.getElementById('w-dailyTimeInput2');
+            const timeVal = writerDailyData[ds]?.time || '';
+            if (ti) ti.value = timeVal;
+            if (ti2) ti2.value = timeVal;
+            writerUpdateDailyStats(true);
+        }
+
+        function writerUpdateDailyStats(updateChart = true) {
+            const ds = writerGetYYYYMMDD(writerViewDate);
+            const storageKey = document.getElementById('w-dailyWorkSelector').value;
+            const primary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#87ada1';
+
+            // 외전 형식: workId::extraId
+            let work = null, extra = null, displayTitle = '', goal = 0, deadline = null, isPending = false;
+            if (storageKey) {
+                if (storageKey.includes('::')) {
+                    const [wId, exId] = storageKey.split('::');
+                    work = masterWorks.find(x => x.id === wId);
+                    extra = work?.extras?.find(e => e.id === exId);
+                    if (work && extra) {
+                        displayTitle = `${work.title} [${extra.name}]`;
+                        goal = Number(extra.goalWithSpace) || Number(extra.goalNoSpace) || 0;
+                        deadline = extra.manuscriptDate || extra.publishDate;
+                    }
+                } else {
+                    work = masterWorks.find(x => x.id === storageKey);
+                    if (work) {
+                        displayTitle = work.title;
+                        goal = Number(work.goalWithSpace) || Number(work.goalNoSpace) || 0;
+                        deadline = work.manuscriptDate || work.publishDate;
+                        isPending = work.isPending;
+                    }
+                }
+            }
+
+            if (work) {
+                const total = writerGetWorkTotal(storageKey);
+                document.getElementById('w-workTitleDisplay').textContent = displayTitle + ' 진행률';
+
+                if (goal > 0) {
+                    const per = Math.min((total/goal)*100, 100).toFixed(0);
+                    document.getElementById('w-workTotalText').textContent = `${total.toLocaleString()} / ${goal.toLocaleString()}자`;
+                    document.getElementById('w-workTotalPerCenter').textContent = `${per}%`;
+                    if (updateChart) writerCreateDoughnut('w-workTotalChart', total, goal, getGenreColor(work.genre) || primary);
+                } else {
+                    document.getElementById('w-workTotalText').textContent = `누적 ${total.toLocaleString()}자`;
+                    document.getElementById('w-workTotalPerCenter').textContent = total.toLocaleString();
+                    if (updateChart) writerCreateDoughnut('w-workTotalChart', Math.min(total,200000), Math.max(total,200000)||1, getGenreColor(work.genre) || primary);
+                }
+
+                const deadlineLabel = (extra ? extra.manuscriptDate : work.manuscriptDate) ? '완고 입고' : '출간일';
+                let dDayHtml = '';
+                if (deadline && (extra || work.manuscriptDate || !isPending)) {
+                    const diff = Math.ceil((new Date(deadline).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000);
+                    if (diff > 0) {
+                        const remain = Math.max(goal - total, 0);
+                        const daily = diff > 0 ? Math.ceil(remain/diff) : 0;
+                        dDayHtml = `<span class="font-bold" style="color:var(--primary)">${deadlineLabel} D-${diff}</span>` + (goal>0 && daily>0 ? ` <span class="text-slate-400">(일일 권장 ${daily.toLocaleString()}자)</span>` : '');
+                    } else if (diff === 0) {
+                        dDayHtml = `<span class="font-bold text-rose-500">${deadlineLabel} D-Day</span>`;
+                    } else {
+                        dDayHtml = `<span class="text-slate-400">${deadlineLabel} 지남</span>`;
+                    }
+                } else { dDayHtml = '<span class="text-slate-300 text-xs">완고 입고일 미설정</span>'; }
+                document.getElementById('w-workDeadlineInfo').innerHTML = dDayHtml;
+            } else {
+                document.getElementById('w-workTitleDisplay').textContent = '작품을 선택하세요';
+                document.getElementById('w-workTotalText').textContent = '0 / 0자';
+                document.getElementById('w-workTotalPerCenter').textContent = '0%';
+                document.getElementById('w-workDeadlineInfo').innerHTML = '';
+                if (updateChart) writerCreateDoughnut('w-workTotalChart', 0, 1, primary);
+            }
+            const dayTotal = writerGetDayTotal(ds);
+            const dayGoalToday = writerGetDayGoal(ds);
+            if (dayGoalToday > 0) {
+                document.getElementById('w-dailyGoalText').textContent = `${dayTotal.toLocaleString()} / ${dayGoalToday.toLocaleString()}자`;
+                document.getElementById('w-dailyGoalPerCenter').textContent = `${((dayTotal/dayGoalToday)*100).toFixed(0)}%`;
+                if (updateChart) writerCreateDoughnut('w-dailyGoalChart', dayTotal, dayGoalToday, '#f2a4b6');
+            } else {
+                document.getElementById('w-dailyGoalText').textContent = `${dayTotal.toLocaleString()}자`;
+                document.getElementById('w-dailyGoalPerCenter').textContent = '';
+                if (updateChart) writerCreateDoughnut('w-dailyGoalChart', dayTotal, Math.max(dayTotal,1), '#f2a4b6');
+            }
+        }
+
+        // 코지 테마: 큰 영문 월 이름 + 달성/목표 글자수 + 집필 일수 (출간 일정과 같은 분위기)
+        function renderWriterCozyHero(monthTotal, goalSum, lastDate, writtenDays, achievedDays, missedDays) {
+            const box = document.getElementById('wc-cozy-hero');
+            if (!box) return;
+            if (!document.body.classList.contains('theme-cozy')) { box.innerHTML = ''; return; }
+            const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            const y = writerCalDate.getFullYear(), m = writerCalDate.getMonth();
+            const goalTxt = goalSum > 0 ? ` / 목표 ${goalSum.toLocaleString()}자` : '';
+            box.innerHTML = `<div class="left"><div class="eyebrow">word count</div>
+                <div class="row"><span class="mname">${MN[m]}</span><span class="yr">${y}</span></div></div>
+                <div class="chips"><span class="chip">♥ 달성 ${monthTotal.toLocaleString()}자${goalTxt}</span><span class="chip">${lastDate}일 중 ${writtenDays}일 집필 · 목표 달성 <b>${achievedDays}일</b> · 못한 날 ${missedDays}일</span></div>`;
+        }
+
+        function writerRenderCalendar() {
+            const y = writerCalDate.getFullYear(), m = writerCalDate.getMonth();
+            const firstDay = new Date(y,m,1).getDay(), lastDate = new Date(y,m+1,0).getDate();
+            const primary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#87ada1';
+            let monthTotal = 0, writtenDays = 0;
+            for (let d=1; d<=lastDate; d++) {
+                const dt = writerGetDayTotal(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+                monthTotal += dt;
+                if (dt > 0) writtenDays++;
+            }
+            const ratioEl = document.getElementById('w-calDaysRatio');
+            if (ratioEl) ratioEl.textContent = `${lastDate}일 중 ${writtenDays}일 집필`;
+            // 목표가 등록된 날 중 달성/미달성 일수 (아직 오지 않은 미래 날짜는 제외)
+            let achievedDays = 0, missedDays = 0;
+            const _todayZero = new Date(); _todayZero.setHours(0,0,0,0);
+            for (let d=1; d<=lastDate; d++) {
+                const dateObj = new Date(y, m, d);
+                if (dateObj > _todayZero) continue;
+                const dstr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const g = writerGetDayGoal(dstr);
+                if (g <= 0) continue;
+                if (writerGetDayTotal(dstr) >= g) achievedDays++; else missedDays++;
+            }
+            const goalRatioEl = document.getElementById('w-calGoalRatio');
+            if (goalRatioEl) goalRatioEl.textContent = `목표 달성 ${achievedDays}일 · 달성 못한 날 ${missedDays}일`;
+            // 집필관리 이번달 목표 합계
+            let writeGoalSum = 0;
+            try {
+                const moStr2 = `${y}-${String(m+1).padStart(2,'0')}`;
+                Object.entries(writeSchedules).forEach(([dateStr, schedules]) => {
+                    if (!dateStr.startsWith(moStr2)) return;
+                    schedules.forEach(s => { if (!s.category) writeGoalSum += Number(s.goal) || 0; });
+                });
+            } catch(e) {}
+            const goalPart = writeGoalSum > 0
+                ? ` / <span style="color:#475569; font-weight:400;">목표 ${writeGoalSum.toLocaleString()}자</span>`
+                : '';
+            document.getElementById('w-calTitle').innerHTML = `<span style="color:${primary}; font-weight:600;">달성 ${monthTotal.toLocaleString()}자</span>${goalPart}`;
+            try { renderWriterCozyHero(monthTotal, writeGoalSum, lastDate, writtenDays, achievedDays, missedDays); } catch (e) { console.error(e); }
+            // 오른쪽 네비 월 레이블
+            const monthLbl = document.getElementById('w-cal-month-label');
+            if (monthLbl) monthLbl.textContent = `${y}년 ${m+1}월`;
+            const goalInput = document.getElementById('w-monthlyGoalInput');
+            if (goalInput) goalInput.value = writerGlobalDailyGoal;
+
+            const container = document.getElementById('w-calendarBody'); container.innerHTML = '';
+            const today = writerGetYYYYMMDD(new Date());
+            const chartIds = [];
+
+            const makeCell = (ds, dayNum, faded) => {
+                const dayTotal = writerGetDayTotal(ds);
+                const isToday = ds === today;
+                const dow = new Date(ds).getDay();
+                const cell = document.createElement('div');
+                const borderCls = faded
+                    ? 'bg-slate-50/50 border border-slate-100 opacity-50'
+                    : isToday ? 'border-emerald-400 border-2 bg-emerald-50/10' : 'border-slate-200 bg-white hover:border-emerald-300';
+                cell.className = `${borderCls} rounded-xl min-h-[138px] p-1.5 flex flex-col cursor-pointer transition-colors group relative`;
+                cell.onclick = () => {
+                    const [yy, mm, dd] = ds.split('-').map(Number);
+                    writerViewDate = new Date(yy, mm - 1, dd); // 문자열 그대로 new Date()에 넘기면 시간대에 따라 하루 밀릴 수 있어 직접 조립
+                    writerJumpToDate = true;
+                    const worksOnDate = writerDailyData[ds]?.works;
+                    // 그 날 기록된 작품으로 자동 선택 — 예전엔 그냥 첫 번째 키를 골라서, 하루에 여러 작품을
+                    // 썼으면 클릭한 그래프(=그 날 전체 합계)랑 무관한 작품이 선택되곤 했다.
+                    // 그 날 가장 많이 쓴(글자수가 제일 큰) 작품을 고르는 게 실제로 보던 숫자와 맞다.
+                    writerJumpToWorkKey = null;
+                    if (worksOnDate) {
+                        let best = null, bestSum = -1;
+                        Object.entries(worksOnDate).forEach(([key, val]) => {
+                            const sum = Object.values(val?.hours || {}).reduce((a, b) => a + (b.diff || 0), 0);
+                            if (sum > bestSum) { bestSum = sum; best = key; }
+                        });
+                        writerJumpToWorkKey = best;
+                    }
+                    switchTab('daily');
+                };
+
+                const dateColor = isToday ? primary : (dow===0?'#f43f5e': dow===6?'#3b82f6':'#64748b');
+                const todayBadge = isToday ? `<span class="cal-today-badge absolute right-1.5 top-1.5 text-[10px] font-black text-emerald-600 tracking-wider">TODAY</span>` : '';
+
+                const chartId = `w-cal-chart-${ds}`;
+                const dayGoal = writerGetDayGoal(ds); // 집필관리에 목표가 없으면 0 → 그 날은 휴일로 간주 (8천자 자동 대체 안 함)
+                const goalLabel = dayGoal > 0 ? `<span class="wc-goal-label absolute right-1.5 ${isToday ? 'top-6' : 'top-1.5'} text-xs font-medium text-emerald-600">${dayGoal.toLocaleString()}</span>` : '';
+                if (dayTotal > 0) chartIds.push({ id: chartId, dayTotal, goal: dayGoal, faded, ds });
+
+                const chartHtml = dayTotal > 0
+                    ? `<div class="flex flex-col items-center mt-1" onmousemove="showWriterDayTip(event,'${ds}')" onmouseleave="hideWriterDayTip()">
+                           <div class="relative w-14 h-14">
+                               <canvas id="${chartId}"></canvas>
+                               <div id="${chartId}-per" class="absolute inset-0 flex items-center justify-center text-[11px] font-semibold" style="color:${faded ? '#94a3b8' : '#475569'}">0%</div>
+                           </div>
+                           <div class="text-xs font-bold mt-2.5" style="color:#db2777">${dayTotal.toLocaleString()}자</div>
+                           ${writerDailyData[ds]?.time>0?`<div class="text-[9px] text-slate-400">${writerDailyData[ds].time}분</div>`:''}
+                       </div>`
+                    : '';
+
+                cell.innerHTML = `${todayBadge}${goalLabel}
+                    <div class="flex items-center mb-0.5 relative">
+                        <div class="text-sm font-bold shrink-0" style="color:${dateColor}"><span class="pc-num${isToday ? ' pc-today' : ''}">${dayNum}</span></div>
+                    </div>
+                    ${chartHtml}`;
+                container.appendChild(cell);
+            };
+
+            const prevLastDate = new Date(y,m,0).getDate();
+            for (let i=0; i<firstDay; i++) {
+                const d = prevLastDate-firstDay+1+i, pm = m-1<0?11:m-1, py = m-1<0?y-1:y;
+                makeCell(`${py}-${String(pm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`, d, true);
+            }
+            for (let d=1; d<=lastDate; d++) {
+                makeCell(`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`, d, false);
+            }
+            const nextDays = (7-(firstDay+lastDate)%7)%7;
+            for (let d=1; d<=nextDays; d++) {
+                const nm = m+1>11?0:m+1, ny = m+1>11?y+1:y;
+                makeCell(`${ny}-${String(nm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`, d, true);
+            }
+
+            // 도넛 차트 그리기 (DOM 렌더 후)
+            setTimeout(() => {
+                const themePrimary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#87ada1';
+                chartIds.forEach(c => {
+                    const hasGoal = c.goal > 0;
+                    // 목표가 없는 날(휴일)은 남는(회색) 부분 없이 실제 집필량만 꽉 채워 표시하고 퍼센트는 표시하지 않음
+                    const ringGoal = hasGoal ? c.goal : c.dayTotal;
+                    writerCreateDoughnut(c.id, c.dayTotal, ringGoal, c.faded ? '#cbd5e0' : themePrimary, c.faded ? null : writerGetDayWorkBreakdown(c.ds));
+                    const perEl = document.getElementById(`${c.id}-per`);
+                    if (perEl) perEl.textContent = hasGoal ? `${Math.round((c.dayTotal/c.goal)*100)}%` : '';
+                });
+            }, 0);
+        }
+
+        // 🟢 [NEW] 연간 글자수 통계 — 글자수 관리 상단 아이콘에서 열림. 월별 총합 + 그 달 작품별 글자수
+        let writerYearStatsYear = new Date().getFullYear();
+        function writerResolveDailyKeyLabel(key) {
+            if (key === WRITER_BULK_UNASSIGNED_KEY) return '미지정';
+            const r = resolveWorkItem(key);
+            return r.displayTitle || key; // 옛 백업 등에서 작품 ID와 연결이 안 되는 키는 원래 문자열 그대로 보여준다
+        }
+        function openWriterYearStats() {
+            writerYearStatsYear = writerCalDate.getFullYear();
+            renderWriterYearStats();
+            document.getElementById('writer-year-stats-modal').classList.add('open');
+        }
+        function closeWriterYearStats() { document.getElementById('writer-year-stats-modal').classList.remove('open'); }
+        function changeWriterYearStats(delta) { writerYearStatsYear += delta; renderWriterYearStats(); }
+        function renderWriterYearStats() {
+            document.getElementById('writer-year-stats-label').textContent = `${writerYearStatsYear}년`;
+            const y = writerYearStatsYear;
+            // 월별 { total, byWork: { key -> chars } } + 장르별 총합
+            const months = Array.from({ length: 12 }, () => ({ total: 0, byWork: {} }));
+            const genreTotals = {};
+            Object.entries(writerDailyData).forEach(([ds, day]) => {
+                if (!ds.startsWith(`${y}-`)) return;
+                const mIdx = Number(ds.slice(5, 7)) - 1;
+                if (mIdx < 0 || mIdx > 11) return;
+                Object.entries(day?.works || {}).forEach(([key, val]) => {
+                    const sum = Object.values(val?.hours || {}).reduce((a, b) => a + (b.diff || 0), 0);
+                    if (sum <= 0) return;
+                    months[mIdx].total += sum;
+                    months[mIdx].byWork[key] = (months[mIdx].byWork[key] || 0) + sum;
+                    const g = (key !== WRITER_BULK_UNASSIGNED_KEY && resolveWorkItem(key).genre) || '미지정';
+                    genreTotals[g] = (genreTotals[g] || 0) + sum;
+                });
+            });
+            const genreList = Object.entries(genreTotals).sort((a, b) => b[1] - a[1]);
+
+            const yearTotal = months.reduce((a, m) => a + m.total, 0);
+            const body = document.getElementById('writer-year-stats-body');
+            const summaryHtml = `<div class="rounded-xl p-3 flex items-center justify-between gap-4 flex-wrap" style="background:var(--primary-light);">
+                <div>
+                    <span class="text-xs text-slate-500">연간 총합</span>
+                    <div class="text-xl font-bold" style="color:var(--primary)">${yearTotal.toLocaleString()}자</div>
+                </div>
+                <div class="flex flex-wrap gap-1.5 justify-end">
+                    ${genreList.map(([g, chars]) => `<span class="text-[11px] font-medium px-2 py-1 rounded-lg bg-white" style="color:var(--primary);">${escapeHtml(g)} ${chars.toLocaleString()}자</span>`).join('')}
+                </div>
+            </div>`;
+
+            // 출간 일정 "연간 전체보기"랑 같은 카드 스타일로, 한 줄에 6개월씩(2줄)
+            const monthsHtml = months.map((m, i) => {
+                const header = `<div class="text-[10px] font-bold text-slate-400 mb-2 tracking-widest uppercase border-b border-slate-100 pb-2 flex items-center justify-between">
+                    <span>${MONTH_NAMES_KO[i]}</span>
+                    ${m.total > 0 ? `<span class="text-slate-600 normal-case tracking-normal font-bold" style="font-size:15px;">총 ${m.total.toLocaleString()}자</span>` : ''}
+                </div>`;
+                const rows = Object.entries(m.byWork)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([key, chars]) => {
+                        const g = key !== WRITER_BULK_UNASSIGNED_KEY ? resolveWorkItem(key).genre : '';
+                        const bg = g ? hexToRgba(getGenreColor(g), 0.15) : '#f8fafc';
+                        return `<div class="flex items-center gap-1.5 px-2 py-1.5 rounded-lg mb-1" style="background:${bg};">
+                        <span class="flex-1 min-w-0 truncate text-xs text-slate-600">${escapeHtml(writerResolveDailyKeyLabel(key))}</span>
+                        <span class="text-xs font-bold text-slate-700 shrink-0">${chars.toLocaleString()}자</span>
+                    </div>`;
+                    }).join('');
+                return `<div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-3" style="min-height:140px;">
+                    ${header}
+                    ${rows || '<p class="text-xs text-slate-300 text-center py-4">기록 없음</p>'}
+                </div>`;
+            }).join('');
+
+            body.innerHTML = summaryHtml + `<div class="mt-4 grid grid-cols-6 gap-3">${monthsHtml}</div>`;
+        }
+        // ════════════════════════════════════════════════════════
+
+        // 🟢 초기화
+        window.__appInit = () => { 
+            try {
+                const savedBg = localStorage.getItem('bg_main_v6'); if (savedBg) setPageBackgroundColor(savedBg);
+                const root = document.documentElement;
+                root.style.setProperty('--cell-font-size', tableFontSettings.cell.size + 'rem'); root.style.setProperty('--cell-font-color', tableFontSettings.cell.color); root.style.setProperty('--cell-font-weight', tableFontSettings.cell.weight || '400');
+                root.style.setProperty('--total-font-size', tableFontSettings.total.size + 'rem'); root.style.setProperty('--total-font-color', tableFontSettings.total.color); root.style.setProperty('--total-font-weight', tableFontSettings.total.weight || '600'); 
+                root.style.setProperty('--grand-total-font-size', tableFontSettings.grand.size + 'rem'); root.style.setProperty('--grand-total-font-color', tableFontSettings.grand.color); root.style.setProperty('--grand-total-font-weight', tableFontSettings.grand.weight || '700');
+                root.style.setProperty('--crosshair-color', crosshairSettings.color);
+                setTheme(activeTheme); updateUI(); setupCustomAutocomplete();
+                const wdgi = document.getElementById('w-dailyGoalInput');
+                if (wdgi) wdgi.value = writerGlobalDailyGoal;
+                const wdgiV = document.getElementById('w-dailyGoalInputVisible');
+                if (wdgiV) wdgiV.value = writerGlobalDailyGoal;
+                const wmgi = document.getElementById('w-monthlyGoalInput');
+                if (wmgi) wmgi.value = writerGlobalDailyGoal;
+            } catch(e) { console.error("Initialization error:", e); }
+        };
+        // ── D-Day 사이드바 장르 필터 ────────────────────────────
+        window._ddayGenreFilter = null; // null = 전체
+
+        function toggleDdayFilter() {
+            const dd = document.getElementById('dday-filter-dropdown');
+            if (!dd) return;
+            const isOpen = dd.style.display !== 'none';
+            dd.style.display = isOpen ? 'none' : 'block';
+        }
+
+        function closeDdayFilterOnClickOutside(e) {
+            const wrap = document.getElementById('dday-filter-wrap');
+            const dd = document.getElementById('dday-filter-dropdown');
+            if (!dd || dd.style.display === 'none') return;
+            if (wrap && !wrap.contains(e.target)) {
+                dd.style.display = 'none';
+            }
+        }
+        document.addEventListener('click', closeDdayFilterOnClickOutside);
+
+        function onDdayFilterChange(el) {
+            const checkboxes = document.querySelectorAll('.dday-genre-check');
+            const allBox = document.querySelector('.dday-genre-check[value="__all__"]');
+
+            if (el.value === '__all__') {
+                // 전체 체크박스 클릭 → 모두 동기화
+                checkboxes.forEach(cb => { cb.checked = el.checked; });
+                window._ddayGenreFilter = el.checked ? null : new Set();
+            } else {
+                // 개별 장르 클릭
+                const genreBoxes = Array.from(checkboxes).filter(cb => cb.value !== '__all__');
+                const checkedGenres = genreBoxes.filter(cb => cb.checked).map(cb => cb.value);
+                // 전체 체크박스 상태 동기화
+                if (allBox) allBox.checked = checkedGenres.length === genreBoxes.length;
+                window._ddayGenreFilter = checkedGenres.length === genreBoxes.length
+                    ? null
+                    : new Set(checkedGenres);
+            }
+
+            // 아이콘 색상: 필터 활성화 시 강조
+            const btn = document.getElementById('dday-filter-btn');
+            if (btn) {
+                const icon = btn.querySelector('i');
+                if (icon) {
+                    icon.style.color = window._ddayGenreFilter ? 'var(--primary)' : '';
+                }
+            }
+
+            // 재렌더 (renderPublishCal 호출)
+            renderPublishCal();
+        }
+        // ─────────────────────────────────────────────────────────
+
+
+        </script>
+    <script>
+/* Firebase 클라우드 동기화
+   - 기존 로컬 저장은 그대로 유지합니다.
+   - 로그인한 사용자의 데이터만 users/{uid}/apps/settlement 아래에 저장합니다.
+   - Firestore 문서 용량 제한을 피하기 위해 JSON을 여러 조각으로 나눕니다. */
+(function () {
+  var config = {
+    apiKey: "AIzaSyBu5_PGGU0aTpLaepg_rdAaQtHObH3CkAY",
+    authDomain: "royalty-manager-ef557.firebaseapp.com",
+    projectId: "royalty-manager-ef557",
+    storageBucket: "royalty-manager-ef557.firebasestorage.app",
+    messagingSenderId: "173517723825",
+    appId: "1:173517723825:web:7632244372bc2bea962a90",
+    measurementId: "G-EFZRZYDN0Y"
+  };

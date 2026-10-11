@@ -1,0 +1,1931 @@
+                <button onclick="switchTab('workmanage')" id="nav-workmanage" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center"><i class="fa-solid fa-layer-group"></i></div><span>작품 관리</span>
+                </button>
+                <button onclick="switchTab('webtoon')" id="nav-webtoon" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center"><i class="fa-solid fa-clapperboard"></i></div><span>웹툰 관리</span>
+                </button>
+                <button onclick="switchTab('works')" id="nav-works" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center"><i class="fa-solid fa-book-open"></i></div><span>작품 등록</span>
+                </button>
+
+                <div class="text-[9px] font-bold text-white/40 px-3 mt-4 mb-1 uppercase tracking-widest">Writing</div>
+                <button onclick="switchTab('publish-cal')" id="nav-publish-cal" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center text-[15px]"><i class="fa-solid fa-rocket"></i></div><span class="text-[15px]">출간 일정</span>
+                </button>
+                <button onclick="switchTab('task')" id="nav-task" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center text-[15px]"><i class="fa-solid fa-list-check"></i></div><span class="text-[15px]">스케줄 관리</span>
+                </button>
+                <button onclick="switchTab('write')" id="nav-write" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center text-[15px]"><i class="fa-solid fa-pen-nib"></i></div><span class="text-[15px]">집필 관리</span>
+                </button>
+                <button onclick="switchTab('daily')" id="nav-daily" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center text-[15px]"><i class="fa-solid fa-keyboard"></i></div><span class="text-[15px]">상세 기록 입력</span>
+                </button>
+                <button onclick="switchTab('monthly')" id="nav-monthly" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center text-[15px]"><i class="fa-regular fa-calendar"></i></div><span class="text-[15px]">글자수 관리</span>
+                </button>
+                <button onclick="switchTab('tax')" id="nav-tax" class="nav-btn w-full flex items-center px-3 py-2.5 rounded-xl transition-all my-1.5">
+                    <div class="w-7 text-center text-[15px]"><i class="fa-solid fa-receipt"></i></div><span class="text-[15px]">인사이트</span>
+                </button>
+            </nav>
+
+            <div class="px-4 py-4 mt-auto shrink-0 flex items-center justify-between gap-2">
+                <div id="save-indicator-sidebar" class="text-[10px] text-white/50 flex-1 truncate"></div>
+                <button onclick="openCharCalc()" id="sidebar-calc-btn" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/10" title="공미↔공포 계산기">
+                    <i class="fa-solid fa-calculator text-base"></i>
+                </button>
+                <button onclick="openRevenueCalc()" id="sidebar-revenue-calc-btn" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/10" title="작가 정산 금액 계산기">
+                    <i class="fa-solid fa-coins text-base"></i>
+                </button>
+                <button onclick="exportAllWritingRecords()" id="sidebar-export-btn" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/10" title="집필 기록 전체 내보내기 (전체 연도, 텍스트 파일)">
+                    <i class="fa-solid fa-file-export text-base"></i>
+                </button>
+                <button onclick="exportAllSettlementRecords()" id="sidebar-export-settlement-btn" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/10" title="정산 기록 전체 내보내기 (전체 연도, 텍스트 파일)">
+                    <i class="fa-solid fa-sack-dollar text-base"></i>
+                </button>
+                <button onclick="openSettingsPanel()" class="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all border border-white/10" title="설정">
+                    <i class="fa-solid fa-gear text-base"></i>
+                </button>
+            </div>
+        </aside>
+        <button id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()" title="메뉴 접기/펼치기" aria-label="메뉴 접기/펼치기">
+            <i class="fa-solid fa-angle-left" id="sidebar-collapse-icon"></i>
+        </button>
+
+        <main class="flex-1">
+            <div class="p-3 lg:p-5 mx-auto max-w-[1700px] space-y-8 pt-5">
+                <div id="save-status" class="fixed top-4 right-4 z-50 bg-blue-50 text-blue-600 px-4 py-2 rounded-full text-xs font-bold border border-blue-100 shadow-md opacity-0 transition-all duration-300 pointer-events-none flex items-center">
+                    <i class="fa-solid fa-cloud-check mr-1"></i> <span id="save-status-text">저장됨</span>
+                </div>
+
+                <!-- 대시보드 탭 -->
+                <div id="tab-dashboard" class="tab-content active space-y-6">
+                    <div id="dash-cozy-hero" class="cozy-hero"></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="stat-card border-l-4" style="border-left-color: var(--primary)">
+                            <div class="mb-4">
+                                <div class="flex justify-between items-start mb-1">
+                                    <div><p class="text-[11px] font-bold text-slate-400 uppercase">Total Profit</p><p class="text-xs text-slate-500">누적 순수익</p></div>
+                                    <div class="p-1.5 rounded-lg bg-slate-50 text-slate-400 text-xs"><i class="fa-solid fa-wallet"></i></div>
+                                </div>
+                                <div>
+                                    <h3 id="stat-total" class="text-2xl font-bold text-slate-800">₩ 0</h3>
+                                    <p id="stat-total-pretax" class="text-[14px] text-slate-500 font-normal mt-0.5">(₩ 0)</p>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-100 my-2"></div>
+                            <div class="mt-2">
+                                <div class="flex justify-between items-start mb-1">
+                                    <div><p class="text-[11px] font-bold text-slate-400 uppercase">Avg/Year</p><p class="text-xs text-slate-500">연 평균 순수익</p></div>
+                                    <div class="p-1.5 rounded-lg bg-emerald-50 text-emerald-400 text-xs"><i class="fa-solid fa-chart-pie"></i></div>
+                                </div>
+                                <h3 id="stat-avg-year" class="text-xl font-bold text-slate-600">₩ 0</h3>
+                                <p id="stat-avg-year-pretax" class="text-[12px] text-slate-400 font-normal mt-0.5">세전 ₩ 0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card border-l-4" style="border-left-color: #60a5fa">
+                            <div class="mb-4">
+                                <div class="flex justify-between items-start mb-1">
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <p class="text-[11px] font-bold text-slate-400 uppercase">This Year Profit</p>
+                                            <div class="flex gap-1 bg-slate-50 rounded px-1">
+                                                <button onclick="changeDashYear(-1)" class="w-4 h-4 rounded hover:bg-slate-200 flex items-center justify-center text-slate-400 transition-colors"><i class="fa-solid fa-chevron-left text-[8px]"></i></button>
+                                                <button onclick="changeDashYear(1)" class="w-4 h-4 rounded hover:bg-slate-200 flex items-center justify-center text-slate-400 transition-colors"><i class="fa-solid fa-chevron-right text-[8px]"></i></button>
+                                            </div>
+                                        </div>
+                                        <p class="text-xs text-slate-500"><span id="dashboard-year-label"></span>년 순수익</p>
+                                    </div>
+                                    <div class="p-1.5 rounded-lg bg-blue-50 text-blue-400 text-xs"><i class="fa-regular fa-calendar-check"></i></div>
+                                </div>
+                                <div>
+                                    <h3 id="stat-year-profit" class="text-2xl font-bold text-slate-800">₩ 0</h3>
+                                    <p id="stat-year-pretax" class="text-[14px] text-slate-500 font-normal mt-0.5">(₩ 0)</p>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-100 my-2"></div>
+                            <div class="mt-2">
+                                <div class="flex justify-between items-start mb-1">
+                                    <div><p class="text-[11px] font-bold text-slate-400 uppercase">Last Year</p><p class="text-xs text-slate-500"><span id="stat-prev-year-label"></span>년 순수익</p></div>
+                                    <div class="p-1.5 rounded-lg bg-blue-50 text-blue-400 text-xs"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                                </div>
+                                <h3 id="stat-prev-year-profit" class="text-xl font-bold text-slate-600">₩ 0</h3>
+                                <p id="stat-prev-year-pretax" class="text-[12px] text-slate-400 font-normal mt-0.5">세전 ₩ 0</p>
+                            </div>
+                        </div>
+                        <div class="stat-card border-l-4" style="border-left-color: #fb7185">
+                            <div class="mb-4">
+                                <div class="flex justify-between items-start mb-1">
+                                    <div>
+                                        <div class="flex items-center gap-2">
+                                            <p class="text-[11px] font-bold text-slate-400 uppercase">This Month Profit</p>
+                                            <div class="flex gap-1 bg-slate-50 rounded px-1">
+                                                <button onclick="changeDashMonth(-1)" class="w-4 h-4 rounded hover:bg-slate-200 flex items-center justify-center text-slate-400 transition-colors"><i class="fa-solid fa-chevron-left text-[8px]"></i></button>
+                                                <button onclick="changeDashMonth(1)" class="w-4 h-4 rounded hover:bg-slate-200 flex items-center justify-center text-slate-400 transition-colors"><i class="fa-solid fa-chevron-right text-[8px]"></i></button>
+                                            </div>
+                                        </div>
+                                        <p class="text-xs text-slate-500"><span id="dashboard-month-label">이번 달</span> 순수익</p>
+                                    </div>
+                                    <div class="p-1.5 rounded-lg bg-rose-50 text-rose-400 text-xs"><i class="fa-solid fa-money-bill-trend-up"></i></div>
+                                </div>
+                                <div>
+                                    <h3 id="stat-month-profit" class="text-2xl font-bold text-slate-800">₩ 0</h3>
+                                    <p id="stat-month-pretax" class="text-[14px] text-slate-500 font-normal mt-0.5">(₩ 0)</p>
+                                </div>
+                            </div>
+                            <div class="border-t border-slate-100 my-2"></div>
+                            <div class="mt-2">
+                                <div class="flex justify-between items-start mb-2">
+                                    <p class="text-[11px] font-bold text-slate-400 uppercase">Last Month</p>
+                                    <div class="p-1.5 rounded-lg bg-rose-50 text-rose-400 text-xs"><i class="fa-solid fa-clock-rotate-left"></i></div>
+                                </div>
+                                <div class="mb-4">
+                                    <p class="text-xs text-slate-500"><span id="stat-prev-month-label"></span> 순수익</p>
+                                    <h3 id="stat-prev-month-profit" class="text-lg font-bold text-slate-600">₩ 0</h3>
+                                    <p id="stat-prev-month-pretax" class="text-[12px] text-slate-400 font-normal mt-0.5">세전 ₩ 0</p>
+                                </div>
+                                <div>
+                                    <p class="text-xs text-slate-500"><span id="stat-prev-month2-label"></span> 순수익</p>
+                                    <h3 id="stat-prev-month2-profit" class="text-lg font-bold text-slate-600">₩ 0</h3>
+                                    <p id="stat-prev-month2-pretax" class="text-[12px] text-slate-400 font-normal mt-0.5">세전 ₩ 0</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="stat-card border-l-4" style="border-left-color: #a78bfa">
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <p class="text-[17px] font-bold text-slate-700">장르별 작품 현황</p>
+                                </div>
+                                <div class="p-2 rounded-lg bg-purple-50 text-purple-400"><i class="fa-solid fa-book"></i></div>
+                            </div>
+                            <div id="genre-count-list" class="space-y-1"></div>
+                            <div class="mt-4 pt-3 border-t border-slate-100 flex items-start justify-between gap-2">
+                                <span class="text-[12px] font-bold text-slate-400 shrink-0 pt-0.5">Total</span>
+                                <div class="text-right min-w-0 text-sm font-bold text-slate-700">
+                                    <span id="stat-works-count">0</span>종 <span id="stat-works-volumes"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="dash-recent-launches"></div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="glass-card p-8 lg:col-span-2">
+                            <div class="flex justify-between items-center mb-6">
+                                <h4 data-eyebrow="monthly" class="text-sm font-bold text-slate-500 flex items-center gap-2"><i class="fa-solid fa-chart-column"></i> 월별/장르별 수익 추이</h4>
+                                <div class="flex items-center bg-slate-100 rounded-lg p-1 gap-2">
+                                    <button onclick="changeChartYear(-1)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <span id="chart-year-display" class="text-xs font-bold text-slate-700 min-w-[40px] text-center">2026</span>
+                                    <button onclick="changeChartYear(1)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-right"></i></button>
+                                </div>
+                            </div>
+                            <div class="h-64 md:h-80"><canvas id="mainChart"></canvas></div>
+                        </div>
+                        <div class="glass-card p-8">
+                            <div class="flex justify-between items-center mb-6">
+                                <h4 data-eyebrow="genres" class="text-sm font-bold text-slate-500 flex items-center gap-2"><i class="fa-solid fa-chart-pie"></i> 장르별 점유율</h4>
+                                <div class="flex items-center bg-slate-100 rounded-lg p-1 gap-2">
+                                    <button onclick="changeGenreChartYear(-1)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <span id="genre-chart-year-display" class="text-xs font-bold text-slate-700 min-w-[40px] text-center">전체</span>
+                                    <button onclick="changeGenreChartYear(1)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-right"></i></button>
+                                </div>
+                            </div>
+                            <div class="h-48 flex justify-center"><canvas id="genreChart"></canvas></div>
+                            <div id="genre-legend" class="mt-6 space-y-2 text-xs"></div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="glass-card p-8">
+                            <h4 data-eyebrow="best" class="text-sm font-bold text-slate-500 mb-6 flex items-center gap-2"><i class="fa-solid fa-trophy text-amber-500"></i> 작품별 수익 Top 5 <span class="text-xs text-slate-400 font-normal">(전체 기간)</span></h4>
+                            <div id="dash-top-works" class="space-y-1"></div>
+                        </div>
+
+                        <div class="glass-card p-8">
+                            <div class="flex justify-between items-center mb-6">
+                                <h4 data-eyebrow="this year" class="text-sm font-bold text-slate-500 flex items-center gap-2"><i class="fa-solid fa-trophy text-amber-500"></i> 작품별 수익 Top 5</h4>
+                                <div class="flex items-center bg-slate-100 rounded-lg p-1 gap-2">
+                                    <button onclick="changeTopWorksYear(-1)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <span id="dash-top-works-year-display" class="text-xs font-bold text-slate-700 min-w-[40px] text-center">2026</span>
+                                    <button onclick="changeTopWorksYear(1)" class="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md transition-all text-xs"><i class="fa-solid fa-chevron-right"></i></button>
+                                </div>
+                            </div>
+                            <div id="dash-top-works-year" class="space-y-1"></div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card p-8">
+                        <h4 data-eyebrow="by year" class="text-sm font-bold text-slate-500 mb-6 flex items-center gap-2"><i class="fa-solid fa-list-ul"></i> 연도별 장르 수익 요약</h4>
+                        <div class="overflow-x-auto rounded-xl border border-slate-100">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100"><tr id="dash-genre-header"></tr></thead>
+                                <tbody id="dash-genre-body" class="divide-y divide-slate-100 bg-white"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 월별 정산 탭 -->
+                <div id="tab-records" class="tab-content space-y-8 pb-4">
+                    <div class="flex flex-col md:flex-row justify-between items-center gap-4 glass-card p-6 relative z-30">
+                        <div id="tab-records-title-row" class="flex items-center gap-4">
+                            <h3 data-eyebrow="report" class="text-xl font-bold text-slate-700"><span id="current-view-year" style="color:var(--primary)">2026</span>년 리포트</h3>
+                            <div class="h-6 w-[1px] bg-slate-200"></div>
+                            <div id="year-btns-container" class="flex gap-1"></div>
+                            <div class="flex gap-2">
+                                <button onclick="addNewYear()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-all" title="연도 추가"><i class="fa-solid fa-plus"></i></button>
+                                <button onclick="deleteCurrentYear()" class="w-8 h-8 rounded-full bg-red-50 hover:bg-red-100 text-red-400 flex items-center justify-center transition-all" title="현재 연도 삭제"><i class="fa-solid fa-minus"></i></button>
+                            </div>
+                            <button onclick="openViewOptions()" id="tab-records-view-opts-btn" class="w-9 h-9 rounded-xl flex items-center justify-center transition-all bg-slate-100 text-slate-400 hover:bg-slate-200" title="보기 옵션 (십자 강조)"><i class="fa-solid fa-crosshairs"></i></button>
+                            <button onclick="openTableStyleSettings()" id="tab-records-style-btn" class="w-9 h-9 rounded-xl flex items-center justify-center transition-all bg-slate-100 text-slate-400 hover:bg-slate-200" title="표 스타일 설정"><i class="fa-solid fa-gear"></i></button>
+                            <button onclick="toggleSheetLock()" id="sheet-lock-btn" class="w-9 h-9 rounded-xl flex items-center justify-center transition-all bg-slate-100 text-slate-400 hover:bg-slate-200" title="수정 잠금/해제"><i class="fa-solid fa-lock-open"></i></button>
+                        </div>
+
+                        <div id="tab-records-search-wrap" class="flex items-center gap-3 w-full md:w-auto">
+                            <div class="relative w-full md:w-64">
+                                <input type="text" id="work-search" placeholder="작품명 검색..." class="w-full pl-4 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-emerald-400 transition-all shadow-sm" onkeyup="renderRoyaltySheets()">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                        <div id="genre-tabs-container" class="flex flex-wrap gap-2"></div>
+                        <button type="button" onclick="openWithholdingCalc()" class="w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 hover:opacity-80" style="background:var(--primary-light); color:var(--primary);" title="3.3% 공제 계산기">
+                            <i class="fa-solid fa-calculator"></i>
+                        </button>
+                    </div>
+                    <div id="genre-sheets-container"></div>
+                </div>
+
+                <!-- 작품 라이브러리 탭 -->
+                <div id="tab-library" class="tab-content space-y-8 pb-20">
+                    <div class="glass-card p-6 min-h-[500px] w-[90%] mx-auto">
+                        <div class="flex flex-col md:flex-row justify-between items-center mb-6">
+                            <h3 class="text-xl font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-layer-group text-emerald-500"></i> 작품 라이브러리 <span id="library-total-count" class="text-xs font-bold text-white rounded-full px-2 py-0.5" style="background:var(--primary)">0</span></h3>
+                            <div class="flex items-center gap-3">
+                                <button onclick="resetLibraryFiles()" class="px-3 py-1.5 text-xs font-bold text-red-500 bg-red-50 hover:bg-red-100 rounded-lg transition-all flex items-center gap-1">
+                                    <i class="fa-solid fa-trash-can"></i> 라이브러리 초기화
+                                </button>
+                                <div id="visual-lib-tabs" class="flex gap-1 bg-slate-100 p-1 rounded-lg flex-wrap"></div>
+                            </div>
+                        </div>
+                        <div id="visual-lib-container" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8"></div>
+                    </div>
+                </div>
+
+                <!-- 작품 등록 탭 -->
+                <div id="tab-works" class="tab-content">
+                    <div class="grid gap-8" style="grid-template-columns: 30% 1fr;">
+                        <div class="h-full">
+
+                            <!-- 신규 등록 버튼 (폼 닫혔을 때만 표시) -->
+                            <div id="work-new-btn-area" class="glass-card p-6 h-fit hidden flex items-center justify-center">
+                                <button onclick="openNewWorkForm()" class="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-white shadow-md hover:-translate-y-0.5 transition-all text-sm" style="background:var(--primary)">
+                                    <i class="fa-solid fa-plus"></i> 신규 작품 등록
+                                </button>
+                            </div>
+
+                            <!-- 등록/수정 폼 -->
+                            <div class="glass-card p-8 scroll-invisible" id="work-form-card" style="overflow-y: auto;">
+                            <div class="space-y-4">
+                                    <div id="work-form-title-area" class="flex items-center gap-2 mb-2">
+                                        <span class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-md text-xs" id="work-form-icon"><i class="fa-solid fa-plus"></i></span>
+                                        <span class="font-bold text-slate-700 text-base" id="work-form-label">신규 작품 등록</span>
+                                        <button id="work-form-cancel-btn" onclick="cancelEditWork()" class="hidden ml-auto text-xs text-slate-400 hover:text-slate-600 border border-slate-200 rounded-lg px-2 py-1">취소</button>
+                                    </div>
+                                    <input type="hidden" id="work-editing-id" value="">
+                                    <!-- 1줄: 장르 + 출판사 -->
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">장르</label>
+                                            <select id="new-work-genre" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all cursor-pointer" onchange="toggleStudioInput()"></select>
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">출판사</label>
+                                            <input list="publisher-list" type="text" id="new-work-publisher" placeholder="출판사" oninput="syncSettlementPublisher(this.value)" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                            <datalist id="publisher-list"></datalist>
+                                        </div>
+                                    </div>
+                                    <!-- 2줄: 작품명 -->
+                                    <div>
+                                        <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">작품명</label>
+                                        <div class="relative">
+                                            <input type="text" id="new-work-title" placeholder="작품명을 입력하세요" autocomplete="off" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                            <ul id="custom-title-dropdown" class="hidden absolute top-full left-0 w-full max-h-[500px] overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg mt-1 z-50 custom-scrollbar"></ul>
+                                        </div>
+                                    </div>
+                                    <!-- 2-1줄: 플랫폼 + 프로모션 (작품관리와 연동, 웹툰은 웹툰관리에서 따로 관리해서 숨김) -->
+                                    <div id="platform-promo-row" class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">플랫폼</label>
+                                            <div class="flex gap-1">
+                                                <select id="new-work-platform-select" onchange="handleNewWorkPlatformChange(this)" class="flex-1 min-w-0 w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                                    <option value="">선택 안 함</option>
+                                                    <option value="리디">리디</option>
+                                                    <option value="시리즈">시리즈</option>
+                                                    <option value="카카오">카카오</option>
+                                                    <option value="봄툰">봄툰</option>
+                                                    <option value="미스터블루">미스터블루</option>
+                                                    <option value="레진">레진</option>
+                                                    <option value="custom">직접 입력</option>
+                                                </select>
+                                                <input type="text" id="new-work-platform-custom" placeholder="직접 입력" class="w-[90px] shrink-0 p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">프로모션</label>
+                                            <div class="flex gap-1">
+                                                <select id="new-work-promotion-select" onchange="handleNewWorkPromotionChange(this)" class="flex-1 min-w-0 w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                                    <option value="">선택 안 함</option>
+                                                    <option value="오리발">오리발</option>
+                                                    <option value="원픽">원픽</option>
+                                                    <option value="단독배너">단독배너</option>
+                                                    <option value="출판사 배너">출판사 배너</option>
+                                                    <option value="캘린더">캘린더</option>
+                                                    <option value="묶음 시단신">묶음 시단신</option>
+                                                    <option value="단독 시단신">단독 시단신</option>
+                                                    <option value="custom">직접 입력</option>
+                                                </select>
+                                                <input type="text" id="new-work-promotion-custom" placeholder="직접 입력" class="w-[90px] shrink-0 p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 3줄: 정산비율 + 권수 -->
+                                    <div id="publisher-rate-row" class="grid grid-cols-2 gap-3">
+                                        <div id="normal-rate-group">
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">정산 비율</label>
+                                            <div class="flex gap-2">
+                                                <select id="new-work-rate" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all" onchange="handleRateSelectChange(this)">
+                                                    <option value="" selected>선택 안함</option>
+                                                    <option value="70">70%</option>
+                                                    <option value="50">50%</option>
+                                                    <option value="60">60%</option>
+                                                    <option value="75">75%</option>
+                                                    <option value="80">80%</option>
+                                                    <option value="90">90%</option>
+                                                    <option value="custom">직접 입력</option>
+                                                </select>
+                                                <input type="number" id="new-work-rate-custom" class="w-20 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden" placeholder="%">
+                                            </div>
+                                        </div>
+                                        <div id="volumes-field-group">
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">권수</label>
+                                            <select id="new-work-volumes" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                                <option value="1" selected>1권</option>
+                                                <option value="2">2권</option>
+                                                <option value="3">3권</option>
+                                                <option value="4">4권</option>
+                                                <option value="5">5권</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <!-- 웹툰 전용 필드 -->
+                                    <div id="studio-field-group" class="hidden space-y-3">
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">웹툰 스튜디오</label>
+                                            <input type="text" id="new-work-studio" list="studio-list" placeholder="제작/스튜디오명" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                            <datalist id="studio-list"></datalist>
+                                            <datalist id="existing-titles-list"></datalist>
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">정산 출판사 <span class="text-[10px] font-normal text-slate-400">(실제 돈이 들어오는 곳 · 기본은 출판사와 동일)</span></label>
+                                            <input list="publisher-list" type="text" id="new-work-settlement-publisher" placeholder="출판사와 동일" oninput="settlementPublisherTouched = true;" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">RS <span class="text-slate-400 font-normal">(%)</span></label>
+                                                <input type="number" id="new-work-rs" placeholder="예: 10" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                            </div>
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">내 비율 <span class="text-slate-400 font-normal">(%)</span></label>
+                                                <input type="number" id="new-work-webtoon-rate" placeholder="예: 70" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 웹툰 전용 날짜 (계약일 + 출간일) -->
+                                    <!-- 웹툰 전용 날짜 (계약일 + 출간일) -->
+                                    <div id="webtoon-dates-group" class="hidden grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">계약일</label>
+                                            <input type="date" id="new-work-contract-date" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                        </div>
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">런칭일</label>
+                                            <div class="flex items-center gap-2">
+                                                <input type="date" id="new-work-date-webtoon" class="flex-1 p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                                <input type="month" id="new-work-pending-month-webtoon" class="flex-1 p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all hidden">
+                                                <label class="flex items-center gap-1.5 cursor-pointer shrink-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3" title="런칭 예정">
+                                                    <input type="checkbox" id="new-work-pending-webtoon" class="accent-emerald-500 w-3.5 h-3.5" onchange="document.getElementById('new-work-pending').checked=this.checked; toggleNewWorkDate(this)">
+                                                    <i class="fa-solid fa-star text-yellow-400 text-xs"></i>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 글자수: 공미 / 공포 -->
+                                    <div id="goal-field-group">
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">공미 <span class="text-[10px] font-normal text-slate-400">(공백 미포함)</span></label>
+                                                <input type="number" id="new-work-goal-nospace" placeholder="0" oninput="calcGoalFromNoSpace(this.value)" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                            </div>
+                                            <div>
+                                                <label class="text-sm font-bold ml-1 mb-1 block" style="color:var(--primary)">공포 <span class="text-[10px] font-normal" style="color:var(--primary);">(기준 글자수)</span></label>
+                                                <input type="number" id="new-work-goal-withspace" placeholder="0" oninput="calcGoalFromWithSpace(this.value)" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100" style="border-color:#87ada1">
+                                            </div>
+                                        </div>
+                                        <!-- 완고 입고일 + 출간일 -->
+                                        <div class="grid grid-cols-2 gap-3 mt-3">
+                                            <div id="manuscript-date-group">
+                                                <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">완고 입고일 <span class="text-[10px] font-normal text-slate-400">D-Day 기준</span></label>
+                                                <input type="date" id="new-work-manuscript-date" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                            </div>
+                                            <div>
+                                                <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">출간일</label>
+                                                <div class="flex items-center gap-2">
+                                                    <input type="date" id="new-work-date" class="flex-1 p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all">
+                                                    <input type="month" id="new-work-pending-month" class="flex-1 p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 transition-all hidden">
+                                                    <label class="flex items-center gap-1.5 cursor-pointer shrink-0 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3" title="출간 예정">
+                                                        <input type="checkbox" id="new-work-pending" class="accent-emerald-500 w-3.5 h-3.5" onchange="toggleNewWorkDate(this)">
+                                                        <i class="fa-solid fa-star text-yellow-400 text-xs"></i>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="dates-row" class="hidden"></div>
+
+                                    <!-- 선인세 -->
+                                    <div class="grid grid-cols-2 gap-3 mt-1">
+                                        <div>
+                                            <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">선인세 <span class="text-[10px] font-normal text-slate-400">(만원)</span></label>
+                                            <input type="number" id="new-work-advance-amount" placeholder="예) 300" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                        </div>
+                                        <div>
+                                            <label id="new-work-advance-date-label" class="text-sm font-bold text-slate-600 ml-1 mb-1 block">선인세 예정일</label>
+                                            <input type="month" id="new-work-advance-date" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                        </div>
+                                    </div>
+
+                                    <button onclick="registerOrUpdateWork()" id="work-form-submit-btn" class="w-full py-3.5 mt-2 rounded-xl font-bold text-white shadow-lg transition-all hover:-translate-y-1 active:scale-95 flex justify-center items-center gap-2" style="background: var(--primary)">
+                                        <i class="fa-solid fa-check"></i> <span id="work-form-submit-label">등록하기</span>
+                                    </button>
+                                    
+                                    <!-- 외전 관리 영역 (수정 모드에서만 표시) -->
+                                    <div id="extras-section" class="hidden border-t border-slate-100 pt-4 mt-2">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <label class="text-sm font-bold text-slate-600">📖 외전 / 추가 집필</label>
+                                            <button type="button" onclick="openExtraModal()" class="text-xs font-bold text-emerald-600 hover:text-emerald-700 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100">+ 외전 추가</button>
+                                        </div>
+                                        <p class="text-[10px] text-slate-400 mb-3">외전은 집필 관리/상세 기록에만 표시되며 정산에는 영향 없습니다.</p>
+                                        <div id="extras-list" class="space-y-2 scroll-invisible" style="max-height: 220px; overflow-y: auto;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div> <!-- /왼쪽 셀 h-full -->
+                        <!-- 오른쪽: 작품 목록 -->
+                        <div id="works-right-panel">
+                            <div class="glass-card p-6 flex flex-col h-full">
+                                <div class="flex items-center justify-between mb-4 flex-shrink-0">
+                                    <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><button onclick="openGenreManager()" class="text-slate-400 hover:text-emerald-600 transition-colors p-1 rounded-lg hover:bg-slate-100" title="장르 및 태그 관리"><i class="fa-solid fa-gear text-base"></i></button> 등록된 작품 목록 <span id="total-works-badge" class="ml-2 bg-slate-100 text-slate-500 text-xs px-2 py-0.5 rounded-full font-bold">0</span><span id="total-volumes-badge" class="hidden text-xs text-slate-400 font-medium"></span></h3>
+                                    <div id="library-tabs" class="flex gap-1 bg-slate-100 p-1 rounded-lg flex-wrap"></div>
+                                </div>
+                                <div class="overflow-y-auto custom-scrollbar pr-2 min-h-0 flex-1">
+                                    <div id="master-works-by-genre-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 출판사 현황 탭 -->
+                <div id="tab-publishers" class="tab-content pb-20">
+                    <div class="glass-card py-3 px-5 mt-3 mx-auto" style="max-width: 98%;">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-building-user text-emerald-500"></i> <span id="publisher-tab-title">계약 출판사 현황</span>
+                                <span id="pub-view-toggle" class="flex items-center gap-1 ml-2">
+                                    <button onclick="setPublisherViewMode('list')" id="pub-view-list-btn" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all" title="줄로 보기"><i class="fa-solid fa-list text-xs"></i></button>
+                                    <button onclick="setPublisherViewMode('card')" id="pub-view-card-btn" class="w-7 h-7 flex items-center justify-center rounded-lg transition-all" title="카드로 보기"><i class="fa-solid fa-grip text-xs"></i></button>
+                                </span>
+                            </h3>
+                            <div class="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                                <button onclick="switchPublisherTab('publishers')" id="pub-tab-publishers" class="px-4 py-1.5 text-sm font-bold rounded-md bg-white text-slate-700 shadow-sm transition-all">출판사</button>
+                                <button onclick="switchPublisherTab('studios')" id="pub-tab-studios" class="px-4 py-1.5 text-sm font-bold rounded-md text-slate-400 hover:bg-white/50 transition-all">웹툰 스튜디오</button>
+                                <button onclick="switchPublisherTab('contacts')" id="pub-tab-contacts" class="px-4 py-1.5 text-sm font-bold rounded-md text-slate-400 hover:bg-white/50 transition-all">컨택</button>
+                                <button onclick="switchPublisherTab('submissions')" id="pub-tab-submissions" class="px-4 py-1.5 text-sm font-bold rounded-md text-slate-400 hover:bg-white/50 transition-all">투고</button>
+                                <button onclick="switchPublisherTab('webtoon-subs')" id="pub-tab-webtoon-subs" class="px-4 py-1.5 text-sm font-bold rounded-md text-slate-400 hover:bg-white/50 transition-all">웹툰 투고</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="publisher-status-list" class="mx-auto" style="max-width: 98%; margin-top: 20px;"></div>
+                </div>
+
+                <!-- 웹툰 관리 탭 (NEW) -->
+                <div id="tab-webtoon" class="tab-content pb-20">
+                    <div class="glass-card py-3 px-5 mt-3 mx-auto" style="max-width: 98%;">
+                        <div class="flex justify-between items-center flex-wrap gap-3">
+                            <h3 data-eyebrow="webtoons" class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-clapperboard text-yellow-500"></i> 웹툰 관리 <span id="webtoon-total-count" class="text-xs font-bold text-white rounded-full px-2 py-0.5" style="background:var(--primary)">0</span></h3>
+                            <div class="flex items-center gap-1.5 flex-wrap" id="webtoon-view-tabs">
+                                <button onclick="setWebtoonViewFilter('all')" id="wtvf-all" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">전체 보기</button>
+                                <button onclick="setWebtoonViewFilter('published')" id="wtvf-published" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">출간작만 보기</button>
+                                <button onclick="setWebtoonViewFilter('upcoming')" id="wtvf-upcoming" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">출간 예정 보기</button>
+                                <button onclick="setWebtoonViewFilter('pen')" id="wtvf-pen" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">필명 별로 보기</button>
+                                <button onclick="setWebtoonViewFilter('broken')" id="wtvf-broken" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">계약 파기</button>
+                                <button onclick="openWebtoonCardSettings()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all" title="카드 설정"><i class="fa-solid fa-sliders"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="webtoon-manage-list" class="mx-auto" style="max-width: 98%; margin-top: 20px;"></div>
+                </div>
+
+                <!-- 작품 관리 탭 (NEW) -->
+                <div id="tab-workmanage" class="tab-content pb-20">
+                    <div class="glass-card py-3 px-5 mt-3 mx-auto" style="max-width: 98%;">
+                        <div class="flex justify-between items-center flex-wrap gap-3">
+                            <h3 data-eyebrow="works" class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-layer-group text-yellow-500"></i> 작품 관리 <span id="workmanage-total-count" class="text-xs font-bold text-white rounded-full px-2 py-0.5" style="background:var(--primary)">0</span></h3>
+                            <div class="flex items-center gap-1.5 flex-wrap" id="workmanage-view-tabs">
+                                <button onclick="setWorkManageViewFilter('all')" id="wmvf-all" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">전체 보기</button>
+                                <button onclick="setWorkManageViewFilter('published')" id="wmvf-published" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">출간작만 보기</button>
+                                <button onclick="setWorkManageViewFilter('upcoming')" id="wmvf-upcoming" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">출간 예정 보기</button>
+                                <button onclick="setWorkManageViewFilter('genre')" id="wmvf-genre" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all">장르 별로 보기</button>
+                                <button onclick="openWorkManageCardSettings()" class="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all" title="카드 설정"><i class="fa-solid fa-sliders"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="workmanage-list" class="mx-auto" style="max-width: 98%; margin-top: 20px;"></div>
+                </div>
+
+                <!-- 정산 입금일 탭 -->
+                <div id="tab-settlements" class="tab-content space-y-8 pb-20">
+                    <div id="settle-main-card" class="glass-card p-8 mt-3 mx-auto" style="max-width: 97%;">
+                        <div id="settle-cozy-hero" class="cozy-pubhero"></div>
+                        <div id="settle-head-row" class="flex flex-col md:flex-row justify-between items-center mb-8 border-b border-slate-100 pb-6 gap-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-regular fa-calendar-check text-blue-500"></i> 연간 정산 입금 스케줄</h3>
+                                <p id="tab-settlements-subtitle" class="text-xs text-slate-400 mt-1">월별 정산 예정 내역을 날짜별로 확인합니다.</p>
+                            </div>
+                            <div id="settle-head-right" class="flex items-center gap-4">
+                                <button onclick="openYearAllMonthsDetail()" title="1년치 전체 보기" class="w-9 h-9 flex items-center justify-center text-white rounded-xl transition-all shrink-0 shadow-sm hover:opacity-90" style="background-color:#f9c9dd;">
+                                    <i class="fa-solid fa-calendar-days text-sm"></i>
+                                </button>
+                                <div class="text-right mr-4">
+                                    <span class="text-xs text-slate-400 font-bold uppercase block">Total Annual Settlement</span>
+                                    <span id="yearly-total-display" class="text-2xl font-bold text-emerald-600">₩ 0</span>
+                                </div>
+                                <div id="settlement-year-nav" class="flex items-center bg-slate-100 rounded-lg p-1">
+                                    <button onclick="changeSettlementYear(-1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <span id="settlement-year-display" class="px-4 font-bold text-slate-700">2026</span>
+                                    <button onclick="changeSettlementYear(1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-right"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="settlement-schedule-list" class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));"></div>
+                    </div>
+                </div>
+
+                <!-- 집필 관리 탭 (NEW) -->
+                <div id="tab-write" class="tab-content space-y-8 pb-20">
+                    <div id="write-main-card" class="glass-card p-8">
+                        <div id="write-cozy-hero" class="cozy-pubhero"></div>
+                        <div id="tab-write-header-row" class="relative flex items-center justify-between mb-6">
+                            <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-pen-nib text-emerald-500"></i> 집필 관리 일정
+                                <button onclick="openYearTimeline()" title="연간 일정 한눈에 보기" class="ml-1 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-amber-500 hover:bg-amber-50 rounded-lg transition-all"><i class="fa-solid fa-timeline"></i></button>
+                            </h3>
+                            <!-- 가운데 목표 합계 -->
+                            <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-4 pointer-events-none">
+                                <span id="write-month-big-label" style="font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; font-size:2.5rem; font-weight:800; color:var(--primary); line-height:1;"></span>
+                                <p class="text-xl font-semibold" style="font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; color:#475569; margin:0;">이번달 목표 합계: <span id="write-month-goal-sum" style="color:var(--primary)">0자</span> <span id="write-month-pending-sum" class="text-xs font-normal text-slate-400"></span> <span id="write-month-empty-sum" class="text-xs font-normal text-slate-300"></span></p>
+                            </div>
+                            <div id="write-nav-pill" class="flex items-center bg-slate-100 rounded-lg p-1">
+                                <button type="button" class="wr-timeline-btn" onclick="openYearTimeline()" title="연간 일정 한눈에 보기"><i class="fa-solid fa-calendar-days"></i></button>
+                                <button onclick="changeWriteMonth(-1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-left"></i></button>
+                                <span id="write-cal-title" class="px-4 font-bold text-slate-700 w-32 text-center">2026년 5월</span>
+                                <button onclick="changeWriteMonth(1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-right"></i></button>
+                                <button onclick="changeWriteMonth(0, true)" class="ml-2 px-3 py-1 bg-white text-xs font-bold text-slate-600 rounded-md shadow-sm">Today</button>
+                                <button onclick="openWriteSettings()" class="ml-2 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-all" title="집필 설정"><i class="fa-solid fa-sliders"></i></button>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-7 gap-1">
+                            <div class="text-center font-bold text-rose-500 text-xs py-2 bg-slate-50 rounded-t">일</div>
+                            <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">월</div>
+                            <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">화</div>
+                            <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">수</div>
+                            <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">목</div>
+                            <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">금</div>
+                            <div class="text-center font-bold text-blue-500 text-xs py-2 bg-slate-50 rounded-t">토</div>
+                        </div>
+                        <div id="write-calendar-body" class="grid grid-cols-7 gap-1"></div>
+                    </div>
+                </div>
+
+                <!-- 스케줄 관리 탭 (NEW) -->
+                <div id="tab-task" class="tab-content pb-20">
+                    <div id="task-layout-wrap" class="flex gap-5 items-start">
+                        <div id="task-main-card" class="glass-card p-8 flex-1 min-w-0">
+                            <div id="task-cozy-hero" class="cozy-pubhero"></div>
+                            <div id="task-head-row" class="relative flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                                <div>
+                                    <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-list-check text-indigo-500"></i> 스케줄 & 태스크 관리</h3>
+                                </div>
+                                <div class="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
+                                    <p id="task-month-big-label" style="font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; font-size:2.5rem; font-weight:800; color:var(--primary); line-height:1;"></p>
+                                </div>
+                                <div id="task-nav-pill" class="flex items-center bg-slate-100 rounded-lg p-1">
+                                    <button onclick="changeTaskMonth(-1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-left"></i></button>
+                                    <span id="task-cal-title" class="px-4 font-bold text-slate-700 w-32 text-center">2026년 5월</span>
+                                    <button onclick="changeTaskMonth(1)" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-right"></i></button>
+                                    <button onclick="changeTaskMonth(0, true)" class="ml-2 px-3 py-1 bg-white text-xs font-bold text-slate-600 rounded-md shadow-sm">Today</button>
+                                    <button onclick="openTaskSettings()" class="ml-2 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all" title="스케줄 설정"><i class="fa-solid fa-sliders"></i></button>
+                                </div>
+                            </div>
+                            <div id="task-genre-tabs" class="hidden"></div>
+
+                            <div class="grid grid-cols-7 gap-1">
+                                <div class="text-center font-bold text-rose-500 text-xs py-2 bg-slate-50 rounded-t">일</div>
+                                <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">월</div>
+                                <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">화</div>
+                                <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">수</div>
+                                <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">목</div>
+                                <div class="text-center font-bold text-slate-500 text-xs py-2 bg-slate-50 rounded-t">금</div>
+                                <div class="text-center font-bold text-blue-500 text-xs py-2 bg-slate-50 rounded-t">토</div>
+                            </div>
+                            <div id="task-calendar-body" class="grid grid-cols-7 gap-1"></div>
+                        </div>
+                        <!-- 우측: 미완료 스케줄 사이드바 -->
+                        <div id="task-dday-sidebar" class="w-72 shrink-0 flex flex-col sticky top-4" style="height:calc(100vh - 120px)">
+                            <div class="glass-card p-4 flex flex-col" style="height:100%">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 data-eyebrow="schedule" class="text-sm font-bold text-slate-700 flex items-center gap-2"><i class="dday-ko fa-solid fa-star text-indigo-400 text-xs"></i><span class="dday-ko"> 스케줄</span></h3>
+                                    <button type="button" onclick="toggleDdayDesignMenu(this, event, 'task')" class="dday-design-btn w-6 h-6 items-center justify-center rounded-full hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600" title="카드 디자인"><i class="fa-solid fa-palette text-xs"></i></button>
+                                </div>
+                                <div class="border-b border-slate-100 mb-3"></div>
+                                <div id="task-dday-list" class="space-y-2 flex-1" style="overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 출간 일정 탭 -->
+                <!-- 출간 일정 탭 -->
+                <div id="tab-publish-cal" class="tab-content pb-20">
+                    <!-- 월별 뷰 -->
+                    <div id="publish-month-view-wrap" class="flex gap-5 items-start">
+                        <!-- 좌측: 달력 -->
+                        <div class="glass-card p-6 flex-1 min-w-0">
+                            <div id="publish-cozy-hero" class="cozy-pubhero"></div>
+                            <div id="publish-cal-nav-row" class="flex justify-between items-center mb-5">
+                                <button onclick="changePublishCalMonth(-1)" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-600 transition-all flex items-center gap-1.5"><i class="fa-solid fa-chevron-left text-xs"></i> 이전 달</button>
+                                <div id="publish-cal-title-group" class="flex items-center gap-3">
+                                    <h2 id="publish-cal-title" class="text-lg font-bold" style="color:var(--primary)"></h2>
+                                    <button onclick="changePublishCalMonth(0,true)" class="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-500 shadow-sm">Today</button>
+                                    <button onclick="togglePublishYearView()" id="publish-year-view-btn" class="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-500 shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-calendar-days text-[10px]"></i> 전체 보기</button>
+                                </div>
+                                <button onclick="changePublishCalMonth(1)" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-600 transition-all flex items-center gap-1.5">다음 달 <i class="fa-solid fa-chevron-right text-xs"></i></button>
+                            </div>
+                            <div class="grid grid-cols-7 gap-1 mb-1">
+                                <div class="text-center text-xs font-bold text-rose-400 py-2 bg-slate-50 rounded">일</div>
+                                <div class="text-center text-xs font-bold text-slate-400 py-2 bg-slate-50 rounded">월</div>
+                                <div class="text-center text-xs font-bold text-slate-400 py-2 bg-slate-50 rounded">화</div>
+                                <div class="text-center text-xs font-bold text-slate-400 py-2 bg-slate-50 rounded">수</div>
+                                <div class="text-center text-xs font-bold text-slate-400 py-2 bg-slate-50 rounded">목</div>
+                                <div class="text-center text-xs font-bold text-slate-400 py-2 bg-slate-50 rounded">금</div>
+                                <div class="text-center text-xs font-bold text-blue-400 py-2 bg-slate-50 rounded">토</div>
+                            </div>
+                            <div id="publish-cal-body" class="grid grid-cols-7 gap-1"></div>
+                        </div>
+                        <!-- 우측: D-Day 사이드바 -->
+                        <div class="w-72 shrink-0 flex flex-col sticky top-4" id="publish-dday-sidebar" style="height:calc(100vh - 120px)">
+                            <div class="glass-card p-4 flex flex-col" style="height:100%">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 data-eyebrow="upcoming" class="text-sm font-bold text-slate-700 flex items-center gap-2"><i class="dday-ko fa-solid fa-star text-yellow-400 text-xs"></i><span class="dday-ko"> 출간 예정</span> <span id="publish-dday-count" class="text-xs font-bold text-white rounded-full px-2 py-0.5" style="background:var(--primary)">0</span></h3>
+                                    <div class="relative flex items-center gap-1" id="dday-filter-wrap">
+                                        <button type="button" onclick="toggleDdayDesignMenu(this, event, 'pub')" class="dday-design-btn w-6 h-6 items-center justify-center rounded-full hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600" title="카드 디자인"><i class="fa-solid fa-palette text-xs"></i></button>
+                                        <button id="dday-filter-btn" onclick="toggleDdayFilter()" class="w-6 h-6 flex items-center justify-center rounded-full hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-600" title="장르 필터">
+                                            <i class="fa-solid fa-sliders text-xs"></i>
+                                        </button>
+                                        <div id="dday-filter-dropdown" style="display:none; position:absolute; right:0; top:28px; z-index:100; min-width:150px;"
+                                            class="bg-white rounded-xl shadow-lg border border-slate-100 p-2 space-y-1">
+                                            <div class="text-[10px] font-bold text-slate-400 px-2 pb-1 border-b border-slate-100 mb-1">장르 필터</div>
+                                            <label class="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-50 cursor-pointer text-xs text-slate-600">
+                                                <input type="checkbox" class="dday-genre-check accent-slate-500" value="__all__" onchange="onDdayFilterChange(this)" checked> 전체
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="border-b border-slate-100 mb-3"></div>
+                                <div id="publish-dday-list" class="space-y-2 flex-1" style="overflow-y:auto; scrollbar-width:none; -ms-overflow-style:none;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 연간 전체보기 뷰 -->
+                    <div id="publish-year-view" style="display:none;">
+                        <div class="glass-card p-6">
+                            <div id="publish-year-nav-row" class="flex justify-between items-center mb-6">
+                                <button onclick="changePublishYearViewYear(-1)" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-600 transition-all flex items-center gap-1.5"><i class="fa-solid fa-chevron-left text-xs"></i> 이전 해</button>
+                                <div id="publish-year-title-group" class="flex items-center gap-3">
+                                    <h2 id="publish-year-view-title" class="text-lg font-bold" style="color:var(--primary)"></h2>
+                                    <button onclick="togglePublishYearView()" class="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-500 shadow-sm flex items-center gap-1.5 transition-all"><i class="fa-solid fa-calendar text-[10px]"></i> 월별 보기</button>
+                                </div>
+                                <button onclick="changePublishYearViewYear(1)" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-600 transition-all flex items-center gap-1.5">다음 해 <i class="fa-solid fa-chevron-right text-xs"></i></button>
+                            </div>
+                            <div id="publish-year-view-body" class="grid grid-cols-4 gap-4"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 세무·목표 탭 -->
+                <div id="tab-tax" class="tab-content space-y-6 pb-20">
+                    <div id="tax-panel" class="space-y-6"></div>
+                </div>
+
+                <!-- 상세 기록 입력 탭 -->
+                <div id="tab-daily" class="tab-content pb-20">
+                    <div id="daily-main-card" class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 max-w-[960px] mx-auto space-y-4">
+                        <div id="daily-cozy-hero" class="cozy-pubhero"></div>
+                        <!-- 날짜 네비 -->
+                        <div id="daily-nav-row" class="flex justify-center items-center gap-3 relative">
+                            <button onclick="writerMovePrevDay()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-600 transition-all">◀ 이전 날</button>
+                            <h2 id="w-currentDateDisplay" class="text-lg font-bold text-slate-700 min-w-[180px] text-center"></h2>
+                            <button onclick="writerMoveNextDay()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-bold text-slate-600 transition-all">다음 날 ▶</button>
+                            <button onclick="writerGoToday()" class="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-500 shadow-sm leading-none">Today</button>
+                            <button onclick="toggleWriterDatePicker()" id="writer-datepicker-btn" class="w-9 h-9 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 shadow-sm" title="날짜로 이동"><i class="fa-solid fa-calendar-days text-sm"></i></button>
+                            <div id="writer-datepicker-popover" class="hidden absolute top-full mt-2 right-0 z-30 bg-white rounded-2xl shadow-xl border border-slate-100 p-4" style="width:300px;"></div>
+                        </div>
+
+                        <!-- 메인 그리드 -->
+                        <div class="grid grid-cols-[1fr_260px] gap-5 items-start" style="margin-top: 1.5rem;">
+                            <!-- 좌측: 작품선택 + 버튼 + 테이블 -->
+                            <div>
+                                <div class="flex items-center gap-3 mb-2">
+                                    <span class="text-sm font-bold text-slate-600 shrink-0">작품 선택</span>
+                                    <select id="w-dailyWorkSelector" onchange="writerRenderDailyTable()" class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[var(--primary)] font-medium text-slate-700"></select>
+                                </div>
+                                <div id="w-dailyTableContainer" class="rounded-lg overflow-hidden border border-slate-100"></div>
+                            </div>
+
+                            <!-- 우측: 통계 + 한글 연동 패널 + 어제 글자수 -->
+                            <div class="sticky top-5 flex flex-col gap-3">
+                                <!-- 통계 패널 -->
+                                <div class="bg-slate-50 rounded-2xl p-4 text-center border border-slate-100 flex flex-col gap-7">
+                                    <div>
+                                        <div class="flex items-center justify-center gap-1.5 mb-2">
+                                            <h4 id="w-workTitleDisplay" class="text-sm font-bold text-slate-600 leading-snug">작품을 선택하세요</h4>
+                                            <button type="button" onclick="openWriteCounterResetModal(document.getElementById('w-dailyWorkSelector').value)" class="text-slate-300 hover:text-rose-500 transition-colors shrink-0" title="지금부터 카운터 (누적 글자수 기록은 유지하고 진행률만 원하는 날짜부터 다시 세기)">
+                                                <i class="fa-solid fa-rotate-left text-[11px]"></i>
+                                            </button>
+                                        </div>
+                                        <div class="relative w-28 h-28 mx-auto" id="w-workTotalWrap"
+                                             onmouseenter="showWorkVolumeTip(event)" onmousemove="moveWorkVolumeTip(event)" onmouseleave="hideWorkVolumeTip()">
+                                            <canvas id="w-workTotalChart"></canvas>
+                                            <div id="w-workTotalPerCenter" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-black text-lg text-slate-700">0%</div>
+                                        </div>
+                                        <p id="w-workTotalText" class="font-bold text-slate-700 mt-2 text-xs">0 / 0자</p>
+                                        <div id="w-workDeadlineInfo" class="mt-1 text-xs text-slate-400"></div>
+                                    </div>
+                                    <hr class="border-slate-200">
+                                    <div>
+                                        <h4 class="text-sm font-bold text-slate-600 mb-2">오늘 하루 집필량</h4>
+                                        <div class="relative w-28 h-28 mx-auto">
+                                            <canvas id="w-dailyGoalChart"></canvas>
+                                            <div id="w-dailyGoalPerCenter" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 font-black text-lg text-slate-700">0%</div>
+                                        </div>
+                                        <p id="w-dailyGoalText" class="font-bold mt-2 text-xs" style="color:var(--primary)">0 / 0자</p>
+                                    </div>
+                                </div>
+
+
+                                <!-- 이전 글자수 불러오기 버튼 -->
+                                <button onclick="writerCarryYesterdayLast()" class="w-full px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 leading-none">
+                                    <i class="fa-solid fa-clock-rotate-left text-[11px]"></i> 이전 글자수 불러오기
+                                </button>
+                                <!-- 이미 글자수를 채웠는데 완료 처리가 안 된 지난 카드들을 한 번에 정리 -->
+                                <button onclick="bulkSyncWriteCompletionFromDaily()" class="w-full px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 leading-none">
+                                    <i class="fa-solid fa-broom text-[11px]"></i> 지난 기록 완료 처리 일괄 정리
+                                </button>
+                            </div>
+                        </div>
+                        <input type="number" id="w-dailyTimeInput" class="hidden">
+                        <input type="number" id="w-dailyGoalInput" value="12000" class="hidden" oninput="writerGlobalDailyGoal=parseInt(this.value)||12000;">
+                    </div>
+                </div>
+
+                <!-- 월별 달력 탭 -->
+                <div id="tab-monthly" class="tab-content space-y-6 pb-20">
+                    <div id="wc-main-card" class="glass-card p-6">
+                        <div id="wc-cozy-hero" class="cozy-pubhero"></div>
+                        <div id="wc-head-row" class="relative flex items-center justify-between mb-5">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-calendar text-emerald-500"></i> 글자수 관리
+                                    <button type="button" onclick="openWriterYearStats()" title="연간 글자수 통계" class="px-3 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-500 shadow-sm flex items-center gap-1.5 transition-all hover:text-emerald-600"><i class="fa-solid fa-chart-column text-[10px]"></i> 연간 통계</button>
+                                </h3>
+                                <div id="w-calDaysRatio" class="text-xs text-slate-400 font-semibold mt-1 ml-0.5"></div>
+                                <div id="w-calGoalRatio" class="text-xs text-slate-400 font-semibold mt-0.5 ml-0.5"></div>
+                            </div>
+                            <!-- 가운데: 집필량 / 목표 -->
+                            <div class="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none">
+                                <h2 id="w-calTitle" class="text-xl font-semibold" style="font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; color:#475569;"></h2>
+                            </div>
+                            <!-- 오른쪽 네비 -->
+                            <div id="wc-nav-pill" class="flex items-center bg-slate-100 rounded-lg p-1">
+                                <button type="button" class="wr-timeline-btn" onclick="openWriterYearStats()" title="연간 글자수 통계"><i class="fa-solid fa-chart-column"></i></button>
+                                <button onclick="writerCalPrev()" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-left"></i></button>
+                                <span id="w-cal-month-label" class="px-4 font-bold text-slate-700 w-32 text-center"></span>
+                                <button onclick="writerCalNext()" class="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-white rounded-md transition-all"><i class="fa-solid fa-chevron-right"></i></button>
+                                <button onclick="writerCalToday()" class="ml-2 px-3 py-1 bg-white text-xs font-bold text-slate-600 rounded-md shadow-sm">Today</button>
+                                <button onclick="openWriterBulkMonthModal()" class="ml-2 w-8 h-8 flex items-center justify-center bg-white text-slate-500 rounded-md shadow-sm" title="이번 달 글자수 일괄 입력"><i class="fa-solid fa-pen text-xs"></i></button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 mb-1">
+                            <div class="text-center text-xs font-bold text-rose-500 py-2 bg-slate-50 rounded-t">일</div>
+                            <div class="text-center text-xs font-bold text-slate-500 py-2 bg-slate-50 rounded-t">월</div>
+                            <div class="text-center text-xs font-bold text-slate-500 py-2 bg-slate-50 rounded-t">화</div>
+                            <div class="text-center text-xs font-bold text-slate-500 py-2 bg-slate-50 rounded-t">수</div>
+                            <div class="text-center text-xs font-bold text-slate-500 py-2 bg-slate-50 rounded-t">목</div>
+                            <div class="text-center text-xs font-bold text-slate-500 py-2 bg-slate-50 rounded-t">금</div>
+                            <div class="text-center text-xs font-bold text-blue-500 py-2 bg-slate-50 rounded-t">토</div>
+                        </div>
+                        <div id="w-calendarBody" class="grid grid-cols-7 gap-1"></div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- 기존 모달들 -->
+    <!-- 컨택 추가/수정 모달 -->
+    <!-- 상세 기록 입력 미니창 -->
+
+    <!-- [NEW] 집필 카운터 리셋 모달 -->
+    <div id="write-counter-reset-modal" class="modal-overlay">
+        <div class="modal-content max-w-sm w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-base font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-rotate-left text-rose-500"></i> 지금부터 카운터</h3>
+                <button onclick="closeWriteCounterResetModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="space-y-4">
+                <p class="text-xs text-slate-500 leading-relaxed">선택한 날짜부터 카운터를 0자로 다시 셉니다.<br>· 그 전에 기록된 글자수는 통계에 그대로 남습니다.<br>· 집필 관리에 표시되는 누적/진행률과, 달력에 보이는 누적 목표(괄호 안 숫자)가 선택한 날짜부터 새로 쌓입니다.</p>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 block mb-1.5">리셋 기준 날짜</label>
+                    <input type="date" id="write-counter-reset-date-input" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-rose-100 transition-all">
+                </div>
+                <button onclick="confirmWriteCounterReset()" class="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-rose-500 hover:bg-rose-600 transition-all">이 날짜부터 0자로 리셋</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 집필 관리 설정 모달 -->
+    <div id="write-settings-modal" class="modal-overlay">
+        <div class="modal-content max-w-sm w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-base font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-sliders text-emerald-500"></i> 집필 관리 설정</h3>
+                <button onclick="closeWriteSettings()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="space-y-4">
+                <!-- 카드 글자 크기 -->
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">카드 글자 크기</label>
+                    <div class="flex items-center gap-2 bg-slate-50 rounded-xl p-2 border border-slate-200">
+                        <button onclick="changeWriteCardFont(-1)" class="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-600 text-sm font-bold flex items-center justify-center">−</button>
+                        <span id="write-font-size-val" class="flex-1 text-center text-sm font-bold text-slate-700">12px</span>
+                        <button onclick="changeWriteCardFont(1)" class="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-600 text-sm font-bold flex items-center justify-center">+</button>
+                    </div>
+                </div>
+                <!-- 진행률 색상 투명도 -->
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">진행률 색상 투명도</label>
+                    <div class="flex items-center gap-2 bg-slate-50 rounded-xl p-2 border border-slate-200">
+                        <input type="range" id="write-fill-opacity" min="5" max="80" value="25" class="flex-1 accent-emerald-500" oninput="updateWriteCardOpacity(this.value)">
+                        <span id="write-fill-opacity-val" class="text-xs text-slate-400 w-8 text-right">25%</span>
+                    </div>
+                </div>
+                <!-- 빈 날 가용 글자수 -->
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">빈 날 가용 글자수</label>
+                    <div class="flex items-center gap-2 bg-slate-50 rounded-xl p-2 border border-slate-200">
+                        <input type="number" id="write-empty-day-chars" value="6000" min="0" step="100" class="flex-1 bg-transparent text-sm font-bold text-slate-700 outline-none" oninput="updateWriteEmptyDayChars(this.value)">
+                        <span class="text-xs text-slate-400 shrink-0">자 / 일</span>
+                    </div>
+                </div>
+                <!-- 카드 색상 -->
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">카드 색상</label>
+                    <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 mb-2">
+                        <span class="text-sm text-slate-600 font-medium">기본 (집필)</span>
+                        <input type="color" id="write-color-default" value="#F9F8F6" class="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5" oninput="updateWriteColors()">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">분류별 카드 색상</label>
+                    <div id="write-category-color-list" class="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 스케줄 관리 설정 모달 -->
+    <div id="task-settings-modal" class="modal-overlay">
+        <div class="modal-content max-w-sm w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-base font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-sliders text-indigo-500"></i> 스케줄 설정</h3>
+                <button onclick="closeTaskSettings()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">카드 글자 크기</label>
+                    <div class="flex items-center gap-2 bg-slate-50 rounded-xl p-2 border border-slate-200">
+                        <button onclick="changeTaskCardFont(-1)" class="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-600 text-sm font-bold flex items-center justify-center">−</button>
+                        <span id="task-font-size-val" class="flex-1 text-center text-sm font-bold text-slate-700">12px</span>
+                        <button onclick="changeTaskCardFont(1)" class="w-7 h-7 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-600 text-sm font-bold flex items-center justify-center">+</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">카드 배경 색상</label>
+                    <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span class="text-sm text-slate-600 font-medium">기본 배경</span>
+                        <input type="color" id="task-color-default" value="#F9F8F6" class="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5" oninput="updateTaskColors()">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">분류별 글자 색상</label>
+                    <div id="task-category-color-list" class="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 정산 월 상세 모달 -->
+    <div id="month-detail-modal" class="modal-overlay">
+        <div class="modal-content max-w-xl w-full" style="max-height:85vh; display:flex; flex-direction:column;">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-regular fa-calendar-check text-emerald-500"></i>
+                    <span id="month-detail-title">월 정산 내역</span>
+                </h3>
+                <button onclick="closeMonthDetail()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div id="month-detail-body" class="overflow-y-auto custom-scrollbar flex-1 min-h-0 space-y-4"></div>
+            <div class="border-t border-slate-100 pt-4 mt-4 shrink-0 flex justify-between items-center">
+                <span class="text-sm font-black text-slate-500">총 합계</span>
+                <span id="month-detail-total" class="text-lg font-black text-emerald-600"></span>
+            </div>
+        </div>
+    </div>
+
+    <div id="year-all-detail-modal" class="modal-overlay">
+        <div class="modal-content" style="width:95vw; max-width:1680px; max-height:88vh; display:flex; flex-direction:column;">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-list-ul text-emerald-500"></i>
+                    <span id="year-all-detail-title">전체 정산 내역</span>
+                </h3>
+                <div class="flex items-center gap-3 no-print">
+                    <button onclick="printYearAllMonthsDetail()" title="인쇄" class="text-slate-400 hover:text-emerald-600 transition-colors"><i class="fa-solid fa-print text-lg"></i></button>
+                    <button onclick="closeYearAllMonthsDetail()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+                </div>
+            </div>
+            <div id="year-all-detail-body" class="overflow-y-auto custom-scrollbar flex-1 min-h-0 space-y-6"></div>
+            <div class="border-t border-slate-100 pt-4 mt-4 shrink-0 flex justify-between items-center">
+                <span class="text-sm font-black text-slate-500">연간 총 합계</span>
+                <span id="year-all-detail-total" class="text-lg font-black text-emerald-600"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 정산 입금일 툴팁 -->
+    <div id="pay-tooltip" class="hidden fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl p-3 w-56 pointer-events-none" style="transition: opacity 0.1s;">
+        <div id="pay-tooltip-content"></div>
+    </div>
+
+    <div id="contact-modal" class="modal-overlay">
+        <div class="modal-content max-w-4xl w-full" style="max-height:90vh; display:flex; flex-direction:column;">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-regular fa-envelope text-emerald-500"></i> <span id="contact-modal-title">컨택 추가</span></h3>
+                <button onclick="closeContactModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="overflow-y-auto custom-scrollbar pr-1 flex-1 min-h-0">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <!-- 1줄: 출판사 / 필명 / 상태 / 별점 -->
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">출판사 *</label>
+                        <input type="text" id="contact-publisher" placeholder="출판사명" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">필명</label>
+                        <div class="flex gap-1">
+                            <select id="contact-pen-name" class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                <option value="">선택</option>
+                            </select>
+                            <button type="button" onclick="openPenNameManager()" class="px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0" title="필명 관리"><i class="fa-solid fa-gear text-xs"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">상태</label>
+                        <select id="contact-status" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="대기">대기</option>
+                            <option value="추후 연락">추후 연락</option>
+                            <option value="진행">진행</option>
+                            <option value="계약">계약</option>
+                            <option value="거절">거절</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">컨택 날짜</label>
+                        <input type="date" id="contact-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <!-- 2줄: 비율 / 선인세 / 정산일 / 정산기준 -->
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">비율</label>
+                        <div class="flex gap-1">
+                            <select id="contact-rate-select" onchange="handleContactRateChange(this)" class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                <option value="">선택</option>
+                                <option value="70">70%</option>
+                                <option value="75">75%</option>
+                                <option value="80">80%</option>
+                                <option value="85">85%</option>
+                                <option value="90">90%</option>
+                                <option value="custom">직접</option>
+                            </select>
+                            <input type="text" id="contact-rate-custom" placeholder="%" class="w-14 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">선인세</label>
+                        <div class="relative">
+                            <input type="number" id="contact-advance" placeholder="0" class="w-full p-2.5 pr-12 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">만원</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">정산일</label>
+                        <select id="contact-payment-day" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100" onchange="handleContactCustomSelect(this)">
+                            <option value="">선택</option>
+                            <option value="1">1일</option>
+                            <option value="7">7일</option>
+                            <option value="10">10일</option>
+                            <option value="12">12일</option>
+                            <option value="15">15일</option>
+                            <option value="20">20일</option>
+                            <option value="25">25일</option>
+                            <option value="말일">말일</option>
+                            <option value="__custom__">직접입력</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">정산 기준</label>
+                        <select id="contact-standard" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">선택</option>
+                            <option value="익월">익월</option>
+                            <option value="익익월">익익월</option>
+                            <option value="익익익월">익익익월</option>
+                        </select>
+                    </div>
+                    <!-- 3줄: 정산사이트 / 별점 / 조건(2칸) -->
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">정산 사이트</label>
+                        <select id="contact-site" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">선택</option>
+                            <option value="실시간">실시간</option>
+                            <option value="자체">자체</option>
+                            <option value="웹하드">웹하드</option>
+                            <option value="이메일">이메일</option>
+                            <option value="이카운트">이카운트</option>
+                            <option value="구글시트">구글시트</option>
+                            <option value="하드">하드</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">관심도</label>
+                        <div class="flex items-center justify-center gap-1 p-2.5 bg-slate-50 rounded-xl border border-slate-200 h-[42px]">
+                            <button type="button" onclick="setContactStars(1)" id="contact-star-1" class="text-xl text-slate-300 hover:text-yellow-400 transition-colors"><i class="fa-solid fa-star"></i></button>
+                            <button type="button" onclick="setContactStars(2)" id="contact-star-2" class="text-xl text-slate-300 hover:text-yellow-400 transition-colors"><i class="fa-solid fa-star"></i></button>
+                            <button type="button" onclick="setContactStars(3)" id="contact-star-3" class="text-xl text-slate-300 hover:text-yellow-400 transition-colors"><i class="fa-solid fa-star"></i></button>
+                        </div>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">조건</label>
+                        <div class="flex flex-wrap items-center gap-3 p-2 bg-slate-50 rounded-xl border border-slate-200 h-[42px]">
+                            <label class="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                <input type="checkbox" id="contact-cond-banner" class="w-4 h-4 accent-emerald-500">
+                                <span class="text-sm text-slate-700">프리미엄 배너</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                <input type="checkbox" id="contact-cond-orifeet" class="w-4 h-4 accent-emerald-500">
+                                <span class="text-sm text-slate-700">오리발</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                <input type="checkbox" id="contact-cond-illust" class="w-4 h-4 accent-emerald-500">
+                                <span class="text-sm text-slate-700">일러 표지</span>
+                            </label>
+                            <input type="text" id="contact-condition-custom" placeholder="기타 직접 입력" class="flex-1 min-w-[100px] p-1.5 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        </div>
+                    </div>
+                    <!-- 4줄: 교정 / 기타 (한 줄에 절반씩) -->
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">교정</label>
+                        <div class="flex flex-wrap gap-4 p-2.5 bg-slate-50 rounded-xl border border-slate-200 h-[42px] items-center">
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" id="contact-edit-1" class="w-4 h-4 accent-emerald-500">
+                                <span class="text-sm text-slate-700">1교</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" id="contact-edit-2" class="w-4 h-4 accent-emerald-500">
+                                <span class="text-sm text-slate-700">2교</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" id="contact-edit-review" class="w-4 h-4 accent-emerald-500">
+                                <span class="text-sm text-slate-700">리뷰</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">기타</label>
+                        <input type="text" id="contact-etc" placeholder="자유롭게 입력하세요" class="w-full h-[42px] p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <!-- 6줄: 메일 전문 (col-span-4) -->
+                    <div class="col-span-2 md:col-span-4">
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">메일 전문</label>
+                        <textarea id="contact-email" rows="8" placeholder="받은 메일 내용 전체를 붙여넣으세요..." class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 resize-y leading-relaxed"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-3 pt-4 shrink-0 border-t border-slate-100 mt-4">
+                <button onclick="closeContactModal()" class="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="saveContact()" class="flex-1 py-3 rounded-xl font-bold text-white shadow-lg" style="background:var(--primary)">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 웹툰 관리 수정 모달 -->
+    <div id="webtoon-manage-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:820px;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-clapperboard text-yellow-500"></i> <span id="wtm-modal-title">웹툰 정보 수정</span></h3>
+                <button onclick="closeWebtoonManageModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="grid grid-cols-2 gap-x-6 gap-y-3 items-start">
+                <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">필명</label>
+                        <div class="flex gap-1">
+                            <select id="wtm-pen-name" class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                <option value="">선택</option>
+                            </select>
+                            <button type="button" onclick="openPenNameManager()" class="px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0" title="필명 관리"><i class="fa-solid fa-gear text-xs"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">계약일</label>
+                        <input type="date" id="wtm-contract-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 flex items-center justify-between">
+                            <span>런칭일</span>
+                            <span class="flex items-center gap-1.5 text-[11px] font-normal text-slate-400 cursor-pointer" onclick="event.preventDefault(); document.getElementById('wtm-launch-pending').click();">
+                                <input type="checkbox" id="wtm-launch-pending" class="rounded" onclick="event.stopPropagation()" onchange="toggleWtmLaunchPending(this.checked)"> 런칭 예정
+                            </span>
+                        </label>
+                        <input type="date" id="wtm-launch-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        <input type="month" id="wtm-launch-pending-month" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">MG</label>
+                        <input type="number" id="wtm-mg" placeholder="예: 500" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">MG 예정일</label>
+                        <input type="month" id="wtm-mg-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">RS</label>
+                        <input type="number" id="wtm-rs" placeholder="예: 10" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">비율(%)</label>
+                        <input type="number" id="wtm-webtoon-rate" placeholder="예: 70" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <p class="text-[10px] text-slate-400 -mt-2 ml-1">계약일·런칭일·MG·MG 예정일·RS·비율은 '작품 등록'과 서로 연동돼요.</p>
+                </div>
+
+                <div class="space-y-3">
+                <div>
+                    <label class="text-sm font-bold text-slate-500 ml-1 mb-1 block"><i class="fa-solid fa-link mr-1" style="color:var(--primary)"></i>캐릭터 가이드 전달 예정일</label>
+                    <div class="flex items-center gap-3">
+                        <input type="date" id="wtm-charguide-date" style="width:70%" class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        <label class="flex items-center gap-1.5 text-sm font-medium text-slate-500 cursor-pointer">
+                            <input type="checkbox" id="wtm-charguide-done" class="rounded" style="width:20px;height:20px;"> 완료
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-500 ml-1 mb-1 block">캐시트 받는 날</label>
+                    <div class="flex items-center gap-3">
+                        <input type="date" id="wtm-cashsheet-date" style="width:70%" class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        <label class="flex items-center gap-1.5 text-sm font-medium text-slate-500 cursor-pointer">
+                            <input type="checkbox" id="wtm-cashsheet-done" class="rounded" style="width:20px;height:20px;"> 완료
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-500 ml-1 mb-1 block">1화 &amp; 콘티 받는 날</label>
+                    <div class="flex items-center gap-3">
+                        <input type="date" id="wtm-ep1conti-date" style="width:70%" class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        <label class="flex items-center gap-1.5 text-sm font-medium text-slate-500 cursor-pointer">
+                            <input type="checkbox" id="wtm-ep1conti-done" class="rounded" style="width:20px;height:20px;"> 완료
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-500 ml-1 mb-1 block">MG 입금일</label>
+                    <div class="flex items-center gap-3">
+                        <input type="date" id="wtm-mg-paid-date" style="width:70%" class="p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        <label class="flex items-center gap-1.5 text-sm font-medium text-slate-500 cursor-pointer">
+                            <input type="checkbox" id="wtm-mg-paid-done" class="rounded" style="width:20px;height:20px;"> 입금완료
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 flex items-center justify-between">
+                        <span>선인세 입금 내역 <span class="font-normal text-slate-400">· 실제 입금액(원), 월별 정산에 자동 반영</span></span>
+                        <button type="button" onclick="addAdvRow('wtm')" class="text-[11px] font-bold text-emerald-600 hover:text-emerald-700">+ 추가</button>
+                    </label>
+                    <div id="wtm-adv-list" class="space-y-1.5"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">작화가님 이름</label>
+                        <input type="text" id="wtm-illustrator" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">웹사이트</label>
+                        <input type="text" id="wtm-website" placeholder="https://..." class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">런칭 사이트</label>
+                    <div class="flex gap-1">
+                        <select id="wtm-launch-platform" class="w-[110px] shrink-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">플랫폼</option>
+                            <option value="리디북스">리디북스</option>
+                            <option value="시리즈">시리즈</option>
+                            <option value="미스터블루">미스터블루</option>
+                            <option value="레진">레진</option>
+                            <option value="봄툰">봄툰</option>
+                        </select>
+                        <input type="text" id="wtm-launch-url" placeholder="https://..." class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+
+                </div>
+
+                <!-- 🟢 [NEW] 계약서 PDF 읽어서 메모 자동 정리 -->
+                <div class="col-span-2 pt-3 mt-1 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-sm font-bold text-slate-600"><i class="fa-solid fa-file-contract text-amber-500 mr-1"></i>계약 메모</label>
+                        <div class="flex items-center gap-2">
+                            <span id="wtm-pdf-status" class="text-[11px] text-slate-400"></span>
+                            <button type="button" id="wtm-pdf-open" onclick="openSavedContract('webtoon')"
+                                    class="hidden px-3 py-1.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">
+                                <i class="fa-solid fa-file-pdf mr-1"></i>열기
+                            </button>
+                            <button type="button" id="wtm-pdf-delete" onclick="deleteSavedContract('webtoon')"
+                                    class="hidden px-3 py-1.5 bg-rose-50 text-rose-500 border border-rose-200 rounded-lg text-xs font-bold hover:bg-rose-100 transition-colors">
+                                <i class="fa-solid fa-trash mr-1"></i>삭제
+                            </button>
+                            <button type="button" onclick="document.getElementById('wtm-pdf-input').click()"
+                                    class="px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors">
+                                <i class="fa-solid fa-file-arrow-up mr-1"></i>계약서 PDF 불러오기
+                            </button>
+                        </div>
+                    </div>
+                    <input type="file" id="wtm-pdf-input" accept="application/pdf" class="hidden" onchange="handleContractPdf(this, 'webtoon')">
+                    <div id="wtm-drop" class="relative" ondragover="contractDragOver(event,'webtoon')" ondragleave="contractDragLeave(event,'webtoon')" ondrop="contractDrop(event,'webtoon')">
+                    <div id="wtm-drop-hint" class="hidden absolute inset-0 z-10 rounded-xl border-2 border-dashed border-amber-400 bg-amber-50/90 flex items-center justify-center pointer-events-none">
+                        <span class="text-sm font-bold text-amber-600"><i class="fa-solid fa-file-arrow-down mr-1"></i>여기에 놓으면 계약서를 읽어요</span>
+                    </div>
+                    <textarea id="wtm-memo" rows="5" placeholder="계약서 PDF를 불러오면 계약일·기간·요율 등이 여기에 정리됩니다. 직접 적으셔도 돼요."
+                              class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 leading-relaxed"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-3 pt-4 mt-2 border-t border-slate-100 items-center">
+                <label class="flex items-center gap-2 px-3 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 cursor-pointer shrink-0" title="체크하면 웹툰 관리 목록에서 빠지고 '계약 파기' 목록에만 보여요. 받은 MG 등 정산 금액은 그대로 수입에 남아요.">
+                    <input type="checkbox" id="wtm-contract-broken" onchange="toggleWebtoonContractBroken(this)" class="w-4 h-4 accent-slate-500">
+                    <span class="text-sm font-bold text-slate-500">계약 파기</span>
+                </label>
+                <button onclick="closeWebtoonManageModal()" class="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="saveWebtoonManageModal()" class="flex-1 py-3 rounded-xl font-bold text-white shadow-lg" style="background:var(--primary)">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 웹툰 관리 카드 설정 모달 -->
+    <div id="webtoon-card-settings-modal" class="modal-overlay">
+        <div class="modal-content max-w-3xl w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-base font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-sliders" style="color:var(--primary)"></i> 웹툰 카드 설정</h3>
+                <button onclick="closeWebtoonCardSettings()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span class="text-sm text-slate-600 font-medium">출간 완료 카드 색상 다르게 표시</span>
+                        <input type="checkbox" id="wcs-differentiate" style="width:20px;height:20px;" class="rounded" onchange="updateWebtoonCardSettings()">
+                    </div>
+                    <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span class="text-sm text-slate-600 font-medium">출간 완료 카드 색상</span>
+                        <input type="color" id="wcs-color" value="#f7f5f0" class="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5" oninput="updateWebtoonCardSettings()">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">필명 배경 모양</label>
+                        <div class="flex gap-1.5">
+                            <button onclick="setWebtoonPenBarStyle('rounded')" id="wcs-barstyle-rounded" class="flex-1 px-2 py-2 rounded-lg text-xs font-bold transition-all">둥근 네모</button>
+                            <button onclick="setWebtoonPenBarStyle('square')" id="wcs-barstyle-square" class="flex-1 px-2 py-2 rounded-lg text-xs font-bold transition-all">각진 네모</button>
+                            <button onclick="setWebtoonPenBarStyle('full')" id="wcs-barstyle-full" class="flex-1 px-2 py-2 rounded-lg text-xs font-bold transition-all">꽉 채우기</button>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-400 -mt-2">오른쪽 카드 미리보기에서 글자를 직접 클릭하면 그 자리에서 색상을 바로 바꿀 수 있어요.</p>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">필명별 배경 색상</label>
+                        <div id="wcs-pen-color-list" class="space-y-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1"></div>
+                    </div>
+                    <input type="color" id="wcs-label-color1" value="#64748b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-label-color2" value="#64748b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-studio" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-contract" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-rsrate" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-mg" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-charguide" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-cashsheet" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-ep1conti" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                    <input type="color" id="wcs-value-illustrator" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWebtoonCardSettings()">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">카드 미리보기</label>
+                    <div id="wcs-card-preview"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 작품 관리 수정 모달 -->
+    <div id="work-manage-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:820px;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-layer-group text-yellow-500"></i> <span id="wmm-modal-title">작품 정보 수정</span></h3>
+                <button onclick="closeWorkManageModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">필명</label>
+                        <div class="flex gap-1">
+                            <select id="wmm-pen-name" class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                                <option value="">선택</option>
+                            </select>
+                            <button type="button" onclick="openPenNameManager()" class="px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 shrink-0" title="필명 관리"><i class="fa-solid fa-gear text-xs"></i></button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">출판사</label>
+                        <input type="text" id="wmm-publisher" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">계약일</label>
+                        <input type="date" id="wmm-contract-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">비율(%)</label>
+                        <input type="number" id="wmm-rate" placeholder="예: 70" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 flex items-center justify-between">
+                            <span>출간일</span>
+                            <span class="flex items-center gap-1.5 text-[11px] font-normal text-slate-400 cursor-pointer" onclick="event.preventDefault(); document.getElementById('wmm-launch-pending').click();">
+                                <input type="checkbox" id="wmm-launch-pending" class="rounded" onclick="event.stopPropagation()" onchange="toggleWmmLaunchPending(this.checked)"> 출간 예정
+                            </span>
+                        </label>
+                        <input type="date" id="wmm-launch-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                        <input type="month" id="wmm-launch-pending-month" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">선인세</label>
+                        <input type="number" id="wmm-mg" placeholder="예: 300" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">글자수(공백 미포함)</label>
+                        <input type="number" id="wmm-goal-nospace" placeholder="예: 10000" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">글자수(공백 포함)</label>
+                        <input type="number" id="wmm-goal-withspace" placeholder="예: 11000" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">프로모션</label>
+                    <div class="flex gap-1">
+                        <select id="wmm-promotion-select" onchange="handleWmmPromotionChange(this)" class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">선택 안 함</option>
+                            <option value="오리발">오리발</option>
+                            <option value="원픽">원픽</option>
+                            <option value="단독배너">단독배너</option>
+                            <option value="출판사 배너">출판사 배너</option>
+                            <option value="캘린더">캘린더</option>
+                            <option value="묶음 시단신">묶음 시단신</option>
+                            <option value="단독 시단신">단독 시단신</option>
+                            <option value="custom">직접 입력</option>
+                        </select>
+                        <input type="text" id="wmm-promotion-custom" placeholder="직접 입력" class="w-[130px] shrink-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">표지 제안서 전달</label>
+                        <input type="date" id="wmm-coverguide-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">완고 입고일</label>
+                        <input type="date" id="wmm-manuscript-date" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 flex items-center justify-between">
+                        <span>외전</span>
+                        <button type="button" onclick="addWmmExtraRow()" class="text-[11px] font-bold text-emerald-600 hover:text-emerald-700">+ 추가</button>
+                    </label>
+                    <div id="wmm-extras-list" class="space-y-1.5"></div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 flex items-center justify-between">
+                        <span>선인세 입금 내역 <span class="font-normal text-slate-400">· 실제 입금액(원), 월별 정산에 자동 반영</span></span>
+                        <button type="button" onclick="addAdvRow('wmm')" class="text-[11px] font-bold text-emerald-600 hover:text-emerald-700">+ 추가</button>
+                    </label>
+                    <div id="wmm-adv-list" class="space-y-1.5"></div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">플랫폼</label>
+                    <div class="flex gap-1 flex-wrap">
+                        <select id="wmm-launch-platform-select" onchange="handleWmmLaunchPlatformChange(this)" class="w-[100px] shrink-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <option value="">선택 안 함</option>
+                            <option value="리디">리디</option>
+                            <option value="시리즈">시리즈</option>
+                            <option value="카카오">카카오</option>
+                            <option value="봄툰">봄툰</option>
+                            <option value="미스터블루">미스터블루</option>
+                            <option value="레진">레진</option>
+                            <option value="custom">직접 입력</option>
+                        </select>
+                        <input type="text" id="wmm-launch-platform-custom" placeholder="직접 입력" class="w-[80px] shrink-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 hidden">
+                        <input type="text" id="wmm-launch-url" placeholder="https://..." class="flex-1 min-w-0 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+
+                <!-- 🟢 [NEW] 계약서 PDF → 메모 자동 정리 -->
+                <div class="pt-3 mt-1 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-sm font-bold text-slate-600"><i class="fa-solid fa-file-contract text-amber-500 mr-1"></i>계약 메모</label>
+                        <div class="flex items-center gap-2">
+                            <span id="wmm-pdf-status" class="text-[11px] text-slate-400"></span>
+                            <button type="button" id="wmm-pdf-open" onclick="openSavedContract('work')"
+                                    class="hidden px-3 py-1.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">
+                                <i class="fa-solid fa-file-pdf mr-1"></i>열기
+                            </button>
+                            <button type="button" id="wmm-pdf-delete" onclick="deleteSavedContract('work')"
+                                    class="hidden px-3 py-1.5 bg-rose-50 text-rose-500 border border-rose-200 rounded-lg text-xs font-bold hover:bg-rose-100 transition-colors">
+                                <i class="fa-solid fa-trash mr-1"></i>삭제
+                            </button>
+                            <button type="button" onclick="document.getElementById('wmm-pdf-input').click()"
+                                    class="px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors">
+                                <i class="fa-solid fa-file-arrow-up mr-1"></i>계약서 PDF 불러오기
+                            </button>
+                        </div>
+                    </div>
+                    <input type="file" id="wmm-pdf-input" accept="application/pdf" class="hidden" onchange="handleContractPdf(this, 'work')">
+                    <div id="wmm-drop" class="relative" ondragover="contractDragOver(event,'work')" ondragleave="contractDragLeave(event,'work')" ondrop="contractDrop(event,'work')">
+                    <div id="wmm-drop-hint" class="hidden absolute inset-0 z-10 rounded-xl border-2 border-dashed border-amber-400 bg-amber-50/90 flex items-center justify-center pointer-events-none">
+                        <span class="text-sm font-bold text-amber-600"><i class="fa-solid fa-file-arrow-down mr-1"></i>여기에 놓으면 계약서를 읽어요</span>
+                    </div>
+                    <textarea id="wmm-memo" rows="5" placeholder="계약서 PDF를 불러오면 계약일·기간·요율·선인세 등이 여기에 정리됩니다. 직접 적으셔도 돼요."
+                              class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 leading-relaxed"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-3 pt-4 mt-2 border-t border-slate-100">
+                <button onclick="closeWorkManageModal()" class="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="saveWorkManageModal()" class="flex-1 py-3 rounded-xl font-bold text-white shadow-lg" style="background:var(--primary)">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 작품 관리 카드 설정 모달 -->
+    <div id="work-card-settings-modal" class="modal-overlay">
+        <div class="modal-content max-w-3xl w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-base font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-sliders" style="color:var(--primary)"></i> 작품 카드 설정</h3>
+                <button onclick="closeWorkManageCardSettings()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span class="text-sm text-slate-600 font-medium">출간 완료 카드 색상 다르게 표시</span>
+                        <input type="checkbox" id="wms-differentiate" style="width:20px;height:20px;" class="rounded" onchange="updateWorkManageCardSettings()">
+                    </div>
+                    <div class="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <span class="text-sm text-slate-600 font-medium">출간 완료 카드 색상</span>
+                        <input type="color" id="wms-color" value="#f7f5f0" class="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5" oninput="updateWorkManageCardSettings()">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">장르 배경 모양</label>
+                        <div class="flex gap-1.5">
+                            <button onclick="setWorkManagePenBarStyle('rounded')" id="wms-barstyle-rounded" class="flex-1 px-2 py-2 rounded-lg text-xs font-bold transition-all">둥근 네모</button>
+                            <button onclick="setWorkManagePenBarStyle('square')" id="wms-barstyle-square" class="flex-1 px-2 py-2 rounded-lg text-xs font-bold transition-all">각진 네모</button>
+                            <button onclick="setWorkManagePenBarStyle('full')" id="wms-barstyle-full" class="flex-1 px-2 py-2 rounded-lg text-xs font-bold transition-all">꽉 채우기</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase block mb-2">장르별 배경 색상</label>
+                        <div id="wms-genre-color-list" class="space-y-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1"></div>
+                    </div>
+                    <input type="color" id="wms-label-color1" value="#64748b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-label-color2" value="#64748b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-studio" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-contract" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-rate" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-mg" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-charcount" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-promotion" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-charguide" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-cashsheet" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                    <input type="color" id="wms-value-ep1conti" value="#1e293b" style="position:fixed;top:-100px;left:-100px;width:1px;height:1px;opacity:0;padding:0;border:0;" oninput="updateWorkManageCardSettings()">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 uppercase block mb-2">카드 미리보기</label>
+                    <div id="wms-card-preview"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 투고 모달 -->
+    <div id="submission-modal" class="modal-overlay">
+        <div class="modal-content max-w-lg w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-paper-plane" style="color:var(--primary)"></i> <span id="submission-modal-title">투고처 추가</span></h3>
+                <button onclick="closeSubmissionModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <!-- 스튜디오명 -->
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">스튜디오명 *</label>
+                    <input type="text" id="sub-studio" placeholder="웹툰 스튜디오명" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <!-- 이메일 -->
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">투고 이메일</label>
+                    <input type="text" id="sub-email" placeholder="submission@studio.com" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <!-- 웹사이트 -->
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">웹사이트</label>
+                    <input type="text" id="sub-website" placeholder="https://studio.com" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <!-- 장르 -->
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">선호 장르 <span class="font-normal" style="color:var(--primary)">(복수 선택 가능)</span></label>
+                    <div id="sub-genre-checkboxes" class="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 min-h-[42px]"></div>
+                </div>
+                <!-- 관심도 -->
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">관심도</label>
+                    <div class="flex items-center gap-1 p-2.5 bg-slate-50 rounded-xl border border-slate-200 h-[42px]">
+                        <button type="button" onclick="setSubStars(1)" id="sub-star-1" class="text-xl text-slate-300 hover:text-yellow-400 transition-colors"><i class="fa-solid fa-star"></i></button>
+                        <button type="button" onclick="setSubStars(2)" id="sub-star-2" class="text-xl text-slate-300 hover:text-yellow-400 transition-colors"><i class="fa-solid fa-star"></i></button>
+                        <button type="button" onclick="setSubStars(3)" id="sub-star-3" class="text-xl text-slate-300 hover:text-yellow-400 transition-colors"><i class="fa-solid fa-star"></i></button>
+                    </div>
+                </div>
+                <!-- 메모 -->
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">메모</label>
+                    <textarea id="sub-memo" rows="3" placeholder="투고 조건, 특이사항 등..." class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100 resize-y"></textarea>
+                </div>
+            </div>
+            <div class="flex gap-3 pt-4 border-t border-slate-100 mt-4">
+                <button onclick="closeSubmissionModal()" class="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="saveSubmission()" class="flex-1 py-3 rounded-xl font-bold text-white shadow-lg" style="background:var(--primary)">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 웹툰투고 모달 -->
+    <div id="webtoon-sub-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:600px; max-height:90vh;">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-rocket" style="color:var(--primary)"></i> <span id="wsub-modal-title">투고 이력 추가</span></h3>
+                <button onclick="closeWebtoonSubModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">웹툰사 *</label>
+                    <!-- 커스텀 드롭다운 (클릭 시 펼쳐짐, 20개 표시) -->
+                    <div id="wsub-studio-wrapper" style="position:relative; width:100%;">
+                        <div id="wsub-studio-display"
+                             onclick="toggleWsubStudioDropdown()"
+                             style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;
+                                    background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:12px;
+                                    padding:12px 16px; font-size:0.95rem; font-family:'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+                                    color:#64748b; user-select:none;">
+                            <span id="wsub-studio-label">선택</span>
+                            <i id="wsub-studio-chevron" class="fa-solid fa-chevron-down" style="font-size:0.75rem; color:#94a3b8; transition:transform 0.2s;"></i>
+                        </div>
+                        <div id="wsub-studio-dropdown"
+                             style="display:none; position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:9999;
+                                    background:#fff; border:1.5px solid #e2e8f0; border-radius:12px;
+                                    box-shadow:0 8px 24px rgba(0,0,0,0.12); overflow:hidden;">
+                            <div id="wsub-studio-list"
+                                 style="max-height:calc(38px * 20 + 8px); overflow-y:auto; padding:4px 0;
+                                        font-family:'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif; font-size:0.93rem;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 실제 값 저장용 hidden input -->
+                    <input type="hidden" id="wsub-studio" value="">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">투고일</label>
+                    <input type="date" id="wsub-date" class="w-full px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm text-center outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">접수 답변일</label>
+                    <input type="date" id="wsub-accept-date" class="w-full px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm text-center outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">답변 예정일</label>
+                    <input type="date" id="wsub-expected-date" class="w-full px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm text-center outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">최종 답변일</label>
+                    <input type="date" id="wsub-reply-date" class="w-full px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm text-center outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">결과</label>
+                    <select id="wsub-result" class="w-full px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm text-center outline-none focus:ring-2 focus:ring-emerald-100">
+                        <option value="답변대기">답변대기</option>
+                        <option value="거절">거절</option>
+                        <option value="통과">통과</option>
+                        <option value="계약">계약</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs font-bold text-slate-500 ml-1 mb-1.5 block">회신 마감일 <span class="font-normal text-slate-400">(통과/계약 시 내가 의사를 전달하기로 한 날)</span></label>
+                    <input type="date" id="wsub-my-reply-deadline" class="w-full px-4 py-3 bg-slate-50 rounded-xl border border-slate-200 text-sm text-center outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+            </div>
+            <div class="flex gap-3 pt-5 border-t border-slate-100 mt-6">
+                <button onclick="closeWebtoonSubModal()" class="flex-1 py-3.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">취소</button>
+                <button onclick="saveWebtoonSubEntry()" class="flex-1 py-3.5 rounded-xl font-bold text-white shadow-lg" style="background:var(--primary)">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메일 내용 모달 -->
+    <div id="mail-content-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:700px;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-envelope" style="color:var(--primary)"></i>
+                    <span id="mail-modal-work-title">메일 내용</span>
+                </h3>
+                <button onclick="closeMailContentModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <!-- 제목 -->
+            <div class="mb-3">
+                <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">메일 제목</label>
+                <input type="text" id="mail-subject-input" placeholder="메일 제목을 입력하세요" spellcheck="false" class="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+            </div>
+            <!-- 리치 에디터 툴바 -->
+            <div class="mb-1">
+                <label class="text-xs font-bold text-slate-500 ml-1 mb-1 block">메일 본문</label>
+                <div class="flex flex-wrap items-center gap-1 p-2 bg-slate-50 rounded-t-xl border border-slate-200 border-b-0" id="mail-editor-toolbar">
+                    <!-- 폰트 크기 -->
+                    <select onchange="mailEditorExec('fontSize', this.value); this.value=''" class="text-xs border border-slate-200 rounded-lg px-1.5 py-1 bg-white outline-none cursor-pointer text-slate-600">
+                        <option value="">크기</option>
+                        <option value="1">아주 작게</option>
+                        <option value="2">작게</option>
+                        <option value="3">보통</option>
+                        <option value="4">크게</option>
+                        <option value="5">아주 크게</option>
+                    </select>
+                    <div class="w-px h-5 bg-slate-200 mx-0.5"></div>
+                    <!-- 서식 -->
+                    <button onclick="mailEditorExec('bold')" title="굵게" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-600 font-bold text-sm flex items-center justify-center">B</button>
+                    <button onclick="mailEditorExec('italic')" title="기울임" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 italic text-sm flex items-center justify-center">I</button>
+                    <button onclick="mailEditorExec('underline')" title="밑줄" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 underline text-sm flex items-center justify-center">U</button>
+                    <div class="w-px h-5 bg-slate-200 mx-0.5"></div>
+                    <!-- 정렬 -->
+                    <button onclick="mailEditorExec('justifyLeft')" title="왼쪽 정렬" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-align-left text-xs"></i></button>
+                    <button onclick="mailEditorExec('justifyCenter')" title="가운데 정렬" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-align-center text-xs"></i></button>
+                    <button onclick="mailEditorExec('justifyRight')" title="오른쪽 정렬" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-align-right text-xs"></i></button>
+                    <div class="w-px h-5 bg-slate-200 mx-0.5"></div>
+                    <!-- 링크 -->
+                    <button onclick="mailEditorInsertLink()" title="링크 삽입" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-link text-xs"></i></button>
+                    <button onclick="mailEditorExec('unlink')" title="링크 제거" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-link-slash text-xs"></i></button>
+                    <div class="w-px h-5 bg-slate-200 mx-0.5"></div>
+                    <!-- 색상 -->
+                    <label title="글자 색상" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors flex items-center justify-center cursor-pointer">
+                        <i class="fa-solid fa-palette text-xs text-slate-500"></i>
+                        <input type="color" class="sr-only" onchange="mailEditorExec('foreColor', this.value)">
+                    </label>
+                    <div class="w-px h-5 bg-slate-200 mx-0.5"></div>
+                    <!-- 목록 -->
+                    <button onclick="mailEditorExec('insertUnorderedList')" title="글머리 목록" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-list-ul text-xs"></i></button>
+                    <button onclick="mailEditorExec('insertOrderedList')" title="번호 목록" class="w-7 h-7 rounded-lg hover:bg-slate-200 transition-colors text-slate-500 text-sm flex items-center justify-center"><i class="fa-solid fa-list-ol text-xs"></i></button>
+                </div>
+                <div id="mail-body-editor" contenteditable="true" spellcheck="false"
+                    class="w-full min-h-[260px] p-3 bg-white border border-slate-200 rounded-b-xl text-sm outline-none"
+                    style="line-height:1.8; overflow-y:auto; max-height:380px;"
+                    placeholder="메일 본문을 입력하세요..."></div>
+            </div>
+            <!-- 하단 버튼 -->
+            <div class="flex gap-3 pt-4 border-t border-slate-100 mt-4">
+                <button onclick="closeMailContentModal()" class="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 text-sm">닫기</button>
+                <button onclick="copyMailSubject()" class="py-3 px-4 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-sm flex items-center gap-1.5">
+                    <i class="fa-solid fa-copy text-xs"></i> 제목 복사
+                </button>
+                <button onclick="copyMailBody()" class="py-3 px-4 rounded-xl font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 text-sm flex items-center gap-1.5">
+                    <i class="fa-solid fa-copy text-xs"></i> 본문 복사
+                </button>
+                <button onclick="saveMailContent()" class="flex-1 py-3 rounded-xl font-bold text-white shadow-lg text-sm flex items-center justify-center gap-1.5" style="background:var(--primary)">
+                    <i class="fa-solid fa-floppy-disk text-xs"></i> 저장
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 필명 관리 모달 -->
+    <div id="penname-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-w-md w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-feather text-emerald-500"></i> 필명 관리</h3>
+                <button onclick="closePenNameManager()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="space-y-3">
+                <div class="flex gap-2">
+                    <input type="text" id="new-penname-input" placeholder="새 필명 입력" class="flex-1 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    <button onclick="addPenName()" class="px-4 py-2.5 rounded-xl text-sm font-bold text-white" style="background:var(--primary)">추가</button>
+                </div>
+                <div id="penname-list" class="space-y-2 max-h-60 overflow-y-auto custom-scrollbar"></div>
+            </div>
+            <div class="flex pt-4 border-t border-slate-100 mt-4">
+                <button onclick="closePenNameManager()" class="w-full py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 외전 추가/수정 모달 -->
+    <div id="extra-modal" class="modal-overlay">
+        <div class="modal-content h-auto max-w-md w-full">
+            <div class="flex justify-between items-center mb-5">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-book-open text-emerald-500"></i> <span id="extra-modal-title">외전 추가</span></h3>
+                <button onclick="closeExtraModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <input type="hidden" id="extra-edit-id" value="">
+            <div class="space-y-4">
+                <div>
+                    <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">외전 이름</label>
+                    <input type="text" id="extra-name" placeholder="예: 외전 1, 후기, 번외 등" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                </div>
+                <div>
+                    <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">목표 글자수</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <input type="number" id="extra-goal-nospace" placeholder="0" oninput="calcExtraGoalFromNoSpace(this.value)" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                            <p class="text-[10px] font-bold text-slate-400 mt-1 ml-1">공미 (공백 미포함)</p>
+                        </div>
+                        <div>
+                            <input type="number" id="extra-goal-withspace" placeholder="0" oninput="calcExtraGoalFromWithSpace(this.value)" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100" style="border-color:#87ada1">
+                            <p class="text-[10px] font-bold mt-1 ml-1" style="color:var(--primary)">공포 (기준 글자수)</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">완고 입고일</label>
+                        <input type="date" id="extra-manuscript-date" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                    <div>
+                        <label class="text-sm font-bold text-slate-600 ml-1 mb-1 block">출간 예정일</label>
+                        <input type="date" id="extra-publish-date" class="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-emerald-100">
+                    </div>
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button onclick="closeExtraModal()" class="flex-1 py-3 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">취소</button>
+                    <button onclick="saveExtra()" class="flex-1 py-3 rounded-xl font-bold text-white shadow-lg" style="background:var(--primary)">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 설정 패널 모달 -->
+    <div id="settings-panel-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:540px; max-height:92vh; display:flex; flex-direction:column; padding:28px 30px;">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h3 class="text-xl font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-gear text-slate-500"></i> 설정</h3>
+                <button onclick="closeSettingsPanel()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <div class="overflow-y-auto custom-scrollbar flex-1 min-h-0 space-y-5">
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase mb-2">데이터 관리</p>
+                    <div class="flex gap-2">
+                        <button onclick="downloadBackup(); closeSettingsPanel();" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-download text-emerald-500"></i> 백업 파일 받기
+                        </button>
+                        <label class="cursor-pointer flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-upload text-blue-500"></i> 백업 불러오기
+                            <input type="file" id="backup-upload" accept=".json" onchange="uploadBackup(event)" class="hidden">
+                        </label>
+                        <button onclick="resetData()" class="flex-1 py-2.5 rounded-xl text-xs font-bold text-red-500 bg-red-50 hover:bg-red-100 transition-all flex items-center justify-center gap-1.5 border border-red-100">
+                            <i class="fa-solid fa-rotate-left"></i> 초기화
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-3 leading-relaxed">데이터는 <b>이 컴퓨터의 이 브라우저 안에만</b> 저장되고, 어디로도 전송되지 않아요.
+                    브라우저 방문 기록/사이트 데이터를 지우거나 다른 브라우저로 열면 보이지 않으니, 가끔 <b>백업 파일</b>을 받아 두세요.</p>
+                </div>
+                <div id="modal-design-wrap">
+                    <p class="text-xs font-bold text-slate-400 uppercase mb-2">팝업창 디자인</p>
+                    <div id="modal-design-picker" class="grid grid-cols-3 gap-2">
+                        <button type="button" data-modal="cozy" onclick="setModalDesign('cozy')" class="modal-design-btn flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"><span class="dday-swatch dday-swatch-cozy"></span>코지</button>
+                        <button type="button" data-modal="label" onclick="setModalDesign('label')" class="modal-design-btn flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"><span class="dday-swatch dday-swatch-label"></span>견출지</button>
+                        <button type="button" data-modal="polaroid" onclick="setModalDesign('polaroid')" class="modal-design-btn flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"><span class="dday-swatch dday-swatch-polaroid"></span>폴라로이드</button>
+                        <button type="button" data-modal="postcard" onclick="setModalDesign('postcard')" class="modal-design-btn flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"><span class="dday-swatch dday-swatch-postcard"></span>엽서</button>
+                        <button type="button" data-modal="fountain" onclick="setModalDesign('fountain')" class="modal-design-btn flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600"><span class="dday-swatch dday-swatch-fountain"></span>만년필</button>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-xs font-bold text-slate-400 uppercase mb-2">자동 보관본 (하루 1번 자동으로 쌓여요)</p>
+                    <div class="flex gap-2">
+                        <select id="snap-select" class="flex-1 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs outline-none"><option value="">불러오는 중...</option></select>
+                        <button onclick="restoreSnapshot()" class="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">되돌리기</button>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mt-2 leading-relaxed">실수로 지웠을 때를 대비해 최근 5일치가 보관돼요. 되돌리면 현재 내용은 사라지니 먼저 백업 파일을 받아 두면 안전해요.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+    <!-- 공미 ↔ 공포 글자수 계산기 -->
+    <div id="char-calc-modal" class="modal-overlay">
+        <div class="modal-content w-full" style="max-width:640px;">
+            <div class="flex justify-between items-center mb-1">
+                <h3 class="text-lg font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-calculator text-slate-500"></i> 공미 ↔ 공포 계산기</h3>
+                <button onclick="closeCharCalc()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-times text-xl"></i></button>
+            </div>
+            <p class="text-xs text-slate-400 mb-5">공백 미포함(공미) / 공백 포함(공포) 글자수를 서로 계산해요.</p>
+
+            <div class="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">현재 공미</label>
+                    <input type="number" id="cc-cur-nospace" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-[var(--primary)]" oninput="ccCompute()">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">현재 공포</label>
+                    <input type="number" id="cc-cur-space" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-[var(--primary)]" oninput="ccCompute()">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">목표 공미</label>
+                    <input type="number" id="cc-goal-nospace" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-[var(--primary)]" oninput="ccCompute()">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">목표 공포</label>
+                    <input type="number" id="cc-goal-space" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-[var(--primary)]" oninput="ccCompute()">
+                </div>
+
+                <div class="col-span-2">
+                    <label class="text-xs text-slate-400 font-bold block mb-1">편당 글자수 기준</label>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="ccSetPerUnit('po')" id="cc-per-unit-po" class="flex-1 py-2 rounded-xl text-xs font-bold border transition-all">공포 기준</button>
+                        <button type="button" onclick="ccSetPerUnit('mi')" id="cc-per-unit-mi" class="flex-1 py-2 rounded-xl text-xs font-bold border transition-all">공미 기준</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">편당 글자수</label>
+                    <select id="cc-per-episode" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none" onchange="ccPerEpisodeChange()"></select>
+                    <input type="number" id="cc-per-episode-custom" class="w-full p-2.5 mt-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none hidden" placeholder="편당 글자수 직접 입력" oninput="ccCompute()">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 font-bold block mb-1">비율 (공미 ÷ 공포)</label>

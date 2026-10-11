@@ -1,0 +1,2293 @@
+                    genreTotals[g] = (genreTotals[g] || 0) + amt;
+                    workTotals[wId] = (workTotals[wId] || 0) + amt;
+                });
+            });
+            const genreList = Object.entries(genreTotals).sort((a,b) => b[1]-a[1]);
+            const topWorks = Object.entries(workTotals)
+                .map(([wId, amt]) => { const w = masterWorks.find(x => x.id === wId); return w ? { title: w.title, genre: w.genre, amt } : null; })
+                .filter(Boolean)
+                .sort((a,b) => b.amt - a.amt)
+                .slice(0, 8);
+
+            // 월별 글자수 합계 (1~12월) + 장르별 글자수 합계
+            const monthlyChars = Array.from({length:12}, () => 0);
+            const charGenreTotals = {};
+            let daysWithRecord = 0;
+            let yearCharTotal = 0;
+            for (const dateStr in writerDailyData) {
+                if (!dateStr.startsWith(prefix)) continue;
+                const t = writerGetDayTotal(dateStr);
+                if (t > 0) daysWithRecord++;
+                yearCharTotal += t;
+                const m = parseInt(dateStr.split('-')[1], 10) - 1;
+                if (m >= 0 && m < 12) monthlyChars[m] += t;
+                Object.entries(writerDailyData[dateStr]?.works || {}).forEach(([key, val]) => {
+                    const sum = Object.values(val?.hours || {}).reduce((a, b) => a + (b.diff || 0), 0);
+                    if (sum <= 0) return;
+                    const g = (key !== WRITER_BULK_UNASSIGNED_KEY && resolveWorkItem(key).genre) || '미지정';
+                    charGenreTotals[g] = (charGenreTotals[g] || 0) + sum;
+                });
+            }
+            const charGenreList = Object.entries(charGenreTotals).sort((a, b) => b[1] - a[1]);
+            let bestMonthIdx = -1, bestMonthVal = 0;
+            monthlyChars.forEach((v, i) => { if (v > bestMonthVal) { bestMonthVal = v; bestMonthIdx = i; } });
+            const dailyAvg = daysWithRecord > 0 ? Math.round(yearCharTotal / daysWithRecord) : 0;
+
+            // 올해 출간작 (본편 + 외전), 출간일 기준
+            const published = [];
+            masterWorks.forEach(w => {
+                if (w.publishDate && w.publishDate.startsWith(prefix) && !w.isPending) {
+                    published.push({ title: w.title, genre: w.genre, publisher: w.publisher, date: w.publishDate });
+                }
+                (w.extras || []).forEach(ex => {
+                    if (ex.publishDate && ex.publishDate.startsWith(prefix)) {
+                        published.push({ title: `${w.title} [${ex.name}]`, genre: w.genre, publisher: w.publisher, date: ex.publishDate });
+                    }
+                });
+            });
+            published.sort((a,b) => a.date.localeCompare(b.date));
+
+            // 장르 우선순위 그룹화 (BL 장편 → 현로 장편 → 현로 초단 → BL 초단 → 웹툰 → 기타)
+            const genrePriority = (g) => {
+                if (!g) return 99;
+                if (g === 'BL 장편') return 0;
+                if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2;
+                if (g === 'BL 초단') return 3;
+                if (g.includes('웹툰')) return 4;
+                if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5;
+                return 99;
+            };
+            const publishedByGenre = {};
+            published.forEach(p => { const g = p.genre || '기타'; (publishedByGenre[g] = publishedByGenre[g] || []).push(p); });
+            const publishedGenreGroups = Object.entries(publishedByGenre)
+                .sort((a,b) => genrePriority(a[0]) - genrePriority(b[0]))
+                .map(([genre, items]) => ({ genre, items: items.sort((a,b) => a.date.localeCompare(b.date)) }));
+
+            return {
+                year, totalNet, genreList, topWorks, monthlyChars, bestMonthIdx, bestMonthVal,
+                dailyAvg, daysWithRecord, yearCharTotal, charGenreList, published, publishedGenreGroups,
+                incomeGoal: incomeGoals[year] || 0,
+                charGoal: charGoals[year] || 0,
+                goalItems: getYearGoalItems(year)
+            };
+        }
+
+        // ══ 강점/전략 분석 (전체 기간 데이터 기준) ══════════════════
+        // 작품ID별 등록된 목표 글자수 합계 (본편 + 모든 외전, 공백포함 우선/없으면 공백제외)
+        function getAllWorkRegisteredCharTotals(){
+            const totals = {};
+            masterWorks.forEach(w => {
+                let total = Number(w.goalWithSpace) || Number(w.goalNoSpace) || 0;
+                (w.extras || []).forEach(ex => {
+                    total += Number(ex.goalWithSpace) || Number(ex.goalNoSpace) || 0;
+                });
+                if (total > 0) totals[w.id] = total;
+            });
+            return totals;
+        }
+        // year가 주어지면 그 해 수입만, 없으면(또는 'all') 전체 기간 수입을 기준으로 분석
+        function buildStrengthAnalysisData(year){
+            const filterYear = (year && year !== 'all') ? String(year) : null;
+            // 1) 장르(형태)별 수입 + 작품 수 + 평균 작품당 수입
+            const genreAgg = {};
+            const workTotalsAll = {};
+            Object.entries(monthlyData).forEach(([mKey, d]) => {
+                if (filterYear && mKey.split('-')[0] !== filterYear) return;
+                Object.entries(d).forEach(([wId, v]) => {
+                    const w = masterWorks.find(x => x.id === wId);
+                    if (!w) return;
+                    const amt = Number(v) || 0;
+                    workTotalsAll[wId] = (workTotalsAll[wId] || 0) + amt;
+                    const g = w.genre || '기타';
+                    if (!genreAgg[g]) genreAgg[g] = { total: 0, workIds: new Set() };
+                    genreAgg[g].total += amt;
+                    genreAgg[g].workIds.add(wId);
+                });
+            });
+            // 2) 작품별 글자수 대비 수익 (글자당 수익) — 효율 분석
+            // 글자수는 작품 등록 시 입력한 목표 글자수(본편+외전) 기준, 연도 필터는 수입에만 적용
+            const workCharTotals = getAllWorkRegisteredCharTotals();
+
+            const genreRanking = Object.entries(genreAgg)
+                .map(([genre, v]) => ({
+                    genre, total: v.total, workCount: v.workIds.size,
+                    avgPerWork: v.workIds.size > 0 ? Math.round(v.total / v.workIds.size) : 0,
+                    chars: Array.from(v.workIds).reduce((sum, id) => sum + (workCharTotals[id] || 0), 0)
+                }))
+                .sort((a,b) => b.avgPerWork - a.avgPerWork);
+            const efficiency = masterWorks.map(w => {
+                const income = workTotalsAll[w.id] || 0;
+                const chars = workCharTotals[w.id] || 0;
+                if (chars <= 0 || income <= 0) return null;
+                return { title: w.title, genre: w.genre, income, chars, perChar: income / chars };
+            }).filter(Boolean).sort((a,b) => b.perChar - a.perChar);
+            // 효율 분석 대상에서 빠진 작품 수(글자수 또는 수입 기록이 없어 비교 불가) — 안내용
+            const totalWorksWithIncome = Object.keys(workTotalsAll).length;
+            const excludedFromEfficiency = Math.max(totalWorksWithIncome - efficiency.length, 0);
+
+            return { genreRanking, efficiency, excludedFromEfficiency };
+        }
+        // 글자수 탭 전용: 웹툰을 제외한 모든 작품의 글자수 대비 수익을 처음부터 다시 계산
+        function buildCharEfficiencyData(year){
+            const filterYear = (year && year !== 'all') ? String(year) : null;
+            const workTotalsAll = {};
+            Object.entries(monthlyData).forEach(([mKey, d]) => {
+                if (filterYear && mKey.split('-')[0] !== filterYear) return;
+                Object.entries(d).forEach(([wId, v]) => {
+                    const w = masterWorks.find(x => x.id === wId);
+                    if (!w || w.genre.includes('웹툰')) return; // 웹툰 제외
+                    workTotalsAll[wId] = (workTotalsAll[wId] || 0) + (Number(v) || 0);
+                });
+            });
+            const workCharTotals = getAllWorkRegisteredCharTotals();
+            const efficiency = masterWorks
+                .filter(w => !w.genre.includes('웹툰'))
+                .map(w => {
+                    const income = workTotalsAll[w.id] || 0;
+                    const chars = workCharTotals[w.id] || 0;
+                    if (chars <= 0 || income <= 0) return null;
+                    return { title: w.title, genre: w.genre, income, chars, perChar: income / chars };
+                }).filter(Boolean).sort((a,b) => b.perChar - a.perChar);
+            const totalWorksWithIncome = Object.keys(workTotalsAll).length;
+            const excludedCount = Math.max(totalWorksWithIncome - efficiency.length, 0);
+
+            // 장르별 그룹화 (장르 내부에서도 효율 순으로 정렬, 카드 자체는 장르 내 1위 효율이 높은 순)
+            const genrePriority = (g) => {
+                if (!g) return 99;
+                if (g === 'BL 장편') return 0;
+                if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2;
+                if (g === 'BL 초단') return 3;
+                if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5;
+                return 99;
+            };
+            const byGenre = {};
+            efficiency.forEach(w => { (byGenre[w.genre] = byGenre[w.genre] || []).push(w); });
+            const genreGroups = Object.entries(byGenre)
+                .map(([genre, items]) => ({ genre, items }))
+                .sort((a,b) => genrePriority(a.genre) - genrePriority(b.genre));
+
+            return { efficiency, excludedCount, genreGroups };
+        }
+        function formatPerChar(v){
+            // 글자당 수익은 소수가 되기 쉬워 "1,000자당 수익"으로 환산해 보여줌
+            return Math.round(v * 1000);
+        }
+        function renderCharEfficiencyRowsHtml(items){
+            return items.map((w, i) => `
+                <div class="flex items-center gap-2 py-2.5 ${i < items.length-1 ? 'border-b border-slate-50' : ''}">
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:${i===0?'var(--primary)':'#cbd5e1'}">${i+1}</span>
+                    <p class="text-sm font-medium text-slate-700 truncate min-w-0 flex-1">${escapeHtml(w.title)}</p>
+                    <span class="text-[11px] text-slate-400 shrink-0 hidden sm:inline">${w.chars.toLocaleString()}자</span>
+                    <span class="text-sm font-bold text-slate-700 shrink-0 text-right">₩ ${taxFmt(formatPerChar(w.perChar))}<span class="text-[10px] text-slate-400 font-normal">/1000자</span></span>
+                </div>`).join('');
+        }
+        function renderCharEfficiencyTabHtml(d){
+            const scopeBtns = `
+                <button onclick="toggleCharEffScope()" class="px-3 py-1.5 rounded-md text-xs font-bold transition-all no-print ${charEffShowAll ? 'bg-white shadow-sm text-slate-700' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}">${charEffShowAll ? `${taxViewYear}년만 보기` : '전체 보기'}</button>`;
+
+            const groups = d.genreGroups;
+            const cardsHtml = groups.length === 0
+                ? `<div class="glass-card p-6"><p class="text-xs text-slate-400 text-center py-6">글자수와 수입 데이터가 모두 있는 작품이 없어요. (웹툰은 제외돼요)</p></div>`
+                : `<div class="grid grid-cols-1 md:grid-cols-2 gap-5">${groups.map(g => `
+                    <div class="glass-card p-6">
+                        <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2">
+                            <span class="text-[16px] font-bold px-3 py-1 rounded-md" style="background:var(--primary); color:#fff">${escapeHtml(g.genre)}</span>
+                            <span class="text-[16px] text-slate-400 font-normal">${g.items.length}개</span>
+                            <span class="text-[16px] text-slate-400 font-normal">· ${g.items.reduce((a,b)=>a+b.chars,0).toLocaleString()}자</span>
+                        </h4>
+                        ${renderCharEfficiencyRowsHtml(g.items)}
+                    </div>`).join('')}</div>`;
+
+            const note = d.excludedCount > 0
+                ? `<p class="text-[11px] text-slate-400 mt-1">※ 수입은 있지만 목표 글자수가 등록되지 않은 작품 ${d.excludedCount}개는 빠졌어요. 작품 등록에서 글자수(공백포함/외전 포함)를 입력하면 더 정확해져요.</p>`
+                : '';
+            return `
+            <div class="flex items-center justify-between flex-wrap gap-2">
+                <h3 data-eyebrow="per character" class="text-sm font-bold text-slate-500 flex items-center gap-2"><i class="fa-solid fa-keyboard text-blue-500"></i> 글자수 대비 수익 <span class="text-xs text-slate-400 font-normal">(웹툰 제외, 장르별)</span></h3>
+                ${scopeBtns}
+            </div>
+            ${cardsHtml}
+            ${note}`;
+        }
+        function renderStrengthAnalysisSectionHtml(s){
+            const genreRows = s.genreRanking.length === 0
+                ? `<p class="text-xs text-slate-400">수입 데이터가 없어요.</p>`
+                : s.genreRanking.map((g, i) => `
+                    <div class="flex items-center gap-3 py-2 ${i < s.genreRanking.length-1 ? 'border-b border-slate-50' : ''}">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:${i===0?'var(--primary)':'#cbd5e1'}">${i+1}</span>
+                        <div class="min-w-0 flex-1"><p class="text-sm font-medium text-slate-700">${escapeHtml(g.genre)}</p><p class="text-[10px] text-slate-400">작품 ${g.workCount}개 · 누적 ₩ ${taxFmt(g.total)}${(!g.genre.includes('웹툰') && g.chars > 0) ? ` · ${g.chars.toLocaleString()}자 <span class="font-bold" style="color:var(--primary)">(10만자당 ₩${taxFmt(g.total / g.chars * 100000)})</span>` : ''}</p></div>
+                        <span class="text-sm font-bold text-slate-700 shrink-0">₩ ${taxFmt(g.avgPerWork)}<span class="text-[10px] text-slate-400 font-normal">/작품</span></span>
+                    </div>`).join('');
+
+            const effTop = s.efficiency.slice(0, 10);
+            const effRows = effTop.length === 0
+                ? `<p class="text-xs text-slate-400">글자수와 수입 데이터가 모두 있는 작품이 없어요.</p>`
+                : effTop.map((w, i) => `
+                    <div class="flex items-center gap-3 py-2 ${i < effTop.length-1 ? 'border-b border-slate-50' : ''}">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:${i===0?'var(--primary)':'#cbd5e1'}">${i+1}</span>
+                        <div class="min-w-0 flex-1 flex items-center gap-2">
+                            <p class="text-sm font-medium text-slate-700 truncate">${escapeHtml(w.title)}</p>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0" style="background:var(--primary-light); color:var(--primary)">${escapeHtml(w.genre||'')}</span>
+                        </div>
+                        <span class="text-sm font-bold text-slate-700 shrink-0">₩ ${taxFmt(formatPerChar(w.perChar))}<span class="text-[10px] text-slate-400 font-normal">/1000자</span></span>
+                    </div>`).join('');
+
+            const bestGenre = s.genreRanking[0];
+            const bestEff = s.efficiency[0];
+            // 수익 집중도: 1위 장르가 전체 수익에서 차지하는 비중
+            const totalGenreIncome = s.genreRanking.reduce((sum, g) => sum + g.total, 0);
+            const topGenreShare = (bestGenre && totalGenreIncome > 0) ? Math.round(bestGenre.total / totalGenreIncome * 100) : null;
+            // 효율 1위와 평균 효율의 격차
+            const avgPerChar = s.efficiency.length > 0 ? s.efficiency.reduce((sum, w) => sum + w.perChar, 0) / s.efficiency.length : null;
+            const effGapMultiple = (bestEff && avgPerChar) ? (bestEff.perChar / avgPerChar) : null;
+            // 작품 수가 가장 많은 장르(가장 많이 시도해본 형태)
+            const mostTriedGenre = [...s.genreRanking].sort((a,b) => b.workCount - a.workCount)[0];
+
+            const insightLines = [];
+            if (bestGenre) insightLines.push(`작품당 평균 수익이 가장 높은 장르는 <b style="color:var(--primary)">${escapeHtml(bestGenre.genre)}</b>예요. 신작을 기획할 때 우선적으로 고려해볼 만해요.`);
+            if (bestEff) insightLines.push(`글자수 대비 수익 효율이 가장 좋은 작품은 <b style="color:var(--primary)">${escapeHtml(bestEff.title)}</b>예요. 비슷한 설정·분량·연재 방식을 분석해보면 다음 작품에 참고가 될 거예요.`);
+            if (topGenreShare !== null && bestGenre) insightLines.push(`<b style="color:var(--primary)">${escapeHtml(bestGenre.genre)}</b>가 전체 수익의 <b style="color:var(--primary)">${topGenreShare}%</b>를 차지하고 있어요. ${topGenreShare >= 60 ? '한 장르에 수익이 많이 몰려 있는 편이라, 다른 장르로 분산해보는 것도 안정성에 도움이 될 수 있어요.' : '여러 장르에 수익이 비교적 잘 분산되어 있는 편이에요.'}`);
+            if (effGapMultiple !== null && effGapMultiple >= 1.5) insightLines.push(`가장 효율이 좋은 작품은 평균보다 <b style="color:var(--primary)">${effGapMultiple.toFixed(1)}배</b> 더 효율적이에요. 그 작품의 소재·전개 방식을 다음 작품에도 참고해보면 좋을 것 같아요.`);
+            if (mostTriedGenre && mostTriedGenre.genre !== (bestGenre && bestGenre.genre)) insightLines.push(`지금까지 가장 많이 시도한 형태는 <b style="color:var(--primary)">${escapeHtml(mostTriedGenre.genre)}</b>(${mostTriedGenre.workCount}개)예요. 가장 수익성이 높은 장르와는 다르니, 비중을 조절해보는 것도 고려해볼 만해요.`);
+
+            const insightHtml = insightLines.length === 0
+                ? `<p class="text-xs text-slate-400">아직 분석할 수입·글자수 데이터가 충분하지 않아요. 정산 입력과 작품 등록 글자수가 쌓이면 더 정확한 인사이트를 볼 수 있어요.</p>`
+                : `<ul class="space-y-2">${insightLines.map(t => `<li class="text-sm text-slate-600 flex items-start gap-2"><i class="fa-solid fa-lightbulb text-amber-400 mt-0.5 shrink-0"></i><span>${t}</span></li>`).join('')}</ul>`;
+
+            return `
+            <div class="glass-card p-6">
+                <h3 data-eyebrow="strengths" class="text-sm font-bold text-slate-500 flex items-center gap-2 mb-4"><i class="fa-solid fa-chart-line text-violet-500"></i> 나의 강점 · 전략 분석</h3>
+
+                <div class="rounded-2xl p-4 mb-5" style="background:var(--primary-light);">
+                    <h4 class="text-xs font-bold mb-2 flex items-center gap-1.5" style="color:var(--primary)"><i class="fa-solid fa-wand-magic-sparkles"></i> 한눈에 보는 인사이트</h4>
+                    ${insightHtml}
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div class="rounded-2xl p-5 border border-slate-100 bg-white">
+                        <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><i class="fa-solid fa-medal text-amber-500"></i> 장르별 작품당 평균 수익</h4>
+                        ${genreRows}
+                    </div>
+                    <div class="rounded-2xl p-5 border border-slate-100 bg-white">
+                        <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><i class="fa-solid fa-bolt text-emerald-500"></i> 글자수 대비 수익 Top 10</h4>
+                        ${effRows}
+                    </div>
+                </div>
+            </div>`;
+        }
+        function renderMonthBarsHtml(d){
+            const maxMonthVal = Math.max(...d.monthlyChars, 1);
+            return d.monthlyChars.map((v, i) => {
+                const h = Math.max(Math.round(v / maxMonthVal * 56), v > 0 ? 3 : 0);
+                const isBest = i === d.bestMonthIdx && v > 0;
+                return `<div class="flex flex-col items-center gap-1 flex-1" onmousemove="showInsightMonthTip(event,${i},${v})" onmouseleave="hideWriterDayTip()">
+                    <div class="w-full flex items-end justify-center" style="height:60px;">
+                        <div class="w-5 rounded-t transition-all" style="height:${h}px; background:${isBest ? 'var(--primary)' : '#e2e8f0'}"></div>
+                    </div>
+                    <span class="text-[10px] ${isBest ? 'font-bold text-slate-700' : 'text-slate-400'}">${MONTH_NAMES_KO[i].replace('월','')}</span>
+                </div>`;
+            }).join('');
+        }
+        function renderWritingActivityCardHtml(d, extraClass){
+            return `
+                <div class="rounded-2xl p-5 ${extraClass || 'glass-card'}">
+                    <h4 data-eyebrow="writing" class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><i class="fa-solid fa-keyboard text-blue-500"></i> 집필 활동</h4>
+                    <div class="flex items-center gap-1 mb-4">${renderMonthBarsHtml(d)}</div>
+                    <div class="grid grid-cols-4 gap-3 text-sm">
+                        <div class="rounded-xl p-3" style="background:#f8fafc;"><p class="text-[11px] mb-1" style="color:#94a3b8;">일평균 글자수</p><p class="font-bold" style="color:#334155;">${d.dailyAvg.toLocaleString()}자</p></div>
+                        <div class="rounded-xl p-3" style="background:#f8fafc;"><p class="text-[11px] mb-1" style="color:#94a3b8;">가장 많이 쓴 달</p><p class="font-bold" style="color:#334155;">${d.bestMonthIdx >= 0 ? MONTH_NAMES_KO[d.bestMonthIdx] + ` (${d.bestMonthVal.toLocaleString()}자)` : '-'}</p></div>
+                        <div class="rounded-xl p-3" style="background:#f8fafc;"><p class="text-[11px] mb-1" style="color:#94a3b8;">기록한 날</p><p class="font-bold" style="color:#334155;">${d.daysWithRecord}일</p></div>
+                        <div class="rounded-xl p-3" style="background:#f8fafc;"><p class="text-[11px] mb-1" style="color:#94a3b8;">연간 누적 글자수</p><p class="font-bold" style="color:#334155;">${d.yearCharTotal.toLocaleString()}자</p></div>
+                        ${(d.charGenreList || []).map(([g, chars]) => `<div class="rounded-xl p-3" style="background:var(--primary-light);"><p class="text-[11px] mb-1 truncate" style="color:var(--primary);">${escapeHtml(g)}</p><p class="font-bold" style="color:var(--primary);">${chars.toLocaleString()}자</p></div>`).join('')}
+                    </div>
+                </div>`;
+        }
+        function renderTopWorksCardHtml(d, extraClass){
+            const rows = d.topWorks.length === 0
+                ? `<p class="text-xs text-slate-400">올해 수입 데이터가 없어요.</p>`
+                : d.topWorks.map((w, i) => `
+                    <div class="flex items-center gap-3 py-2 ${i < d.topWorks.length-1 ? 'border-b border-slate-50' : ''}">
+                        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:var(--primary)">${i+1}</span>
+                        <div class="min-w-0 flex-1 flex items-center gap-2">
+                            <p class="text-sm font-medium text-slate-700 truncate">${escapeHtml(w.title)}</p>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0" style="background:var(--primary-light); color:var(--primary)">${escapeHtml(w.genre||'')}</span>
+                        </div>
+                        <span class="text-sm font-bold text-slate-700 shrink-0">₩ ${taxFmt(w.amt)}</span>
+                    </div>`).join('');
+            return `
+                <div class="rounded-2xl p-5 ${extraClass || 'glass-card'}">
+                    <h4 data-eyebrow="best works" class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><i class="fa-solid fa-trophy text-amber-500"></i> ${d.year}년 작품별 수익 Top 8</h4>
+                    ${rows}
+                </div>`;
+        }
+        const MONTH_NAMES_KO = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+        function openYearSummaryReport(){
+            const d = buildYearSummaryData(taxViewYear);
+            const incomePct = d.incomeGoal > 0 ? Math.min(Math.round(d.totalNet / d.incomeGoal * 100), 999) : null;
+            const charPct = d.charGoal > 0 ? Math.min(Math.round(d.yearCharTotal / d.charGoal * 100), 999) : null;
+            const doneCount = d.goalItems.filter(g => g.done).length;
+
+            const goalRows = d.goalItems.length === 0
+                ? `<p class="text-xs text-slate-400">올해 등록한 목표 메모가 없어요.</p>`
+                : d.goalItems.map(g => `<div class="flex items-center gap-2 text-sm py-1"><i class="fa-solid ${g.done ? 'fa-circle-check text-emerald-500' : 'fa-circle text-slate-300'}"></i><span class="${g.done ? 'text-emerald-700' : 'text-slate-600'}">${escapeHtml(g.text)}</span>${g.done ? '<span class="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full ml-1">완료</span>' : ''}</div>`).join('');
+
+            const genreRows = d.genreList.length === 0
+                ? `<tr><td colspan="3" class="py-3 text-center text-slate-400 text-xs">데이터 없음</td></tr>`
+                : d.genreList.map(([g, amt]) => {
+                    const pct = d.totalNet > 0 ? Math.round(amt / d.totalNet * 100) : 0;
+                    return `<tr class="border-b border-slate-50"><td class="py-2 px-3 text-slate-600">${escapeHtml(g)}</td><td class="py-2 px-3 text-right text-slate-700 font-bold">₩ ${taxFmt(amt)}</td><td class="py-2 px-3 text-right text-slate-400 text-xs">${pct}%</td></tr>`;
+                }).join('');
+
+            const genreCountSummary = d.publishedGenreGroups.length === 0
+                ? ''
+                : `<div class="flex flex-wrap gap-2 mb-3">${d.publishedGenreGroups.map(grp => `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full" style="background:var(--primary-light); color:var(--primary)">${escapeHtml(grp.genre)} ${grp.items.length}건</span>`).join('')}</div>`;
+
+            const publishedGroupedHtml = d.publishedGenreGroups.length === 0
+                ? `<p class="text-xs text-slate-400">올해 출간한 작품이 없어요.</p>`
+                : `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">` + d.publishedGenreGroups.map(grp => `
+                    <div class="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                        <p class="text-xs font-bold mb-2" style="color:var(--primary)">${escapeHtml(grp.genre)} <span class="text-slate-400 font-normal">${grp.items.length}건</span></p>
+                        <div class="space-y-1">
+                            ${grp.items.map(p => `<div class="flex items-center justify-between text-sm"><span class="text-slate-700 font-medium truncate">${escapeHtml(p.title)}</span><span class="text-[11px] text-slate-400 shrink-0 ml-2">${p.date.slice(5)}</span></div>`).join('')}
+                        </div>
+                    </div>`).join('') + `</div>`;
+
+            const content = document.getElementById('year-summary-content');
+            content.innerHTML = `
+            <div class="text-center mb-6">
+                <p class="text-xs text-slate-400 uppercase font-bold tracking-wide">Year in review</p>
+                <h2 class="text-2xl font-black text-slate-700">${d.year}년 한 해 결산</h2>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-5">
+                <div class="rounded-2xl p-5" style="background:var(--primary-light);">
+                    <p class="text-[11px] font-bold text-slate-400 uppercase mb-1">수익 목표 달성률</p>
+                    ${d.incomeGoal > 0 ? `
+                        <p class="flex items-baseline gap-2"><span class="text-2xl font-black" style="color:var(--primary)">₩ ${taxFmt(d.totalNet)}</span><span class="text-sm font-bold text-slate-400">${incomePct}%</span></p>
+                        <p class="text-xs text-slate-500 mt-1">목표 ₩ ${taxFmt(d.incomeGoal)}</p>
+                    ` : `<p class="text-2xl font-black" style="color:var(--primary)">₩ ${taxFmt(d.totalNet)}</p><p class="text-xs text-slate-500 mt-1">설정한 목표액이 없어요</p>`}
+                </div>
+                <div class="rounded-2xl p-5" style="background:var(--primary-light);">
+                    <p class="text-[11px] font-bold text-slate-400 uppercase mb-1">글자수 목표 달성률</p>
+                    ${d.charGoal > 0 ? `
+                        <p class="flex items-baseline gap-2"><span class="text-2xl font-black" style="color:var(--primary)">${d.yearCharTotal.toLocaleString()}자</span><span class="text-sm font-bold text-slate-400">${charPct}%</span></p>
+                        <p class="text-xs text-slate-500 mt-1">목표 ${d.charGoal.toLocaleString()}자</p>
+                    ` : `<p class="text-2xl font-black" style="color:var(--primary)">${d.yearCharTotal.toLocaleString()}자</p><p class="text-xs text-slate-500 mt-1">설정한 목표 글자수가 없어요</p>`}
+                </div>
+            </div>
+
+            <div class="rounded-2xl p-5 border border-slate-100 mb-5 bg-white">
+                <h4 class="text-sm font-bold text-slate-600 mb-2 flex items-center gap-2"><i class="fa-solid fa-bullseye text-amber-500"></i> 목표 메모 달성 현황 <span class="text-xs text-slate-400 font-normal">(${doneCount}/${d.goalItems.length})</span></h4>
+                ${goalRows}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+                <div class="rounded-2xl p-5 border border-slate-100 bg-white">
+                    <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><i class="fa-solid fa-coins text-emerald-500"></i> 총수입 · 장르별</h4>
+                    <p class="text-2xl font-black text-slate-700 mb-3">₩ ${taxFmt(d.totalNet)}</p>
+                    <table class="w-full text-sm">
+                        <thead class="text-slate-400 text-[11px] border-b border-slate-100"><tr><th class="py-1.5 px-3 text-left">장르</th><th class="py-1.5 px-3 text-right">수입</th><th class="py-1.5 px-3 text-right">비중</th></tr></thead>
+                        <tbody>${genreRows}</tbody>
+                    </table>
+                </div>
+                ${renderWritingActivityCardHtml(d, 'border border-slate-100')}
+            </div>
+
+            ${renderTopWorksCardHtml(d, 'border border-slate-100 mb-5')}
+
+            <div class="rounded-2xl p-5 border border-slate-100 bg-white">
+                <h4 class="text-sm font-bold text-slate-600 mb-3 flex items-center gap-2"><i class="fa-solid fa-book text-rose-500"></i> ${d.year}년 출간작 <span class="text-xs text-slate-400 font-normal">(${d.published.length}건)</span></h4>
+                ${genreCountSummary}
+                ${publishedGroupedHtml}
+            </div>`;
+            document.getElementById('year-summary-modal').classList.add('open');
+        }
+        function closeYearSummaryReport(){ document.getElementById('year-summary-modal').classList.remove('open'); }
+        function printYearSummaryReport(){
+            document.body.classList.add('printing-year-summary');
+            let cleaned = false;
+            const cleanup = () => {
+                if (cleaned) return;
+                cleaned = true;
+                document.body.classList.remove('printing-year-summary');
+                window.removeEventListener('afterprint', cleanup);
+            };
+            window.addEventListener('afterprint', cleanup);
+            setTimeout(() => { window.print(); }, 50);
+            // afterprint가 발생하지 않는 환경을 위한 안전망
+            setTimeout(cleanup, 5000);
+        }
+        function taxBracket(base){
+            base = Math.max(0, base);
+            if (base <= 14000000) return base*0.06;
+            if (base <= 50000000) return base*0.15 - 1260000;
+            if (base <= 88000000) return base*0.24 - 5760000;
+            if (base <= 150000000) return base*0.35 - 15440000;
+            if (base <= 300000000) return base*0.38 - 19940000;
+            if (base <= 500000000) return base*0.40 - 25940000;
+            if (base <= 1000000000) return base*0.42 - 35940000;
+            return base*0.45 - 65940000;
+        }
+        function changeTaxYear(d){ taxViewYear += d; renderTaxGoalTab(); }
+        function setIncomeGoal(val){
+            const g = Number(String(val).replace(/[^0-9]/g,'')) || 0;
+            incomeGoals[taxViewYear] = g;
+            const net = getYearNet(taxViewYear);
+            const pct = g > 0 ? Math.min(Math.round(net/g*100), 999) : 0;
+            const bar = document.getElementById('tax-goal-bar'); if (bar) bar.style.width = Math.min(pct,100) + '%';
+            const lbl = document.getElementById('tax-goal-label'); if (lbl) lbl.innerHTML = `순수익 <b class="text-slate-700">₩ ${taxFmt(net)}</b> / 목표 ₩ ${taxFmt(g)} <span class="text-emerald-600 font-bold">(${pct}%)</span>`;
+            clearTimeout(taxEstSaveTimer); taxEstSaveTimer = setTimeout(()=>save(true), 600);
+        }
+        function showTaxGoalInput(){
+            const wrap = document.getElementById('tax-goal-inputwrap');
+            if (!wrap) return;
+            wrap.classList.remove('hidden');
+            const input = document.getElementById('tax-goal-input');
+            if (input) { input.focus(); input.select(); }
+        }
+        function hideTaxGoalInput(){
+            const wrap = document.getElementById('tax-goal-inputwrap');
+            if (!wrap) return;
+            wrap.classList.add('hidden');
+        }
+        // ── 목표 메모 (체크리스트: 항목별로 추가/완료/삭제 관리) ──
+        let taxGoalItemIdSeq = 1;
+        function genTaxGoalItemId(){ return 'tgi_' + Date.now() + '_' + (taxGoalItemIdSeq++); }
+        function getYearGoalItems(year){
+            if (!taxGoalItems[year]) {
+                // 과거 줄글 메모가 있으면 줄 단위로 자동 변환 (1회 마이그레이션)
+                const legacy = taxGoalMemos[year];
+                if (legacy && legacy.trim()) {
+                    taxGoalItems[year] = legacy.split('\n').map(line => line.trim()).filter(Boolean)
+                        .map(text => ({ id: genTaxGoalItemId(), text, done: false }));
+                } else {
+                    taxGoalItems[year] = [];
+                }
+            }
+            return taxGoalItems[year];
+        }
+        function renderTaxGoalMemoList(){
+            const wrap = document.getElementById('tax-goal-memo-list');
+            if (!wrap) return;
+            const items = getYearGoalItems(taxViewYear);
+            if (items.length === 0) {
+                wrap.innerHTML = `<p class="text-xs text-slate-400 leading-relaxed">예: 신작 2개 연재 시작 · 1편 완결 · 누적 50만자 쓰기 같은 올해 목표를 한 줄씩 추가해보세요.</p>`;
+                return;
+            }
+            wrap.innerHTML = items.map(it => `
+                <div class="flex items-center gap-2 group/item rounded-xl px-2.5 py-2 -mx-2.5 transition-colors ${it.done ? 'bg-emerald-50' : 'hover:bg-white/60'}">
+                    <button onclick="toggleTaxGoalItem('${it.id}')" class="shrink-0 w-5 h-5 flex items-center justify-center" title="${it.done ? '완료 취소' : '완료 처리'}">
+                        <i class="fa-solid ${it.done ? 'fa-circle-check' : 'fa-circle'} ${it.done ? 'text-emerald-500' : 'text-slate-300'} text-base"></i>
+                    </button>
+                    <span class="flex-1 text-sm ${it.done ? 'text-emerald-700' : 'text-slate-600'} cursor-pointer" onclick="toggleTaxGoalItem('${it.id}')">${escapeHtml(it.text)}</span>
+                    ${it.done ? '<span class="shrink-0 text-[11px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">달성 완료!</span>' : ''}
+                    <button onclick="deleteTaxGoalItem('${it.id}')" class="no-print shrink-0 opacity-0 group-hover/item:opacity-100 transition-opacity text-slate-300 hover:text-rose-500 text-xs px-1" title="삭제"><i class="fa-solid fa-xmark"></i></button>
+                </div>`).join('');
+        }
+        function toggleTaxGoalItem(id){
+            const items = getYearGoalItems(taxViewYear);
+            const it = items.find(x => x.id === id);
+            if (!it) return;
+            it.done = !it.done;
+            save(true);
+            renderTaxGoalMemoList();
+        }
+        function deleteTaxGoalItem(id){
+            const items = getYearGoalItems(taxViewYear);
+            taxGoalItems[taxViewYear] = items.filter(x => x.id !== id);
+            save(true);
+            renderTaxGoalMemoList();
+        }
+        function showTaxGoalItemInput(){
+            const wrap = document.getElementById('tax-goal-item-inputwrap');
+            if (!wrap) return;
+            wrap.classList.remove('hidden');
+            const input = document.getElementById('tax-goal-item-input');
+            if (input) input.focus();
+        }
+        function hideTaxGoalItemInput(){
+            const wrap = document.getElementById('tax-goal-item-inputwrap');
+            if (!wrap) return;
+            wrap.classList.add('hidden');
+            const input = document.getElementById('tax-goal-item-input');
+            if (input) input.value = '';
+        }
+        function addTaxGoalItem(){
+            const input = document.getElementById('tax-goal-item-input');
+            if (!input) return;
+            const text = input.value.trim();
+            if (!text) { hideTaxGoalItemInput(); return; }
+            const items = getYearGoalItems(taxViewYear);
+            items.push({ id: genTaxGoalItemId(), text, done: false });
+            input.value = '';
+            save(true);
+            renderTaxGoalMemoList();
+            input.focus();
+        }
+        function handleTaxGoalItemKeydown(e){
+            if (e.key === 'Enter') { e.preventDefault(); addTaxGoalItem(); }
+            else if (e.key === 'Escape') { e.preventDefault(); hideTaxGoalItemInput(); }
+        }
+        // ── 올해 글자수 목표 ──
+        function setCharGoal(val){
+            const g = Number(String(val).replace(/[^0-9]/g,'')) || 0;
+            charGoals[taxViewYear] = g;
+            const total = getYearCharTotal(taxViewYear);
+            const pct = g > 0 ? Math.min(Math.round(total/g*100), 999) : 0;
+            const bar = document.getElementById('char-goal-bar'); if (bar) bar.style.width = Math.min(pct,100) + '%';
+            const lbl = document.getElementById('char-goal-label'); if (lbl) lbl.innerHTML = `누적 <b class="text-slate-700">${total.toLocaleString()}자</b> / 목표 ${g.toLocaleString()}자 <span class="text-emerald-600 font-bold">(${pct}%)</span>`;
+            clearTimeout(taxEstSaveTimer); taxEstSaveTimer = setTimeout(()=>save(true), 600);
+        }
+        function showCharGoalInput(){
+            const wrap = document.getElementById('char-goal-inputwrap');
+            if (!wrap) return;
+            wrap.classList.remove('hidden');
+            const input = document.getElementById('char-goal-input');
+            if (input) { input.focus(); input.select(); }
+        }
+        function hideCharGoalInput(){
+            const wrap = document.getElementById('char-goal-inputwrap');
+            if (!wrap) return;
+            wrap.classList.add('hidden');
+        }
+        function recomputeTaxEstimate(){
+            const er = Math.min(Math.max(Number(document.getElementById('tax-exp-rate')?.value)||0,0),100);
+            const ded = Number(String(document.getElementById('tax-deduction')?.value||'').replace(/[^0-9]/g,''))||0;
+            taxSettings[taxViewYear] = taxSettings[taxViewYear] || {};
+            taxSettings[taxViewYear].expenseRate = er;
+            taxSettings[taxViewYear].deduction = ded;
+            const net = getYearNet(taxViewYear); const gross = Math.round(net/0.967);
+            const income = Math.round(gross * (1 - er/100));
+            const base = Math.max(income - ded, 0);
+            const calc = Math.round(taxBracket(base));
+            const prepaid = gross - net; // 이미 떼인 원천징수 = 세전 - 실수령
+            const due = calc - prepaid;
+            const local = Math.round(calc * 0.1);
+            const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.innerHTML = v; };
+            set('tax-r-income', '₩ ' + taxFmt(income));
+            set('tax-r-base', '₩ ' + taxFmt(base));
+            set('tax-r-calc', '₩ ' + taxFmt(calc));
+            set('tax-r-prepaid', '₩ ' + taxFmt(prepaid));
+            set('tax-r-due', due >= 0 ? `<span class="text-rose-600">납부 ₩ ${taxFmt(due)}</span>` : `<span class="text-emerald-600">환급 ₩ ${taxFmt(-due)}</span>`);
+            set('tax-r-local', '₩ ' + taxFmt(local));
+            clearTimeout(taxEstSaveTimer); taxEstSaveTimer = setTimeout(()=>save(true), 600);
+        }
+        // ════════ 인사이트 > 작품 분석 ════════
+        // 1) 작품 수명 곡선  2) 집필 하루당 수익  3) 신작 의존도
+        function ymToIdx(ym) { const [y, m] = String(ym).split('-').map(Number); return y * 12 + (m - 1); }
+        function idxToYm(i) { return `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`; }
+        // 작품의 월별 인세 — 선인세는 뺀다 (출간 전에 미리 받는 돈이라 수명 곡선·신작/구작 구분을 왜곡함)
+        function getWorkRoyaltyByMonth(w) {
+            const adv = advanceMonthSums(getWorkAdvances(w));
+            const out = {};
+            Object.entries(monthlyData).forEach(([ym, d]) => {
+                const v = (Number(d[w.id]) || 0) - (adv[ym] || 0);
+                if (v) out[ym] = v;
+            });
+            return out;
+        }
+        // 이번 달은 아직 정산이 다 안 들어왔을 수 있어서 '지난달'까지만 분석한다
+        function analysisLastIdx() { const n = new Date(); return n.getFullYear() * 12 + n.getMonth() - 1; }
+
+        // 1) 작품 수명 곡선: 출간 후 n개월째에 작품 1개가 평균 얼마를 벌었는지 (장르별)
+        //    n개월째 평균은 '출간한 지 n개월 이상 지난 작품'만으로 낸다 — 최근작 때문에 뒤쪽 평균이 깎이지 않게
+        function buildLifecycleData() {
+            const MAXM = 24, lastIdx = analysisLastIdx();
+            const byGenre = {};
+            masterWorks.forEach(w => {
+                if (w.isPending || !w.publishDate) return;
+                const pIdx = ymToIdx(w.publishDate.slice(0, 7));
+                const age = lastIdx - pIdx;
+                if (age < 0) return;
+                const g = w.genre || '기타';
+                const G = byGenre[g] || (byGenre[g] = { sums: Array(MAXM + 1).fill(0), counts: Array(MAXM + 1).fill(0), works: 0, list: [] });
+                G.works++;
+                const roy = getWorkRoyaltyByMonth(w);
+                const series = [];
+                for (let i = 0; i <= Math.min(age, MAXM); i++) { const v = roy[idxToYm(pIdx + i)] || 0; series.push(v); G.sums[i] += v; G.counts[i]++; }
+                G.list.push({ title: w.title, pubYm: w.publishDate.slice(0, 7), months: age + 1, series, total: series.reduce((a, b) => a + b, 0) });
+            });
+            const genreOrder = g => { const i = genreList.findIndex(x => x.name === g); return i < 0 ? 999 : i; };
+            return Object.entries(byGenre).map(([genre, G]) => {
+                // 표본이 2작품 이상 있는 개월차까지만 본다
+                let horizon = -1;
+                for (let i = 0; i <= MAXM; i++) { if (G.counts[i] >= 2) horizon = i; else break; }
+                if (horizon < 5) return null;
+                const avg = G.sums.slice(0, horizon + 1).map((s, i) => s / G.counts[i]);
+                const total = avg.reduce((a, b) => a + b, 0);
+                if (total <= 0) return null;
+                let cum = 0; const cumPct = avg.map(v => { cum += v; return cum / total * 100; });
+                const reach = p => { const i = cumPct.findIndex(c => c >= p); return i < 0 ? null : i + 1; };
+                const pctAt = m => m - 1 <= horizon ? Math.round(cumPct[m - 1]) : null;
+                const worksList = G.list.sort((a, b) => b.total - a.total);   // 작품별 선 + 목록 (출간 후 24개월까지 번 돈 순)
+                return { genre, works: G.works, horizon: horizon + 1, avg, total, half: reach(50), p80: reach(80), at3: pctAt(3), at6: pctAt(6), at12: pctAt(12), worksList };
+            }).filter(Boolean).sort((a, b) => genreOrder(a.genre) - genreOrder(b.genre));
+        }
+
+        // 2) 집필 하루당 수익: 이 작품이 지금까지 벌어다 준 돈(선인세 포함) ÷ 집필 기록이 있는 날 수
+        function buildWritingDayValueData() {
+            const days = {}, chars = {};
+            let firstDate = null;
+            Object.entries(writerDailyData).forEach(([ds, o]) => {
+                Object.entries((o && o.works) || {}).forEach(([key, v]) => {
+                    const s = Object.values((v && v.hours) || {}).reduce((a, b) => a + (Number(b.diff) || 0), 0);
+                    if (s <= 0) return;
+                    const id = key.split('::')[0];   // 외전(작품ID::외전ID)도 본편 작품으로 합친다
+                    (days[id] = days[id] || new Set()).add(ds);
+                    chars[id] = (chars[id] || 0) + s;
+                    if (!firstDate || ds < firstDate) firstDate = ds;
+                });
+            });
+            const reg = getAllWorkRegisteredCharTotals();
+            const lastIdx = analysisLastIdx();
+            let writtenNoIncome = 0;
+            const rows = masterWorks.map(w => {
+                const d = days[w.id];
+                if (!d || d.size < 3) return null;
+                let income = 0;
+                Object.values(monthlyData).forEach(m => { income += Number(m[w.id]) || 0; });
+                if (income <= 0) { writtenNoIncome++; return null; }
+                const coverage = reg[w.id] ? chars[w.id] / reg[w.id] : null;
+                const months = (!w.isPending && w.publishDate) ? Math.max(lastIdx - ymToIdx(w.publishDate.slice(0, 7)) + 1, 0) : null;
+                return { w, days: d.size, chars: chars[w.id], income, perDay: income / d.size, coverage, months };
+            }).filter(Boolean).sort((a, b) => b.perDay - a.perDay);
+            return { rows, firstDate, writtenNoIncome };
+        }
+
+        // 3) 신작 의존도: 연도별 수입을 선인세 / 신작(출간 12개월 미만) / 구작(12개월 이상)으로 나눈다
+        function buildNewVsOldData() {
+            const years = {};
+            masterWorks.forEach(w => {
+                const pIdx = (!w.isPending && w.publishDate) ? ymToIdx(w.publishDate.slice(0, 7)) : null;
+                const adv = advanceMonthSums(getWorkAdvances(w));
+                Object.entries(monthlyData).forEach(([ym, d]) => {
+                    const amt = Number(d[w.id]) || 0;
+                    if (!amt) return;
+                    const y = ym.slice(0, 4);
+                    const Y = years[y] || (years[y] = { adv: 0, fresh: 0, old: 0, unknown: 0, lastMonth: 0 });
+                    Y.lastMonth = Math.max(Y.lastMonth, Number(ym.slice(5, 7)));
+                    const a = adv[ym] || 0;
+                    Y.adv += a;
+                    const roy = amt - a;
+                    if (!roy) return;
+                    if (pIdx === null) Y.unknown += roy;
+                    else if (ymToIdx(ym) - pIdx >= 12) Y.old += roy;
+                    else Y.fresh += roy;
+                });
+            });
+            return Object.entries(years).sort((a, b) => a[0].localeCompare(b[0])).map(([year, Y]) => {
+                const total = Y.adv + Y.fresh + Y.old + Y.unknown;
+                return { year, total, ...Y };
+            }).filter(r => r.total > 0);
+        }
+
+        function renderWorkAnalysisTabHtml(life, dayVal, newOld) {
+            const won = v => '₩ ' + taxFmt(v);
+            const man = v => v >= 10000 ? `${taxFmt(v / 10000)}만` : `${taxFmt(v)}`;
+            const badge = g => `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap" style="background-color:${hexToRgba(getGenreColor(g), genreBadgeOpacity)};color:#334155">${escapeHtml(g)}</span>`;
+
+            // ── 1) 수명 곡선 — 장르마다 금액 규모가 너무 달라서 장르별로 그래프를 따로 그린다 ──
+            const stat = (label, val) => `<div class="rounded-lg px-2 py-1.5 bg-slate-50 text-center"><p class="text-[10px] text-slate-400">${label}</p><p class="text-xs font-bold text-slate-700">${val}</p></div>`;
+            const lifeCards = life.map((l, i) => `
+                <div class="rounded-2xl p-4 border border-slate-100 bg-white">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2">${badge(l.genre)}<span class="text-[11px] text-slate-400">작품 ${l.works}개 · ${l.horizon}개월 기준</span></div>
+                        <span class="text-xs text-slate-500">작품당 평균 <b class="text-slate-700">${man(Math.round(l.total))}원</b></span>
+                    </div>
+                    <div class="relative" style="height:190px;"><canvas id="lifecycle-chart-${i}"></canvas></div>
+                    <div class="flex items-center gap-3 text-[10px] text-slate-400 mt-1"><span class="flex items-center gap-1"><span class="inline-block w-4 h-[3px] rounded" style="background:${getGenreColor(l.genre)}"></span>장르 평균</span><span class="flex items-center gap-1"><span class="inline-block w-4 h-[2px] rounded bg-slate-300"></span>작품별 (목록에서 누르면 강조)</span></div>
+                    <div class="grid grid-cols-5 gap-1.5 mt-3">
+                        ${stat('첫 3개월', l.at3 !== null ? l.at3 + '%' : '-')}${stat('첫 6개월', l.at6 !== null ? l.at6 + '%' : '-')}${stat('첫 12개월', l.at12 !== null ? l.at12 + '%' : '-')}
+                        <div class="rounded-lg px-2 py-1.5 text-center" style="background:var(--primary-light)"><p class="text-[10px]" style="color:var(--primary)">절반 도달</p><p class="text-xs font-bold" style="color:var(--primary)">${l.half ? l.half + '개월' : '-'}</p></div>
+                        ${stat('80% 도달', l.p80 ? l.p80 + '개월' : '-')}
+                    </div>
+                    <div class="mt-3 border-t border-slate-100 pt-2">
+                        ${l.worksList.map((w, wi) => `<button type="button" onclick="highlightLifecycleWork(${i}, ${wi})" data-lc-row="${i}-${wi}" class="lc-row w-full flex items-center justify-between gap-2 px-2 py-1 rounded-md text-left hover:bg-slate-50 ${wi >= 8 ? 'hidden lc-more-' + i : ''}">
+                            <span class="text-xs text-slate-600 truncate min-w-0">${escapeHtml(w.title)}</span>
+                            <span class="text-[11px] text-slate-400 shrink-0 whitespace-nowrap">${w.pubYm.replace('-', '.')} · ${w.months > 24 ? '24+' : w.months}개월 · <b class="text-slate-600">${man(Math.round(w.total))}원</b></span>
+                        </button>`).join('')}
+                        ${l.worksList.length > 8 ? `<button type="button" onclick="toggleLifecycleMore(${i}, this)" class="w-full text-center text-[11px] font-bold text-slate-400 hover:text-slate-600 pt-1">전체 ${l.worksList.length}개 보기</button>` : ''}
+                    </div>
+                </div>`).join('');
+            const lifeHtml = life.length === 0
+                ? `<p class="text-xs text-slate-400">출간일과 정산 기록이 있는 작품이 아직 충분하지 않아요. (장르마다 출간 6개월 넘은 작품이 2개 이상 필요해요)</p>`
+                : `<div class="grid grid-cols-1 lg:grid-cols-2 gap-4">${lifeCards}</div>
+                   <p class="text-[11px] text-slate-400 mt-3">※ 비중은 장르마다 표본이 2작품 이상 있는 기간(최대 24개월)까지의 인세 기준이에요. 선인세는 빠져 있고, 정산이 익월·익익월이라 첫 1~2개월은 적게 잡혀요.</p>`;
+
+            // ── 2) 집필 하루당 수익 ──
+            const dvRows = dayVal.rows.map((r, i) => {
+                const partial = r.coverage !== null && r.coverage < 0.6
+                    ? `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-400 shrink-0" title="집필 기록을 시작하기 전에 쓴 분량이 있어서, 실제로는 더 여러 날 쓴 작품이에요">기록 일부 ${Math.round(r.coverage * 100)}%</span>` : '';
+                const age = r.months !== null ? ` · 출간 ${r.months}개월째` : ' · 출간 전';
+                return `<div class="flex items-center gap-3 py-2.5 ${i < dayVal.rows.length - 1 ? 'border-b border-slate-50' : ''}">
+                    <span class="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:${i === 0 ? 'var(--primary)' : '#cbd5e1'}">${i + 1}</span>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 min-w-0">${badge(r.w.genre || '')}<span class="text-sm font-medium text-slate-700 truncate">${escapeHtml(r.w.title)}</span>${partial}</div>
+                        <p class="text-[11px] text-slate-400 mt-0.5">집필 ${r.days}일 · ${man(r.chars)}자${age} · 총 ${won(r.income)}</p>
+                    </div>
+                    <span class="text-sm font-bold text-slate-700 shrink-0 text-right">${won(Math.round(r.perDay))}<span class="text-[10px] text-slate-400 font-normal">/일</span></span>
+                </div>`;
+            }).join('');
+            const dvHtml = dayVal.rows.length === 0
+                ? `<p class="text-xs text-slate-400">집필 기록(3일 이상)과 정산 수입이 둘 다 있는 작품이 아직 없어요.</p>`
+                : dvRows + `<p class="text-[11px] text-slate-400 mt-3">※ 집필 기록은 ${dayVal.firstDate || '-'}부터 있어요. 수익은 지금까지 들어온 금액(선인세 포함)이라 최근 출간작은 앞으로 더 올라가요.${dayVal.writtenNoIncome ? ` 아직 수입이 없는 집필작 ${dayVal.writtenNoIncome}개는 빠졌어요.` : ''}</p>`;
+
+            // ── 3) 신작 의존도 ──
+            const seg = (v, total, color, label) => v > 0 ? `<div style="width:${v / total * 100}%;background:${color}" class="h-full flex items-center justify-center overflow-hidden" title="${label} ${won(v)} (${Math.round(v / total * 100)}%)">${v / total >= 0.09 ? `<span class="text-[10px] font-bold text-white px-1 whitespace-nowrap">${Math.round(v / total * 100)}%</span>` : ''}</div>` : '';
+            const C_OLD = '#94a3b8', C_ADV = '#f59e0b', C_UNK = '#cbd5e1';
+            const nowY = String(new Date().getFullYear());
+            const noRows = newOld.map(r => `
+                <div class="flex items-center gap-3 py-1.5">
+                    <span class="w-20 shrink-0 text-xs font-bold text-slate-600">${r.year}년${r.year === nowY ? `<span class="block text-[10px] font-normal text-slate-400">${r.lastMonth}월까지</span>` : ''}</span>
+                    <div class="flex-1 h-6 rounded-lg overflow-hidden flex bg-slate-100">
+                        ${seg(r.fresh, r.total, 'var(--primary)', '신작')}${seg(r.old, r.total, C_OLD, '구작')}${seg(r.adv, r.total, C_ADV, '선인세')}${seg(r.unknown, r.total, C_UNK, '출간일 없음')}
+                    </div>
+                    <span class="w-24 shrink-0 text-right text-xs font-bold text-slate-700">${man(r.total)}원</span>
+                </div>`).join('');
+            const cur = newOld.find(r => r.year === nowY), prev = newOld.find(r => r.year === String(Number(nowY) - 1));
+            const oldPct = r => r && r.total ? Math.round(r.old / r.total * 100) : null;
+            let noTip = '';
+            if (cur) {
+                const cp = oldPct(cur), pp = oldPct(prev);
+                noTip = `올해 수입 중 출간 1년 넘은 구작에서 나온 돈은 <b style="color:var(--primary)">${cp}%</b>예요${pp !== null ? ` (작년 ${pp}%)` : ''}. `
+                    + (cp < 30 ? '대부분 최근 1년 안에 낸 작품이 벌고 있어서, 신작 출간이 멈추면 수입이 빠르게 줄 수 있어요.' : cp >= 50 ? '구작이 수입의 절반 이상을 받쳐주고 있어서 비교적 안정적인 편이에요.' : '신작과 구작이 고르게 섞여 있어요.');
+            }
+            const legend = [['var(--primary)', '신작 (출간 12개월 미만)'], [C_OLD, '구작 (12개월 이상)'], [C_ADV, '선인세'], [C_UNK, '출간일 없음']]
+                .map(([c, t]) => `<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background:${c}"></span>${t}</span>`).join('');
+            const noHtml = newOld.length === 0 ? `<p class="text-xs text-slate-400">정산 데이터가 없어요.</p>`
+                : `<div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 mb-3">${legend}</div>${noRows}
+                   ${noTip ? `<p class="text-xs text-slate-600 mt-3 flex gap-2"><i class="fa-solid fa-lightbulb text-amber-400 mt-0.5 shrink-0"></i><span>${noTip}</span></p>` : ''}`;
+
+            return `
+            <div class="glass-card p-6">
+                <h3 data-eyebrow="lifecycle" class="text-sm font-bold text-slate-500 flex items-center gap-2 mb-1"><i class="fa-solid fa-chart-line text-violet-500"></i> 작품 수명 곡선</h3>
+                <p class="text-[11px] text-slate-400 mb-4">출간 후 몇 개월째에 작품 1개가 평균 얼마를 버는지 (장르별 · 선인세 제외)</p>
+                ${lifeHtml}
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="glass-card p-6">
+                    <h3 data-eyebrow="per day" class="text-sm font-bold text-slate-500 flex items-center gap-2 mb-1"><i class="fa-solid fa-mug-hot text-amber-500"></i> 집필 하루당 수익</h3>
+                    <p class="text-[11px] text-slate-400 mb-3">지금까지 번 돈 ÷ 집필 기록이 있는 날 수</p>
+                    ${dvHtml}
+                </div>
+                <div class="glass-card p-6">
+                    <h3 data-eyebrow="new & old" class="text-sm font-bold text-slate-500 flex items-center gap-2 mb-1"><i class="fa-solid fa-seedling text-emerald-500"></i> 신작 의존도</h3>
+                    <p class="text-[11px] text-slate-400 mb-3">연도별 수입이 어디서 나왔는지</p>
+                    ${noHtml}
+                </div>
+            </div>`;
+        }
+        let lifecycleChartInstances = [];
+        const LC_WORK_STYLE = { borderColor: 'rgba(148,163,184,0.35)', backgroundColor: 'rgba(148,163,184,0.35)', borderWidth: 1, pointRadius: 0, pointHoverRadius: 3, tension: 0.3, order: 0 };
+        // 목록에서 작품을 누르면 그 작품 선만 진하게 (다시 누르면 해제)
+        function highlightLifecycleWork(gi, wi) {
+            const chart = lifecycleChartInstances[gi];
+            if (!chart) return;
+            chart._lcSel = chart._lcSel === wi ? null : wi;
+            chart.data.datasets.forEach((ds, j) => {
+                if (ds.label === '장르 평균' && j === chart.data.datasets.length - 1) return;
+                const on = j === chart._lcSel;
+                Object.assign(ds, LC_WORK_STYLE, on ? { borderColor: '#334155', backgroundColor: '#334155', borderWidth: 2.5, pointRadius: 2, order: -3 } : {});
+            });
+            chart.update('none');
+            document.querySelectorAll(`[data-lc-row^="${gi}-"]`).forEach(r => {
+                const on = r.dataset.lcRow === `${gi}-${chart._lcSel}`;
+                r.style.background = on ? 'var(--primary-light)' : '';
+                r.querySelector('span').style.fontWeight = on ? '700' : '';
+            });
+        }
+        function toggleLifecycleMore(gi, btn) {
+            const rows = document.querySelectorAll('.lc-more-' + gi);
+            const show = rows.length && rows[0].classList.contains('hidden');
+            rows.forEach(r => r.classList.toggle('hidden', !show));
+            btn.textContent = show ? '접기' : `전체 ${rows.length + 8}개 보기`;
+        }
+        function drawLifecycleChart(life) {
+            lifecycleChartInstances.forEach(c => c.destroy());
+            lifecycleChartInstances = [];
+            if (!life || typeof Chart === 'undefined') return;
+            life.forEach((l, i) => {
+                const el = document.getElementById('lifecycle-chart-' + i);
+                if (!el) return;
+                const color = getGenreColor(l.genre);
+                const len = Math.max(l.avg.length, ...l.worksList.map(w => w.series.length));
+                lifecycleChartInstances.push(new Chart(el, {
+                    type: 'line',
+                    data: {
+                        labels: Array.from({ length: len }, (_, m) => `${m + 1}개월`),
+                        datasets: [
+                            ...l.worksList.map(w => ({ label: w.title, data: w.series.map(v => Math.round(v)), ...LC_WORK_STYLE })),
+                            { label: '장르 평균', data: l.avg.map(v => Math.round(v)), borderColor: color, backgroundColor: color,
+                              borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: -2 }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        interaction: { mode: 'nearest', intersect: false },
+                        plugins: { legend: { display: false },
+                            tooltip: { callbacks: { label: c => `${c.dataset.label}: ₩ ${formatCurrency(c.parsed.y)}` } } },
+                        scales: { x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0, autoSkipPadding: 6 } },
+                            y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 }, maxTicksLimit: 5, callback: v => v >= 10000 ? (v / 10000).toLocaleString() + '만' : v } } }
+                    }
+                }));
+            });
+        }
+
+        let taxGoalSubTab = 'goal'; // 'goal' 또는 'tax' (목표를 기본으로 먼저 보여줌)
+        let charEffShowAll = false; // 글자수 탭: false면 상단 연도 기준, true면 전체 기간
+        function toggleCharEffScope(){
+            charEffShowAll = !charEffShowAll;
+            renderTaxGoalTab();
+        }
+        function setTaxGoalSubTab(tab){
+            taxGoalSubTab = tab;
+            renderTaxGoalTab();
+        }
+        function renderTaxGoalTab(){
+            const panel = document.getElementById('tax-panel'); if (!panel) return;
+            const net = getYearNet(taxViewYear); const gross = Math.round(net/0.967); const withhold = gross - net;
+            const goal = incomeGoals[taxViewYear] || 0;
+            const pct = goal > 0 ? Math.min(Math.round(net/goal*100), 999) : 0;
+            const charGoal = charGoals[taxViewYear] || 0;
+            const charTotal = getYearCharTotal(taxViewYear);
+            const charPct = charGoal > 0 ? Math.min(Math.round(charTotal/charGoal*100), 999) : 0;
+            const yrSetting = taxSettings[taxViewYear] || {};
+            const er = (yrSetting.expenseRate !== undefined && yrSetting.expenseRate !== null) ? yrSetting.expenseRate : '';
+            const ded = (yrSetting.deduction !== undefined && yrSetting.deduction !== null) ? yrSetting.deduction : 1500000;
+            const yearsAll = [...new Set(Object.keys(monthlyData).map(k=>k.split('-')[0]))].filter(Boolean).sort();
+            const rows = yearsAll.map(y => { const n=getYearNet(y); const g=Math.round(n/0.967); return `<tr class="border-b border-slate-50"><td class="py-2 px-3 font-bold ${String(y)===String(taxViewYear)?'text-emerald-600':'text-slate-600'}">${y}년</td><td class="py-2 px-3 text-right text-slate-700">₩ ${taxFmt(g)}</td><td class="py-2 px-3 text-right text-slate-500">₩ ${taxFmt(n)}</td><td class="py-2 px-3 text-right text-slate-500">₩ ${taxFmt(g-n)}</td></tr>`; }).join('') || `<tr><td colspan="4" class="py-3 text-center text-slate-400 text-xs">데이터 없음</td></tr>`;
+            const yearSummaryD = buildYearSummaryData(taxViewYear);
+            const strengthData = buildStrengthAnalysisData(taxViewYear);
+            const charEffData = buildCharEfficiencyData(charEffShowAll ? 'all' : taxViewYear);
+
+            const subTabBtns = `
+                <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-1 no-print">
+                    <button onclick="setTaxGoalSubTab('goal')" class="px-3.5 py-1.5 rounded-md text-sm font-bold transition-all ${taxGoalSubTab==='goal' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}"><i class="fa-solid fa-bullseye mr-1.5"></i>목표</button>
+                    <button onclick="setTaxGoalSubTab('analysis')" class="px-3.5 py-1.5 rounded-md text-sm font-bold transition-all ${taxGoalSubTab==='analysis' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}"><i class="fa-solid fa-chart-line mr-1.5"></i>작품 분석</button>
+                    <button onclick="setTaxGoalSubTab('chars')" class="px-3.5 py-1.5 rounded-md text-sm font-bold transition-all ${taxGoalSubTab==='chars' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}"><i class="fa-solid fa-keyboard mr-1.5"></i>글자수</button>
+                    <button onclick="setTaxGoalSubTab('tax')" class="px-3.5 py-1.5 rounded-md text-sm font-bold transition-all ${taxGoalSubTab==='tax' ? 'bg-white shadow-sm text-slate-700' : 'text-slate-400 hover:text-slate-600'}"><i class="fa-solid fa-receipt mr-1.5"></i>세무</button>
+                </div>`;
+
+            const yearNavBtns = `
+                <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                    <button onclick="changeTaxYear(-1)" class="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md text-xs"><i class="fa-solid fa-chevron-left"></i></button>
+                    <span class="text-sm font-bold text-slate-700 px-2">${taxViewYear}</span>
+                    <button onclick="changeTaxYear(1)" class="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-white rounded-md text-xs"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>`;
+
+            const taxSectionHtml = `
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                <div class="glass-card p-5"><p class="text-[11px] font-bold text-slate-400 uppercase">세전 총수입</p><p class="text-xs text-slate-400 mb-2">${taxViewYear} · 원천징수 전</p><p class="text-2xl font-black text-slate-700">₩ ${taxFmt(gross)}</p></div>
+                <div class="glass-card p-5"><p class="text-[11px] font-bold text-slate-400 uppercase">세후 실수령</p><p class="text-xs text-slate-400 mb-2">실제 입금액</p><p class="text-2xl font-black text-emerald-600">₩ ${taxFmt(net)}</p></div>
+                <div class="glass-card p-5"><p class="text-[11px] font-bold text-slate-400 uppercase">원천징수 (3.3%)</p><p class="text-xs text-slate-400 mb-2">기납부 · 소득세3%+지방0.3%</p><p class="text-2xl font-black text-rose-500">₩ ${taxFmt(withhold)}</p></div>
+            </div>
+            <div class="glass-card p-6">
+                <h3 data-eyebrow="tax" class="text-sm font-bold text-slate-500 flex items-center gap-2 mb-4"><i class="fa-solid fa-calculator text-blue-500"></i> ${taxViewYear} 종합소득세 예상 <span class="text-[11px] text-slate-400 font-normal">(대략)</span></h3>
+                <div class="flex flex-wrap gap-4 mb-4 no-print">
+                    <div><label class="text-xs text-slate-400 block mb-1">필요경비율 (%)</label><input id="tax-exp-rate" type="number" value="${er}" oninput="recomputeTaxEstimate()" placeholder="예: 58.7" class="w-32 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-blue-100"></div>
+                    <div><label class="text-xs text-slate-400 block mb-1">종합소득공제 (원)</label><input id="tax-deduction" type="text" value="${ded? taxFmt(ded):''}" oninput="recomputeTaxEstimate()" placeholder="예: 1,500,000" class="w-40 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm text-right outline-none focus:ring-2 focus:ring-blue-100"></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div class="bg-slate-50 rounded-xl p-3"><p class="text-[11px] text-slate-400 mb-1">사업소득금액</p><p id="tax-r-income" class="font-bold text-slate-700">₩ 0</p></div>
+                    <div class="bg-slate-50 rounded-xl p-3"><p class="text-[11px] text-slate-400 mb-1">과세표준</p><p id="tax-r-base" class="font-bold text-slate-700">₩ 0</p></div>
+                    <div class="bg-slate-50 rounded-xl p-3"><p class="text-[11px] text-slate-400 mb-1">산출세액</p><p id="tax-r-calc" class="font-bold text-slate-700">₩ 0</p></div>
+                    <div class="bg-slate-50 rounded-xl p-3"><p class="text-[11px] text-slate-400 mb-1">기납부(원천 3.3%)</p><p id="tax-r-prepaid" class="font-bold text-slate-700">₩ 0</p></div>
+                    <div class="bg-blue-50 rounded-xl p-3 col-span-2 md:col-span-1"><p class="text-[11px] text-slate-400 mb-1">예상 납부/환급</p><p id="tax-r-due" class="font-bold text-slate-700">₩ 0</p></div>
+                    <div class="bg-slate-50 rounded-xl p-3"><p class="text-[11px] text-slate-400 mb-1">지방소득세(참고)</p><p id="tax-r-local" class="font-bold text-slate-700">₩ 0</p></div>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-4 leading-relaxed">※ 현행 종합소득세 누진세율 기준의 <b>대략적 추정치</b>예요. 필요경비율(단순/기준경비율 또는 실제 경비)과 소득공제를 직접 넣어야 정확해요. 실제 신고는 홈택스·세무사로 꼭 확인하세요. (참고용이며 세무 자문이 아니에요.)</p>
+            </div>
+            <div class="glass-card p-6">
+                <h3 data-eyebrow="by year" class="text-sm font-bold text-slate-500 flex items-center gap-2 mb-3"><i class="fa-solid fa-table-list"></i> 연도별 요약</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-slate-400 text-xs border-b border-slate-100"><tr><th class="py-2 px-3 text-left">연도</th><th class="py-2 px-3 text-right">세전 총수입</th><th class="py-2 px-3 text-right">세후 실수령</th><th class="py-2 px-3 text-right">원천징수(3.3%)</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+
+            const goalSectionHtml = `
+            <div class="glass-card p-6 relative group">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 data-eyebrow="income goal" class="text-sm font-bold text-slate-500 flex items-center gap-2"><i class="fa-solid fa-bullseye text-amber-500"></i> ${taxViewYear} 수익 목표</h3>
+                    <button onclick="showTaxGoalInput()" class="no-print shrink-0 w-7 h-7 rounded-lg text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background:var(--primary)" title="목표 수정"><i class="fa-solid fa-pen text-xs"></i></button>
+                </div>
+                <div id="tax-goal-inputwrap" class="hidden flex items-center gap-2 no-print mb-3">
+                    <span class="text-xs text-slate-400">목표액</span>
+                    <input id="tax-goal-input" type="text" value="${goal? taxFmt(goal):''}" oninput="setIncomeGoal(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); hideTaxGoalInput();}" placeholder="예: 100,000,000" class="flex-1 p-2 bg-slate-50 rounded-lg border border-slate-200 text-sm text-right outline-none focus:ring-2 focus:ring-amber-100">
+                    <span class="text-xs text-slate-400">원</span>
+                    <button onclick="hideTaxGoalInput()" class="shrink-0 w-8 h-8 rounded-lg text-white flex items-center justify-center" style="background:var(--primary)" title="완료"><i class="fa-solid fa-check text-xs"></i></button>
+                </div>
+                <div class="w-full h-4 bg-slate-100 rounded-full overflow-hidden">
+                    <div id="tax-goal-bar" class="h-full rounded-full transition-all" style="width:${Math.min(pct,100)}%; background:linear-gradient(90deg,#fcd34d,#10b981)"></div>
+                </div>
+                <div id="tax-goal-label" class="text-base text-slate-500 mt-2">순수익 <b class="text-slate-700">₩ ${taxFmt(net)}</b> / 목표 ₩ ${taxFmt(goal)} <span class="text-emerald-600 font-bold">(${pct}%)</span></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <div class="rounded-2xl p-6 relative group" style="background:var(--primary-light); border:1px solid var(--glass-border);">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 data-eyebrow="char goal" class="text-sm font-bold flex items-center gap-2" style="color:var(--primary)"><i class="fa-solid fa-keyboard"></i> ${taxViewYear} 글자수 목표</h3>
+                        <button onclick="showCharGoalInput()" class="no-print shrink-0 w-7 h-7 rounded-lg text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background:var(--primary)" title="목표 수정"><i class="fa-solid fa-pen text-xs"></i></button>
+                    </div>
+                    <div id="char-goal-inputwrap" class="hidden flex items-center gap-2 no-print mb-3">
+                        <input id="char-goal-input" type="text" value="${charGoal? charGoal.toLocaleString():''}" oninput="setCharGoal(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); hideCharGoalInput();}" placeholder="예: 500,000" class="w-32 p-2 bg-white/80 rounded-lg border border-slate-200 text-sm text-right outline-none focus:ring-2 focus:ring-[var(--primary)]">
+                        <span class="text-xs text-slate-400">자</span>
+                        <button onclick="hideCharGoalInput()" class="shrink-0 w-8 h-8 rounded-lg text-white flex items-center justify-center" style="background:var(--primary)" title="완료"><i class="fa-solid fa-check text-xs"></i></button>
+                    </div>
+                    <div class="w-full h-4 bg-white/60 rounded-full overflow-hidden">
+                        <div id="char-goal-bar" class="h-full rounded-full transition-all" style="width:${Math.min(charPct,100)}%; background:linear-gradient(90deg,#a7f3d0,var(--primary))"></div>
+                    </div>
+                    <div id="char-goal-label" class="text-xs text-slate-500 mt-2">누적 <b class="text-slate-700">${charTotal.toLocaleString()}자</b> / 목표 ${charGoal.toLocaleString()}자 <span class="text-emerald-600 font-bold">(${charPct}%)</span></div>
+                </div>
+                <div class="rounded-2xl p-6 relative group" style="background:var(--primary-light); border:1px solid var(--glass-border);">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 data-eyebrow="notes" class="text-sm font-bold flex items-center gap-2" style="color:var(--primary)"><i class="fa-solid fa-pen-to-square"></i> ${taxViewYear} 목표 메모</h3>
+                        <button onclick="showTaxGoalItemInput()" class="no-print shrink-0 w-7 h-7 rounded-lg text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity" style="background:var(--primary)" title="목표 추가"><i class="fa-solid fa-plus text-xs"></i></button>
+                    </div>
+                    <div id="tax-goal-memo-list" class="flex flex-col gap-0.5 mb-1"></div>
+                    <div id="tax-goal-item-inputwrap" class="hidden flex items-center gap-2 no-print mt-2">
+                        <input id="tax-goal-item-input" type="text" placeholder="목표를 입력하고 Enter (예: 신작 2개 연재 시작)" onkeydown="handleTaxGoalItemKeydown(event)" class="flex-1 p-2.5 bg-white/80 rounded-lg border border-slate-200 text-sm outline-none focus:ring-2 focus:ring-[var(--primary)]">
+                        <button onclick="addTaxGoalItem()" class="shrink-0 w-9 h-9 rounded-lg text-white flex items-center justify-center" style="background:var(--primary)" title="추가"><i class="fa-solid fa-check"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                ${renderWritingActivityCardHtml(yearSummaryD)}
+                ${renderTopWorksCardHtml(yearSummaryD)}
+            </div>
+            ${renderStrengthAnalysisSectionHtml(strengthData)}`;
+
+            const charsSectionHtml = renderCharEfficiencyTabHtml(charEffData);
+            // 작품 분석은 전체 기간 기준이라 그 탭을 볼 때만 계산 (연도 이동 버튼도 숨김)
+            const lifeData = taxGoalSubTab === 'analysis' ? buildLifecycleData() : null;
+            const analysisSectionHtml = taxGoalSubTab === 'analysis' ? renderWorkAnalysisTabHtml(lifeData, buildWritingDayValueData(), buildNewVsOldData()) : '';
+
+            // 코지 테마: 큰 영문 제목 + 연도 + 요약 칩 (출간 일정·정산 입금일과 같은 분위기)
+            const insightCozyHeroHtml = (() => {
+                if (!document.body.classList.contains('theme-cozy')) return '';
+                const EY = { goal: 'goals & progress', analysis: 'work analysis', chars: 'writing output', tax: 'tax & income' }[taxGoalSubTab] || 'insight';
+                const big = taxGoalSubTab === 'analysis' ? 'All time' : String(taxViewYear);
+                let chips = '';
+                if (taxGoalSubTab === 'tax') chips = `<span class="chip">♥ 세후 실수령 ₩ ${taxFmt(net)}</span><span class="chip">원천징수 ₩ ${taxFmt(withhold)}</span>`;
+                else if (taxGoalSubTab === 'chars') chips = `<span class="chip">♥ ${taxViewYear} 누적 ${charTotal.toLocaleString()}자</span>`;
+                else if (taxGoalSubTab === 'goal') chips = `<span class="chip">♥ 수익 목표 ${goal > 0 ? pct + '%' : '미설정'}</span><span class="chip">글자수 목표 ${charGoal > 0 ? charPct + '%' : '미설정'}</span>`;
+                return `<div id="insight-cozy-hero" class="cozy-pubhero"><div class="left"><div class="eyebrow">${EY}</div><div class="row"><span class="mname">${big}</span><span class="yr">insight</span></div></div><div class="chips">${chips}</div></div>`;
+            })();
+
+            panel.innerHTML = `
+            ${insightCozyHeroHtml}
+            <div class="flex items-center justify-between flex-wrap gap-3 no-print">
+                <div class="flex items-center gap-4 flex-wrap">
+                    <h2 class="text-xl font-bold text-slate-700 flex items-center gap-2"><i class="fa-solid fa-receipt text-emerald-500"></i> 인사이트</h2>
+                    ${subTabBtns}
+                </div>
+                <div class="flex items-center gap-2">
+                    ${taxGoalSubTab === 'analysis' ? '' : yearNavBtns}
+                    <button onclick="openYearSummaryReport()" class="px-3 py-2 rounded-lg bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200 hover:bg-blue-100 transition-all"><i class="fa-solid fa-chart-pie mr-1"></i> 요약</button>
+                </div>
+            </div>
+            ${taxGoalSubTab === 'tax' ? taxSectionHtml : taxGoalSubTab === 'chars' ? charsSectionHtml : taxGoalSubTab === 'analysis' ? analysisSectionHtml : goalSectionHtml}`;
+            if (taxGoalSubTab === 'analysis') drawLifecycleChart(lifeData);
+            recomputeTaxEstimate();
+            if (taxGoalSubTab === 'goal') renderTaxGoalMemoList();
+        }
+        function exportTaxExcel(){
+            try {
+                const csvCell = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+                const rows = [];
+                const yearsAll = [...new Set(Object.keys(monthlyData).map(k=>k.split('-')[0]))].filter(Boolean).sort();
+                rows.push(['[연간 요약]']);
+                rows.push(['연도','세전 총수입','세후 실수령','원천징수(3.3%)']);
+                yearsAll.forEach(y=>{ const n=getYearNet(y); const g=Math.round(n/0.967); rows.push([y+'년', g, Math.round(n), g-Math.round(n)]); });
+                rows.push([]);
+                rows.push(['[월별 상세]']);
+                rows.push(['연-월','작품','장르','출판사','세후 실수령','세전','원천징수(3.3%)']);
+                Object.keys(monthlyData).sort().forEach(mKey=>{
+                    Object.entries(monthlyData[mKey]).forEach(([wId,v])=>{
+                        const w = masterWorks.find(x=>x.id===wId); const net=Number(v)||0; if(!w || !net) return;
+                        const gross=Math.round(net/0.967);
+                        rows.push([mKey, w.title, w.genre, w.publisher, Math.round(net), gross, gross-Math.round(net)]);
+                    });
+                });
+                const csv = '\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+                const today = new Date().toISOString().slice(0,10);
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+                a.download = '정산_요약_' + today + '.csv'; a.click();
+            } catch(e){ console.error(e); alert('내보내기 중 오류가 났어요.'); }
+        }
+        function exportTaxPDF(){ window.print(); }
+        function changeChartYear(delta) { chartViewYear += delta; updateDashboardStats(); }
+        function changeTopWorksYear(delta) { topWorksYear += delta; updateDashboardStats(); }
+        function changeDashYear(delta) { dashYearOffset += delta; updateDashboardStats(); }
+        function changeDashMonth(delta) { dashMonthOffset += delta; updateDashboardStats(); }
+        function changeGenreChartYear(delta) { if (years.length === 0) return; if (genreChartViewYear === 'total') { genreChartViewYear = delta > 0 ? years[0] : years[years.length - 1]; } else { const currentIndex = years.indexOf(genreChartViewYear); if (currentIndex !== -1) { let nextIndex = currentIndex + delta; if (nextIndex < 0 || nextIndex >= years.length) genreChartViewYear = 'total'; else genreChartViewYear = years[nextIndex]; } else genreChartViewYear = 'total'; } updateDashboardStats(); }
+
+        // ═══ 웹(브라우저)에서 보는 표지 — PC 앱이 Cloud Storage(users/{uid}/royalty-covers/)에 올려둔 것 ═══
+        // · PC 앱(일렉트론)은 데이터 파일에 표지가 직접 들어 있어서 이 코드가 아무것도 안 한다.
+        // · 공유 링크를 쓰지 않고, 로그인한 구글 계정의 토큰으로 직접 받아온다 (다른 사람·다른 계정은 접근 불가).
+        // · 받은 표지는 브라우저 IndexedDB에 저장해두고, 표지가 바뀌면(해시가 다르면) 새로 받는다.
+        // · 작품 데이터(masterWorks)에는 넣지 않는다 — 저장·동기화에 섞이지 않게 별도 보관.
+        var remoteCovers = { index: null, urls: {}, rev: 0, loading: null, idb: null };
+        const REMOTE_COVER_BUCKET = '';
+        function remoteCoversUsable() { return false; }
+        function hasRemoteCover(workId) { return !!(remoteCovers && remoteCovers.index && remoteCovers.index[String(workId)]); }   // var라서 아직 값이 없을 때도 안전
+        async function remoteStorageGet() { return null; }
+        function coverIdb() {
+            if (remoteCovers.idb) return remoteCovers.idb;
+            remoteCovers.idb = new Promise(resolve => {
+                try {
+                    const req = indexedDB.open('royaltyCovers_v1', 1);
+                    req.onupgradeneeded = () => req.result.createObjectStore('blobs');
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                } catch (e) { resolve(null); }
+            });
+            return remoteCovers.idb;
+        }
+        async function coverIdbGet(key) { const db = await coverIdb(); if (!db) return null; return new Promise(r => { try { const q = db.transaction('blobs').objectStore('blobs').get(key); q.onsuccess = () => r(q.result || null); q.onerror = () => r(null); } catch (e) { r(null); } }); }
+        async function coverIdbPut(key, blob) { const db = await coverIdb(); if (!db) return; try { db.transaction('blobs', 'readwrite').objectStore('blobs').put(blob, key); } catch (e) {} }
+        // 로그인 직후 한 번 — 어떤 작품에 표지가 있는지 목록(index.json)을 받아오고, 화면에 보이는 곳을 다시 그린다
+        async function initRemoteCovers() {
+            if (!remoteCoversUsable()) return;
+            if (remoteCovers.loading) return remoteCovers.loading;
+            remoteCovers.loading = (async () => {
+                try {
+                    const j = await remoteStorageGet('index.json', true);
+                    remoteCovers.index = (j && j.covers) || {};
+                } catch (e) {
+                    remoteCovers.index = {};
+                    if (e.status !== 404) console.warn('[Cover] 표지 목록을 못 불러왔어요:', e.message);
+                }
+                remoteCovers.rev++;
+                try { refreshRemoteCoverViews(); } catch (e) {}
+            })();
+            return remoteCovers.loading;
+        }
+        // 작품 표지를 보여줄 수 있는 주소(blob:)를 돌려준다. 없으면 null.
+        async function getRemoteCoverUrl(workId) {
+            const id = String(workId);
+            const info = remoteCovers.index && remoteCovers.index[id];
+            if (!info) return null;
+            const key = id + ':' + info.hash;
+            if (remoteCovers.urls[key]) return remoteCovers.urls[key];
+            try {
+                let blob = await coverIdbGet(key);
+                if (!blob) { blob = await remoteStorageGet(id + '.jpg', false); coverIdbPut(key, blob); }
+                return (remoteCovers.urls[key] = URL.createObjectURL(blob));
+            } catch (e) { return null; }
+        }
+        // 목록이 준비되면 보고 있는 화면(대시보드 폴라로이드, 작품 등록의 표지 목록)을 다시 그린다
+        function refreshRemoteCoverViews() {
+            try { _cozyLaunchSig = ''; renderCozyRecentLaunches(); } catch (e) {}
+            const lib = document.getElementById('visual-lib-container');
+            if (lib && lib.offsetParent !== null) { try { renderVisualLibrary(); } catch (e) {} }
+        }
+        // 이미 그려진 곳에서 data-remote-cover="작품ID" 자리에 표지를 채워 넣는다 (동시에 4개씩)
+        function hydrateRemoteCovers(root) {
+            const els = Array.from((root || document).querySelectorAll('[data-remote-cover]'));
+            let i = 0;
+            const worker = async () => {
+                while (i < els.length) {
+                    const el = els[i++];
+                    const url = await getRemoteCoverUrl(el.getAttribute('data-remote-cover'));
+                    if (!url || !el.isConnected) continue;
+                    const img = new Image();
+                    img.alt = ''; img.className = el.getAttribute('data-remote-class') || '';
+                    img.onload = () => { if (el.isConnected) el.replaceWith(img); };
+                    img.src = url;
+                }
+            };
+            for (let k = 0; k < Math.min(4, els.length); k++) worker();
+        }
+
+        // ═══ 코지 테마: 최근 런칭 작품을 폴라로이드로 ═══
+        // 표지 이미지는 용량이 커서, 보여줄 작품 목록과 표지가 그대로면 다시 그리지 않는다.
+        var _cozyLaunchSig = '';   // var: setTheme가 이 줄보다 먼저 불려도 안전하게 (let이면 로딩 순서 오류가 났던 적이 있음)
+        function renderCozyRecentLaunches() {
+            const box = document.getElementById('dash-recent-launches');
+            if (!box || !document.body.classList.contains('theme-cozy')) return;
+            const today = getYYYYMMDD(new Date());
+            const list = masterWorks
+                .filter(w => !w.contractBroken && !w.isPending && w.publishDate && w.publishDate <= today)
+                .sort((a, b) => b.publishDate.localeCompare(a.publishDate) || String(a.title).localeCompare(String(b.title), 'ko'))
+                .slice(0, 6);   // 최근 런칭 6개만
+            const sig = list.map(w => w.id + ':' + w.publishDate + ':' + (w.coverImage ? w.coverImage.length : 0)).join('|') + '|' + (typeof genreBadgeOpacity === 'number' ? genreBadgeOpacity : '') + '|r' + (remoteCovers ? remoteCovers.rev : 0);
+            if (sig === _cozyLaunchSig && box.firstChild) return;
+            _cozyLaunchSig = sig;
+            const rots = [-2.2, 1.6, -1.2, 2.4, -1.8, 1.1, -2.6, 1.9, -0.9, 2.1];
+            const heart = '<svg class="heart" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 2.7 5 6 5c2 0 3.4 1.1 4.2 2.4h.1C11.1 6.1 12.5 5 14.4 5 17.7 5 19.5 8.4 18 11.8 15.9 16.4 12 21 12 21z"/></svg>';
+            const cards = list.map((w, i) => {
+                const col = getGenreColor(w.genre);
+                const [y, m, d] = w.publishDate.split('-');
+                const emptyBox = (extra) => `<div class="ph-empty" ${extra || ''} style="background:linear-gradient(135deg, ${hexToRgba(col, .85)}, ${hexToRgba(col, .45)})">${escapeHtml((w.title || '?').trim().charAt(0))}</div>`;
+                const ph = w.coverImage
+                    ? `<img src="${w.coverImage}" alt="" loading="lazy">`
+                    : (hasRemoteCover(w.id) ? emptyBox(`data-remote-cover="${w.id}"`) : emptyBox());
+                return `<div class="cozy-polaroid" style="--rot:${rots[i % rots.length]}deg" title="${escapeHtml(w.title)}">
+                    <div class="ph">${ph}${i === 0 ? heart : ''}</div>
+                    <div class="cap">
+                        <div class="t">${escapeHtml(w.title)}</div>
+                        <div class="d"><span>${y}.${m}.${d}</span><span class="g" style="background:${hexToRgba(col, .28)}">${escapeHtml(w.genre || '')}</span></div>
+                    </div>
+                </div>`;
+            }).join('');
+            const _cozyRender = () => hydrateRemoteCovers(box);
+            box.innerHTML = `<div class="cozy-launch-wrap">
+                <div class="cozy-launch-head"><div><span class="en">recent launches</span><span class="ko">최근 런칭한 작품</span></div><span class="pill">♥ ${list.length}</span></div>
+                ${list.length ? `<div class="cozy-launch-row${list.length >= 6 ? ' full' : ''}">${cards}</div>` : '<div class="cozy-launch-empty">아직 런칭한 작품이 없어요. 첫 작품을 기다리는 중 🌱</div>'}
+            </div>`;
+            _cozyRender();
+        }
+
+        // 코지 테마 맨 위 인사 카드 — 시간대별 인사 + 이번 달 순수익 한 줄
+        function renderCozyHero() {
+            const box = document.getElementById('dash-cozy-hero');
+            if (!box || !document.body.classList.contains('theme-cozy')) return;
+            const now = new Date(), h = now.getHours();
+            const greet = h < 5 ? '아직 안 주무셨네요' : h < 11 ? '좋은 아침이에요' : h < 17 ? '좋은 오후예요' : h < 21 ? '좋은 저녁이에요' : '오늘도 수고했어요';
+            const dow = ['일', '월', '화', '수', '목', '금', '토'][now.getDay()];
+            const dateTxt = `${now.getFullYear()}. ${now.getMonth() + 1}. ${now.getDate()}. (${dow})`;
+            const monthEl = document.getElementById('stat-month-profit');
+            const monthTxt = monthEl ? monthEl.textContent.trim() : '';
+            const monthLbl = (document.getElementById('dashboard-month-label') || {}).textContent || '이번 달';
+            const html = `<div class="left"><div class="eyebrow">slow and steady, one story at a time.</div>
+                <div class="title">My <em>Royalty</em></div></div>
+                <div class="note"><span class="ico">☀︎</span>
+                    <div><div class="lbl">${escapeHtml(greet)}</div>
+                    <div class="txt">${escapeHtml(monthLbl)} 순수익 ${escapeHtml(monthTxt || '₩ 0')}</div></div>
+                    <span class="date">${dateTxt}</span></div>`;
+            if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
+        }
+
+        function updateDashboardStats() {
+            renderCozyRecentLaunches();
+            let totalProfit = 0, totalSales = 0, yearProfit = 0, yearSales = 0, thisMonthProfit = 0, thisMonthSales = 0;
+            let prevYearProfit = 0, prevMonthProfit = 0, prevMonth2Profit = 0;
+            const genreStats = {}, workStats = {}, workStatsByYear = {}, monthlyStats = Array(12).fill(0).map(() => ({})); const yearTotals = {}; years.forEach(y => yearTotals[y] = {}); const now = new Date(); 
+            const targetDashYear = now.getFullYear() + dashYearOffset, targetMonthDate = new Date(now.getFullYear(), now.getMonth() + dashMonthOffset, 1), targetDashMonthKey = `${targetMonthDate.getFullYear()}-${String(targetMonthDate.getMonth() + 1).padStart(2,'0')}`;
+            const prevDashYear = targetDashYear - 1;
+            const prevMonthDate = new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth() - 1, 1);
+            const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2,'0')}`;
+            const prevMonth2Date = new Date(targetMonthDate.getFullYear(), targetMonthDate.getMonth() - 2, 1);
+            const prevMonth2Key = `${prevMonth2Date.getFullYear()}-${String(prevMonth2Date.getMonth() + 1).padStart(2,'0')}`;
+            Object.entries(monthlyData).forEach(([mKey, data]) => { const parts = mKey.split('-'); if (parts.length !== 2) return; const y = parseInt(parts[0]), m = parseInt(parts[1]); Object.entries(data).forEach(([wId, val]) => { const w = masterWorks.find(x => x.id === wId); if (w) { const sales = calculateGrossSales(val, w.rate); totalProfit += val; totalSales += sales; genreStats[w.genre] = (genreStats[w.genre] || 0) + val; workStats[wId] = (workStats[wId] || 0) + (Number(val)||0); if (!workStatsByYear[y]) workStatsByYear[y] = {}; workStatsByYear[y][wId] = (workStatsByYear[y][wId] || 0) + (Number(val)||0); if (yearTotals[y]) yearTotals[y][w.genre] = (yearTotals[y][w.genre] || 0) + val; if (y === targetDashYear) { monthlyStats[m-1][w.genre] = (monthlyStats[m-1][w.genre] || 0) + val; yearProfit += val; yearSales += sales; } if (y === prevDashYear) { prevYearProfit += val; } if (mKey === targetDashMonthKey) { thisMonthProfit += val; thisMonthSales += sales; } if (mKey === prevMonthKey) { prevMonthProfit += val; } if (mKey === prevMonth2Key) { prevMonth2Profit += val; } } }); });
+            document.getElementById('stat-total').innerText = `₩ ${formatCurrency(totalProfit)}`; const _sts=document.getElementById('stat-total-sales'); if(_sts) _sts.innerText = `₩ ${formatCurrency(totalSales)}`; document.getElementById('stat-year-profit').innerText = `₩ ${formatCurrency(yearProfit)}`; const _sys=document.getElementById('stat-year-sales'); if(_sys) _sys.innerText = `₩ ${formatCurrency(yearSales)}`; document.getElementById('dashboard-year-label').innerText = targetDashYear; document.getElementById('dashboard-month-label').innerText = dashMonthOffset === 0 ? "이번 달" : `${targetMonthDate.getFullYear()}년 ${targetMonthDate.getMonth() + 1}월`; document.getElementById('stat-month-profit').innerText = `₩ ${formatCurrency(thisMonthProfit)}`; const _sms=document.getElementById('stat-month-sales'); if(_sms) _sms.innerText = `₩ ${formatCurrency(thisMonthSales)}`; const _liveWorks = masterWorks.filter(w => !w.contractBroken); /* 계약 파기 작품은 작품 수에서 뺀다 */ document.getElementById('stat-works-count').innerText = _liveWorks.length; const _nonWt=_liveWorks.filter(w=>!(w.genre&&w.genre.includes('웹툰')));
+            const _totalVols=_nonWt.reduce((s,w)=>s+(parseInt(w.volumes)||1)+(w.extras||[]).length,0);
+            const _pubNonWt=_nonWt.filter(w=>!w.isPending);
+            const _pubVols=_pubNonWt.reduce((s,w)=>s+(parseInt(w.volumes)||1)+(w.extras||[]).length,0);
+            const _pubAll=_liveWorks.filter(w=>!w.isPending).length;
+            const _volEl=document.getElementById('stat-works-volumes');
+            const _unpubAll=_liveWorks.length-_pubAll; const _unpubVols=_totalVols-_pubVols; const _pendingPart=_unpubAll>0?` / 출간 예정 ${_unpubAll}종 ${_unpubVols}권`:''; const _subText=`(출간 ${_pubAll}종 ${_pubVols}권${_pendingPart})`; if(_volEl) _volEl.innerHTML=`${_totalVols}권<span style="display:block;color:#94a3b8;font-weight:500;font-size:11px;text-align:right;margin-top:1px;white-space:normal;line-height:1.3">${_subText}</span>`;
+            // prev year/month + 연 평균
+            const _pyl = document.getElementById('stat-prev-year-label'); if (_pyl) _pyl.innerText = prevDashYear;
+            const _pyp = document.getElementById('stat-prev-year-profit'); if (_pyp) _pyp.innerText = `₩ ${formatCurrency(prevYearProfit)}`;
+            const _pml = document.getElementById('stat-prev-month-label'); if (_pml) _pml.innerText = `${prevMonthDate.getFullYear()}년 ${prevMonthDate.getMonth()+1}월`;
+            const _pmp = document.getElementById('stat-prev-month-profit'); if (_pmp) _pmp.innerText = `₩ ${formatCurrency(prevMonthProfit)}`;
+            if(document.getElementById('stat-prev-month-pretax')) document.getElementById('stat-prev-month-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(prevMonthProfit / 0.967))}`;
+            const _pml2 = document.getElementById('stat-prev-month2-label'); if (_pml2) _pml2.innerText = `${prevMonth2Date.getFullYear()}년 ${prevMonth2Date.getMonth()+1}월`;
+            const _pmp2 = document.getElementById('stat-prev-month2-profit'); if (_pmp2) _pmp2.innerText = `₩ ${formatCurrency(prevMonth2Profit)}`;
+            if(document.getElementById('stat-prev-month2-pretax')) document.getElementById('stat-prev-month2-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(prevMonth2Profit / 0.967))}`;
+            // 연 평균 순수익: 데이터가 있는 연도 수로 나누기
+            const yearsWithData = new Set();
+            Object.keys(monthlyData).forEach(k => { const y = k.split('-')[0]; if (y) yearsWithData.add(y); });
+            const avgYearProfit = yearsWithData.size > 0 ? Math.round(totalProfit / yearsWithData.size) : 0;
+            const _avg = document.getElementById('stat-avg-year'); if (_avg) _avg.innerText = `₩ ${formatCurrency(avgYearProfit)}`;
+            if(document.getElementById('stat-total-pretax')) document.getElementById('stat-total-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(totalProfit / 0.967))}`;
+            if(document.getElementById('stat-year-pretax')) document.getElementById('stat-year-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(yearProfit / 0.967))}`;
+            if(document.getElementById('stat-month-pretax')) document.getElementById('stat-month-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(thisMonthProfit / 0.967))}`;
+            if(document.getElementById('stat-avg-year-pretax')) document.getElementById('stat-avg-year-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(avgYearProfit / 0.967))}`;
+            if(document.getElementById('stat-prev-year-pretax')) document.getElementById('stat-prev-year-pretax').innerText = `세전 ₩ ${formatCurrency(Math.round(prevYearProfit / 0.967))}`;
+            const genreCounts = {}; genreList.forEach(g => genreCounts[g.name] = 0); _liveWorks.forEach(w => { if (genreCounts[w.genre] !== undefined) genreCounts[w.genre]++; });
+            const genreCountList = document.getElementById('genre-count-list'); if (genreCountList) genreCountList.innerHTML = genreList.map(g => {
+                const count = genreCounts[g.name] || 0; if (count === 0) return '';
+                const isWebtoon = g.name.includes('웹툰');
+                const works = _liveWorks.filter(w => w.genre === g.name);
+                const publishedWorks = works.filter(w => !w.isPending);
+                const pubCount = publishedWorks.length;
+
+                if (!isWebtoon) {
+                    const totalVols = works.reduce((s, w) => s + (parseInt(w.volumes)||1) + (w.extras||[]).length, 0);
+                    const pubVols = publishedWorks.reduce((s, w) => s + (parseInt(w.volumes)||1) + (w.extras||[]).length, 0);
+                    const pendingCount = count - pubCount;
+                    const pendingVols = totalVols - pubVols;
+                    const mainText = `${count}종 ${totalVols}권`;
+                    const pendingPart = pendingCount > 0 ? ` / 출간 예정 ${pendingCount}종 ${pendingVols}권` : '';
+                    const subText = `(출간 ${pubCount}종 ${pubVols}권${pendingPart})`;
+                    return `<div class="py-1">
+                        <div class="flex justify-between items-center gap-2">
+                            <span class="text-slate-600 font-medium text-[12px] truncate">${g.name}</span>
+                            <span class="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full text-[12px] whitespace-nowrap shrink-0">${mainText}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 font-normal leading-snug mt-0.5">${subText}</div>
+                    </div>`;
+                } else {
+                    const pendingCount = count - pubCount;
+                    const pendingPart = pendingCount > 0 ? ` / 출간 예정 ${pendingCount}종` : '';
+                    const subText = `(출간 ${pubCount}종${pendingPart})`;
+                    return `<div class="py-1">
+                        <div class="flex justify-between items-center gap-2">
+                            <span class="text-slate-600 font-medium text-[12px] truncate">${g.name}</span>
+                            <span class="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-full text-[12px] whitespace-nowrap shrink-0">${count}종</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 font-normal leading-snug mt-0.5">${subText}</div>
+                    </div>`;
+                }
+            }).join('') || '<div class="text-xs text-slate-400 text-center py-2">등록된 작품 없음</div>';
+            const topWorksEl = document.getElementById('dash-top-works');
+            if (topWorksEl) {
+                const topWorksList = Object.entries(workStats)
+                    .map(([wId, amt]) => { const w = masterWorks.find(x => x.id === wId); return w ? { title: w.title, genre: w.genre, amt } : null; })
+                    .filter(Boolean)
+                    .sort((a,b) => b.amt - a.amt)
+                    .slice(0, 5);
+                topWorksEl.innerHTML = topWorksList.length === 0
+                    ? '<div class="text-xs text-slate-400 text-center py-2">데이터 없음</div>'
+                    : topWorksList.map((w, i) => `
+                        <div class="flex items-center gap-3 py-2 ${i < topWorksList.length-1 ? 'border-b border-slate-50' : ''}">
+                            <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:var(--primary)">${i+1}</span>
+                            <div class="min-w-0 flex-1 flex items-center gap-2">
+                                <p class="text-sm font-medium text-slate-700 truncate">${w.title}</p>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0" style="background:var(--primary-light); color:var(--primary)">${w.genre||''}</span>
+                            </div>
+                            <span class="text-sm font-bold text-slate-700 shrink-0">₩ ${formatCurrency(w.amt)}</span>
+                        </div>`).join('');
+            }
+            const topWorksYearDisplay = document.getElementById('dash-top-works-year-display');
+            if (topWorksYearDisplay) topWorksYearDisplay.textContent = topWorksYear;
+            const topWorksYearEl = document.getElementById('dash-top-works-year');
+            if (topWorksYearEl) {
+                const yearWorkStats = workStatsByYear[topWorksYear] || {};
+                const topWorksYearList = Object.entries(yearWorkStats)
+                    .map(([wId, amt]) => { const w = masterWorks.find(x => x.id === wId); return w ? { title: w.title, genre: w.genre, amt } : null; })
+                    .filter(Boolean)
+                    .sort((a,b) => b.amt - a.amt)
+                    .slice(0, 5);
+                topWorksYearEl.innerHTML = topWorksYearList.length === 0
+                    ? '<div class="text-xs text-slate-400 text-center py-2">데이터 없음</div>'
+                    : topWorksYearList.map((w, i) => `
+                        <div class="flex items-center gap-3 py-2 ${i < topWorksYearList.length-1 ? 'border-b border-slate-50' : ''}">
+                            <span class="w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style="background:var(--primary)">${i+1}</span>
+                            <div class="min-w-0 flex-1 flex items-center gap-2">
+                                <p class="text-sm font-medium text-slate-700 truncate">${w.title}</p>
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0" style="background:var(--primary-light); color:var(--primary)">${w.genre||''}</span>
+                            </div>
+                            <span class="text-sm font-bold text-slate-700 shrink-0">₩ ${formatCurrency(w.amt)}</span>
+                        </div>`).join('');
+            }
+            const tbody = document.getElementById('dash-genre-body'), thead = document.getElementById('dash-genre-header'); if (thead && tbody) { thead.innerHTML = `<th class="px-4 py-3">장르</th>` + years.map(y => `<th class="px-4 py-3 text-right">${y}</th>`).join('') + `<th class="px-4 py-3 text-right text-emerald-600">누적 합계</th>`; let tbodyHtml = genreList.map(g => { let gTotal = 0; let row = `<tr class="hover:bg-slate-50 transition-colors border-b border-slate-50"><td class="px-4 py-3 font-bold text-slate-600">${g.name}</td>` + years.map(y => { const s = (yearTotals[y] || {})[g.name] || 0; gTotal += s; return `<td class="px-4 py-3 text-right text-slate-500">${formatCurrency(s)}</td>`; }).join('') + `<td class="px-4 py-3 text-right font-bold text-emerald-600">${formatCurrency(gTotal)}</td></tr>`; return row; }).join(''); let grandTotalAll = 0, footerRow = `<tr class="bg-slate-100"><td class="px-4 py-3 font-black text-slate-700">총합</td>` + years.map(y => { let yearSum = 0; genreList.forEach(g => { yearSum += (yearTotals[y] || {})[g.name] || 0; }); grandTotalAll += yearSum; return `<td class="px-4 py-3 text-right font-black text-slate-700">${formatCurrency(yearSum)}</td>`; }).join('') + `<td class="px-4 py-3 text-right font-black text-slate-700">${formatCurrency(grandTotalAll)}</td></tr>`; tbody.innerHTML = tbodyHtml + footerRow; }
+            if(mainChartInstance) mainChartInstance.destroy(); if (document.getElementById('mainChart')) { document.getElementById('chart-year-display').innerText = chartViewYear; mainChartInstance = new Chart(document.getElementById('mainChart'), { type: 'bar', data: { labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'], datasets: genreList.map(g => ({ label: g.name, data: Array(12).fill(0).map((_, i) => { let sum = 0; masterWorks.filter(w => w.genre === g.name).forEach(w => sum += (monthlyData[`${chartViewYear}-${String(i+1).padStart(2,'0')}`] || {})[w.id] || 0); return sum; }), backgroundColor: getGenrePastelColor(g.name), borderRadius: 4 })) }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, grid: { color: '#f3f4f6' } } } } }); }
+            try { renderCozyHero(); } catch (e) {}
+            if(genreChartInstance) genreChartInstance.destroy(); if (document.getElementById('genreChart')) { let currentGenreStats = {}; if (genreChartViewYear === 'total') { currentGenreStats = genreStats; document.getElementById('genre-chart-year-display').innerText = '전체'; } else { currentGenreStats = yearTotals[genreChartViewYear] || {}; document.getElementById('genre-chart-year-display').innerText = genreChartViewYear; } const gData = genreList.map(g => currentGenreStats[g.name] || 0), total = gData.reduce((a,b)=>a+b, 0); genreChartInstance = new Chart(document.getElementById('genreChart'), { type: 'doughnut', data: { labels: genreList.map(g => g.name), datasets: [{ data: gData, backgroundColor: genreList.map(g => getGenrePastelColor(g.name)), borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false } } }, plugins: [genreSliceLabelPlugin] }); document.getElementById('genre-legend').innerHTML = genreList.map((g, i) => `<div class="flex justify-between items-center mb-1"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full" style="background:${getGenreColor(g.name)}"></span><span class="text-slate-500 text-xs">${g.name}</span></div><span class="font-bold text-slate-700 text-xs">₩ ${formatCurrency(gData[i])} <span class="font-bold" style="color:var(--primary)">(${total > 0 ? Math.round((gData[i]/total)*100) : 0}%)</span></span></div>`).join(''); }
+        }
+
+        // 🟢 [NEW] 집필/스케줄 로직 시작
+        
+        let currentWriteModalGenre = '전체';
+        let currentTaskModalGenre = '전체';
+        let writeModalShowPast = false; // 출간 완료 표시 토글
+        let taskModalShowPast = false;
+
+        function renderWriteModalGenreTabs() {
+            const container = document.getElementById('write-modal-genre-tabs');
+            // 집필 관리는 웹툰 제외
+            const tabs = ['전체', ...genreList.filter(g => !g.name.includes('웹툰')).map(g => g.name)];
+            const tabsHtml = tabs.map(t => 
+                `<button type="button" onclick="setWriteModalGenre('${t}')" class="px-2 py-1 text-[10px] font-bold rounded transition-all whitespace-nowrap ${currentWriteModalGenre === t ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 bg-slate-100 hover:bg-slate-200'}">${t}</button>`
+            ).join('');
+            const pastBtn = `<button type="button" onclick="toggleWriteModalShowPast()" class="px-2 py-1 text-[10px] font-bold rounded transition-all whitespace-nowrap ml-1 ${writeModalShowPast ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200'}" title="출간된 작품도 표시"><i class="fa-solid fa-clock-rotate-left text-[9px] mr-0.5"></i>${writeModalShowPast ? '출간완료 ✓' : '출간완료'}</button>`;
+            const editBtn = `<button type="button" onclick="openWorkDoneModal()" class="px-2 py-1 text-[10px] font-bold rounded transition-all whitespace-nowrap ml-1 text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200" title="작품 완료 상태 수정"><i class="fa-solid fa-pen text-[9px] mr-0.5"></i>수정</button>`;
+            container.innerHTML = tabsHtml + editBtn + pastBtn;
+        }
+        function setWriteModalGenre(genre) {
+            currentWriteModalGenre = genre;
+            renderWriteModalGenreTabs();
+            renderWriteModalWorkSelect();
+        }
+        function toggleWriteModalShowPast() {
+            writeModalShowPast = !writeModalShowPast;
+            renderWriteModalGenreTabs();
+            renderWriteModalWorkSelect();
+        }
+        function renderWriteModalWorkSelect() {
+            const select = document.getElementById('write-work-select');
+            const genrePriority = (g) => {
+                if (g === 'BL 장편') return 0;
+                if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2;
+                if (g === 'BL 초단') return 3;
+                if (g.includes('웹툰')) return 4;
+                if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5;
+                return 99;
+            };
+            // 본편+외전, 웹툰 제외, 출간 완료 토글에 따라 과거 작품 포함
+            let items = getActiveWorkItems(false, writeModalShowPast);
+            if (currentWriteModalGenre !== '전체') items = items.filter(it => it.genre === currentWriteModalGenre);
+            items.sort((a,b) => {
+                const p = genrePriority(a.genre) - genrePriority(b.genre);
+                if (p !== 0) return p;
+                return a.displayTitle.localeCompare(b.displayTitle, 'ko');
+            });
+            select.innerHTML = `<option value="">작품을 선택하세요</option>` + items.map(it => `<option value="${it.id}">[${it.genre}] ${it.displayTitle}</option>`).join('');
+        }
+
+        function renderTaskModalGenreTabs() {
+            const container = document.getElementById('task-modal-genre-tabs');
+            const tabs = ['전체', ...genreList.map(g => g.name)];
+            const tabsHtml = tabs.map(t => 
+                `<button type="button" onclick="setTaskModalGenre('${t}')" class="px-2 py-1 text-[10px] font-bold rounded transition-all whitespace-nowrap ${currentTaskModalGenre === t ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 bg-slate-100 hover:bg-slate-200'}">${t}</button>`
+            ).join('');
+            const pastBtn = `<button type="button" onclick="toggleTaskModalShowPast()" class="px-2 py-1 text-[10px] font-bold rounded transition-all whitespace-nowrap ml-1 ${taskModalShowPast ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200'}" title="출간된 작품도 표시"><i class="fa-solid fa-clock-rotate-left text-[9px] mr-0.5"></i>${taskModalShowPast ? '출간완료 ✓' : '출간완료'}</button>`;
+            const editBtn = `<button type="button" onclick="openWorkDoneModal()" class="px-2 py-1 text-[10px] font-bold rounded transition-all whitespace-nowrap ml-1 text-slate-500 bg-slate-100 hover:bg-slate-200 border border-slate-200" title="작품 완료 상태 수정"><i class="fa-solid fa-pen text-[9px] mr-0.5"></i>수정</button>`;
+            container.innerHTML = tabsHtml + editBtn + pastBtn;
+        }
+        function setTaskModalGenre(genre) {
+            currentTaskModalGenre = genre;
+            renderTaskModalGenreTabs();
+            renderTaskModalWorkSelect();
+        }
+        function toggleTaskModalShowPast() {
+            taskModalShowPast = !taskModalShowPast;
+            renderTaskModalGenreTabs();
+            renderTaskModalWorkSelect();
+        }
+        function renderTaskModalWorkSelect() {
+            const select = document.getElementById('task-work-select');
+            const genrePriority = (g) => {
+                if (g === 'BL 장편') return 0;
+                if (g === '현로 장편') return 1;
+                if (g === '현로 초단') return 2;
+                if (g === 'BL 초단') return 3;
+                if (g.includes('웹툰')) return 4;
+                if (g.includes('장편')) return 0.5;
+                if (g.includes('초단')) return 2.5;
+                return 99;
+            };
+            // 전체 탭에서는 웹툰 제외, 웹툰 탭에서만 웹툰 포함, 출간 완료 토글
+            let items = getActiveWorkItems(currentTaskModalGenre !== '전체' && currentTaskModalGenre.includes('웹툰'), taskModalShowPast);
+            if (currentTaskModalGenre === '전체') items = items.filter(it => !it.genre.includes('웹툰'));
+            else items = items.filter(it => it.genre === currentTaskModalGenre);
+            items.sort((a,b) => {
+                const p = genrePriority(a.genre) - genrePriority(b.genre);
+                if (p !== 0) return p;
+                return a.displayTitle.localeCompare(b.displayTitle, 'ko');
+            });
+            select.innerHTML = `<option value="">(작품 선택 안 함)</option>` + items.map(it => `<option value="${it.id}">[${it.genre}] ${it.displayTitle}</option>`).join('');
+        }
+
+        // ════ 집필 설정 ════
+        function openWriteSettings() {
+            const s = writeCardSettings;
+            document.getElementById('write-font-size-val').textContent = s.fontSize + 'px';
+            document.getElementById('write-fill-opacity').value = Math.round(s.fillOpacity * 100);
+            document.getElementById('write-fill-opacity-val').textContent = Math.round(s.fillOpacity * 100) + '%';
+            document.getElementById('write-color-default').value = s.colorDefault;
+            document.getElementById('write-empty-day-chars').value = s.emptyDayChars ?? 6000;
+            renderWriteCategoryColorList();
+            document.getElementById('write-settings-modal').classList.add('open');
+        }
+        function closeWriteSettings() { document.getElementById('write-settings-modal').classList.remove('open'); }
+        function changeWriteCardFont(delta) {
+            writeCardSettings.fontSize = Math.max(9, Math.min(18, writeCardSettings.fontSize + delta));
+            document.getElementById('write-font-size-val').textContent = writeCardSettings.fontSize + 'px';
+            save(true); renderWriteCalendar();
+        }
+        function updateWriteCardOpacity(val) {
+            writeCardSettings.fillOpacity = parseInt(val) / 100;
+            document.getElementById('write-fill-opacity-val').textContent = val + '%';
+            save(true); renderWriteCalendar();
+        }
+        function updateWriteColors() {
+            writeCardSettings.colorDefault = document.getElementById('write-color-default').value;
+            save(true); renderWriteCalendar();
+        }
+        function updateWriteEmptyDayChars(val) {
+            const n = Math.max(0, parseInt(val) || 0);
+            writeCardSettings.emptyDayChars = n;
+            save(true); renderWriteCalendar();
+        }
+        // [NEW] 집필 분류별 카드 색상 설정 목록 렌더 (스케줄 관리와 동일한 방식, 독립적으로 동작)
+        function renderWriteCategoryColorList() {
+            const container = document.getElementById('write-category-color-list');
+            if (!container) return;
+            container.innerHTML = writeCategoryList.map(cat => `
+                <div class="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <span class="text-sm text-slate-600 font-medium">${cat}</span>
+                    <input type="color" value="${WRITE_COLORS[cat] || '#94a3b8'}" class="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5" oninput="updateWriteCategoryColor('${cat}', this.value)">
+                </div>
+            `).join('');
+        }
+        function updateWriteCategoryColor(cat, value) {
+            WRITE_COLORS[cat] = value;
+            save(true); renderWriteCalendar();
+        }
+
+        // ════ 스케줄 설정 ════
+        function openTaskSettings() {
+            const s = taskCardSettings;
+            document.getElementById('task-font-size-val').textContent = s.fontSize + 'px';
+            document.getElementById('task-color-default').value = s.colorDefault;
+            renderTaskCategoryColorList();
+            document.getElementById('task-settings-modal').classList.add('open');
+        }
+        function closeTaskSettings() { document.getElementById('task-settings-modal').classList.remove('open'); }
+        function changeTaskCardFont(delta) {
+            taskCardSettings.fontSize = Math.max(9, Math.min(18, taskCardSettings.fontSize + delta));
+            document.getElementById('task-font-size-val').textContent = taskCardSettings.fontSize + 'px';
+            save(true); renderTaskCalendar();
+        }
+        function updateTaskColors() {
+            taskCardSettings.colorDefault = document.getElementById('task-color-default').value;
+            save(true); renderTaskCalendar();
+        }
+        // [NEW] 분류별 글자 색상 설정 목록 렌더
+        function renderTaskCategoryColorList() {
+            const container = document.getElementById('task-category-color-list');
+            if (!container) return;
+            container.innerHTML = Object.keys(TASK_COLORS).map(cat => `
+                <div class="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <span class="text-sm text-slate-600 font-medium">${cat}</span>
+                    <input type="color" value="${TASK_COLORS[cat]}" class="w-8 h-8 rounded-lg border border-slate-200 cursor-pointer p-0.5" oninput="updateTaskCategoryColor('${cat}', this.value)">
+                </div>
+            `).join('');
+        }
+        function updateTaskCategoryColor(cat, value) {
+            TASK_COLORS[cat] = value;
+            save(true); renderTaskCalendar();
+        }
+        // ═══════════════════
+
+        function renderWriteCalendarFilters() {
+            const container = document.getElementById('write-genre-tabs');
+            if (!container) return; // 탭 컨테이너 없으면 그냥 패스
+            const tabs = ['전체', ...genreList.map(g => g.name)];
+            container.innerHTML = tabs.map(t => 
+                `<button onclick="setWriteGenreFilter('${t}')" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${writeGenreFilter === t ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-500 bg-slate-100 hover:bg-slate-200'}">${t}</button>`
+            ).join('');
+        }
+        function setWriteGenreFilter(tab) { writeGenreFilter = tab; renderWriteCalendarFilters(); renderWriteCalendar(); }
+
+        function renderTaskCalendarFilters() {
+            const container = document.getElementById('task-genre-tabs');
+            const tabs = ['전체', ...genreList.map(g => g.name)];
+            container.innerHTML = tabs.map(t => 
+                `<button onclick="setTaskGenreFilter('${t}')" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${taskGenreFilter === t ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 bg-slate-100 hover:bg-slate-200'}">${t}</button>`
+            ).join('');
+        }
+        function setTaskGenreFilter(tab) { taskGenreFilter = tab; renderTaskCalendarFilters(); renderTaskCalendar(); }
+
+        function changeWriteMonth(delta, isToday = false) {
+            if(isToday) writeCalDate = new Date();
+            else writeCalDate.setMonth(writeCalDate.getMonth() + delta);
+            renderWriteCalendar();
+        }
+        function changeTaskMonth(delta, isToday = false) {
+            if(isToday) taskCalDate = new Date();
+            else taskCalDate.setMonth(taskCalDate.getMonth() + delta);
+            renderTaskCalendar();
+        }
+
+        function generateCalendarHTML(dateObj, scheduleData, renderBlockFn, onCellClickStr, onDragDropEventsStr, dayTotalFn) {
+            const y = dateObj.getFullYear(), m = dateObj.getMonth();
+            const firstDay = new Date(y, m, 1).getDay();
+            const lastDate = new Date(y, m + 1, 0).getDate();
+            const prevLastDate = new Date(y, m, 0).getDate();
+            const todayStr = getYYYYMMDD(new Date());
+            const primary = getComputedStyle(document.body).getPropertyValue('--primary').trim() || '#87ada1';
+
+            // 이전달 날짜
+            let html = '';
+            for(let i=0; i<firstDay; i++) {
+                const d = prevLastDate - firstDay + 1 + i;
+                const prevM = m === 0 ? 12 : m;
+                const prevY = m === 0 ? y - 1 : y;
+                const dateStr = `${prevY}-${String(prevM).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                let daySchedules = scheduleData[dateStr] || [];
+                let blocksHtml = daySchedules.map(renderBlockFn).join('');
+                let dayTotalHtml = '';
+                if (dayTotalFn) {
+                    const total = dayTotalFn(daySchedules, dateStr);
+                    if (total > 0) dayTotalHtml = `<span class="text-xs font-medium text-emerald-400">${total.toLocaleString()}자</span>`;
+                }
+                html += `<div class="bg-slate-50/50 border border-slate-100 rounded-xl min-h-[120px] p-1.5 flex flex-col cursor-pointer hover:border-emerald-200 transition-colors group relative" onclick="${onCellClickStr}('${dateStr}')" data-date="${dateStr}" ${onDragDropEventsStr}>
+                    <div class="flex items-center mb-1 relative">
+                        <div class="text-sm font-bold text-slate-300 shrink-0">${d}</div>
+                        <div class="absolute left-1/2 -translate-x-1/2 whitespace-nowrap">${dayTotalHtml}</div>
+                    </div>
+                    <div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar pointer-events-auto">${blocksHtml}</div>
+                </div>`;
+            }
+
+            // 이번달 날짜
+            for(let d=1; d<=lastDate; d++) {
+                const dateStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                const isToday = dateStr === todayStr;
+                const borderCls = isToday ? 'border-2' : 'border-slate-200 bg-white hover:border-emerald-300';
+                const borderStyle = isToday ? `border-color:${primary}; background-color:${hexToRgba(primary, 0.08)};` : '';
+                const textCls = isToday ? '' : 'text-slate-500';
+                const textStyle = isToday ? `color:${primary}; filter:brightness(0.7) saturate(1.3);` : '';
+                
+                let daySchedules = scheduleData[dateStr] || [];
+                let blocksHtml = daySchedules.map(renderBlockFn).join('');
+
+                let dayTotalHtml = '';
+                if (dayTotalFn) {
+                    const total = dayTotalFn(daySchedules, dateStr);
+                    if (total > 0) dayTotalHtml = `<span class="text-xs font-medium text-emerald-600">${total.toLocaleString()}자</span>`;
+                }
+
+                const todayBadge = isToday ? `<span class="cal-today-badge absolute right-1.5 top-1.5 text-[10px] font-black tracking-wider" style="color:${primary}; filter:brightness(0.65) saturate(1.4);">TODAY</span>` : '';
+                
+                html += `<div class="${borderCls} rounded-xl min-h-[120px] p-1.5 flex flex-col transition-colors cursor-pointer group relative" style="${borderStyle}" onclick="${onCellClickStr}('${dateStr}')" data-date="${dateStr}" ${onDragDropEventsStr}>
+                    ${todayBadge}
+                    <div class="flex items-center mb-1 relative">
+                        <div class="text-sm font-bold ${textCls} shrink-0" style="${textStyle}"><span class="pc-num${isToday ? ' pc-today' : ''}">${d}</span></div>
+                        <div class="absolute left-1/2 -translate-x-1/2 whitespace-nowrap">${dayTotalHtml}</div>
+                    </div>
+                    <div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar pointer-events-auto">${blocksHtml}</div>
+                </div>`;
+            }
+
+            // 다음달 날짜
+            const totalCells = firstDay + lastDate;
+            const nextDays = (7 - (totalCells % 7)) % 7;
+            for(let d=1; d<=nextDays; d++) {
+                const nextM = m === 11 ? 1 : m + 2;
+                const nextY = m === 11 ? y + 1 : y;
+                const dateStr = `${nextY}-${String(nextM).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                let daySchedules = scheduleData[dateStr] || [];
+                let blocksHtml = daySchedules.map(renderBlockFn).join('');
+                let dayTotalHtml = '';
+                if (dayTotalFn) {
+                    const total = dayTotalFn(daySchedules, dateStr);
+                    if (total > 0) dayTotalHtml = `<span class="text-xs font-medium text-emerald-400">${total.toLocaleString()}자</span>`;
+                }
+                html += `<div class="bg-slate-50/50 border border-slate-100 rounded-xl min-h-[120px] p-1.5 flex flex-col cursor-pointer hover:border-emerald-200 transition-colors group relative" onclick="${onCellClickStr}('${dateStr}')" data-date="${dateStr}" ${onDragDropEventsStr}>
+                    <div class="flex items-center mb-1 relative">
+                        <div class="text-sm font-bold text-slate-300 shrink-0">${d}</div>
+                        <div class="absolute left-1/2 -translate-x-1/2 whitespace-nowrap">${dayTotalHtml}</div>
+                    </div>
+                    <div class="flex-1 space-y-1 overflow-y-auto custom-scrollbar pointer-events-auto">${blocksHtml}</div>
+                </div>`;
+            }
+            return html;
+        }
+
+        // -- 집필 캘린더 렌더 --
+        // workId가 외전 형태(workId::extraId)일 수도 있어서 양쪽 처리
+        function resolveWorkItem(workId) {
+            if (!workId) return { work: null, extra: null, displayTitle: '', goalWithSpace: 0 };
+            if (workId.includes('::')) {
+                const [wId, exId] = workId.split('::');
+                const w = masterWorks.find(x => x.id === wId);
+                const ex = w?.extras?.find(e => e.id === exId);
+                return {
+                    work: w, extra: ex,
+                    displayTitle: w && ex ? `${w.title} [${ex.name}]` : '',
+                    goalWithSpace: ex ? (Number(ex.goalWithSpace) || Number(ex.goalNoSpace) || 0) : 0,
+                    genre: w?.genre || ''
+                };
+            }
+            const w = masterWorks.find(x => x.id === workId);
+            return {
+                work: w, extra: null,
+                displayTitle: w?.title || '',
+                goalWithSpace: w ? (Number(w.goalWithSpace) || Number(w.goalNoSpace) || 0) : 0,
+                genre: w?.genre || ''
+            };
+        }
+
+        // 삭제된 작품/외전을 참조하는 일정(집필 관리 글자수·스케줄)이 남아있지 않도록 정리한다.
+        // 작품을 삭제했는데 집필 관리에 글자수/목표 합계가 계속 남는 문제를 막아준다.
+        function isScheduleWorkValid(workId) {
+            if (!workId) return false;
+            if (workId === WRITER_BULK_UNASSIGNED_KEY) return true; // 작품 미지정 일괄 입력 글자수는 항상 유효
+            const r = resolveWorkItem(workId);
+            if (!r.work) return false;                       // 본편(또는 외전의 부모 작품)이 삭제됨
+            if (String(workId).includes('::') && !r.extra) return false; // 외전 자체가 삭제됨
+            return true;
+        }
+        function purgeOrphanSchedules() {
+            let changed = false;
+            const validWorkIds = new Set(masterWorks.map(w => w.id));
+
+            // [FIX] 한 번에 대량으로 지워지는 걸 막기 위한 안전장치.
+            // 원래 의도는 "삭제된 작품에 딸린 낱개 일정 정리"인데, 작품 ID가 통째로 바뀌는 것 같은
+            // 비정상 상황에서는 멀쩡한 일정 전체가 "고아"로 오판되어 한꺼번에 날아갈 수 있었음.
+            // → 한 번에 지워지는 양이 기존의 절반을 넘으면(그리고 원래 개수가 충분히 많으면),
+            //    실제로 지우지 않고 콘솔에만 경고를 남기고 건너뜀.
+            const countScheduleArr = (obj) => Object.values(obj || {}).reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0);
+            const countDailyWorks = (obj) => Object.values(obj || {}).reduce((n, day) => n + Object.keys(day?.works || {}).length, 0);
+
+            const beforeWriteCount = countScheduleArr(writeSchedules);
+            const beforeTaskCount = countScheduleArr(taskSchedules);
+            const beforeDailyCount = countDailyWorks(writerDailyData);
+
+            // 얼마나 지워질지 미리 계산 (실제로 지우기 전에)
+            const wouldKeepWrite = Object.values(writeSchedules).reduce((n, arr) => n + arr.filter(s => isScheduleWorkValid(s.workId)).length, 0);
+            const wouldKeepTask = Object.values(taskSchedules).reduce((n, arr) => n + arr.filter(t => {
+                if (!t.workId) return true;
+                if (!isScheduleWorkValid(t.workId)) return false;
+                if (t.extraId) { const w = resolveWorkItem(t.workId).work; if (!w?.extras?.some(e => e.id === t.extraId)) return false; }
+                return true;
+            }).length, 0);
+            const wouldKeepDaily = Object.values(writerDailyData).reduce((n, day) => n + Object.keys(day?.works || {}).filter(wk => isScheduleWorkValid(wk)).length, 0);
+
+            const tooMuchWriteLoss = beforeWriteCount >= 10 && wouldKeepWrite < beforeWriteCount * 0.5;
+            const tooMuchTaskLoss = beforeTaskCount >= 10 && wouldKeepTask < beforeTaskCount * 0.5;
+            const tooMuchDailyLoss = beforeDailyCount >= 10 && wouldKeepDaily < beforeDailyCount * 0.5;
+
+            if (tooMuchWriteLoss || tooMuchTaskLoss || tooMuchDailyLoss) {
+                console.error('[Purge] 정리 보류: 한 번에 지워지는 집필/작업 일정·글자수 기록이 너무 많음(절반 이상) → 작품 ID 불일치 가능성. 실제 삭제는 건너뜀.',
+                    { beforeWriteCount, wouldKeepWrite, beforeTaskCount, wouldKeepTask, beforeDailyCount, wouldKeepDaily });
+                return false;
+            }
+
+            // 집필 관리 일정
+            Object.keys(writeSchedules).forEach(date => {
+                const before = writeSchedules[date].length;
+                writeSchedules[date] = writeSchedules[date].filter(s => isScheduleWorkValid(s.workId));
+                if (writeSchedules[date].length !== before) changed = true;
+                if (writeSchedules[date].length === 0) delete writeSchedules[date];
+            });
+            // 스케줄(Task) 관리 일정
+            Object.keys(taskSchedules).forEach(date => {
+                const before = taskSchedules[date].length;
+                taskSchedules[date] = taskSchedules[date].filter(t => {
+                    if (!t.workId) return true; // 작품 미지정 할 일은 항상 유효
+                    if (!isScheduleWorkValid(t.workId)) return false;
+                    // 외전 자동 태스크는 workId가 부모 작품이라 따로 외전 존재 여부를 확인
+                    if (t.extraId) {
+                        const w = resolveWorkItem(t.workId).work;
+                        if (!w?.extras?.some(e => e.id === t.extraId)) return false;
+                    }
+                    return true;
+                });
+                if (taskSchedules[date].length !== before) changed = true;
+                if (taskSchedules[date].length === 0) delete taskSchedules[date];
+            });
+
+            // 웹툰 투고 이력 - 삭제된 작품의 키 제거 (__mail__은 특수 키라 제외)
+            Object.keys(webtoonSubs).forEach(wid => {
+                if (wid === '__mail__') return;
+                if (!validWorkIds.has(wid)) {
+                    delete webtoonSubs[wid];
+                    changed = true;
+                }
+            });
+            webtoonSubOrder = webtoonSubOrder.filter(wid => validWorkIds.has(wid));
+
+            // 집필 기록(writerDailyData) - 삭제된 작품/외전의 workKey 제거
+            Object.keys(writerDailyData).forEach(date => {
+                const worksObj = writerDailyData[date]?.works;
+                if (!worksObj) return;
+                Object.keys(worksObj).forEach(wk => {
+                    // wk는 'workId' 또는 'workId::extraId' 형식
+                    if (!isScheduleWorkValid(wk)) {
+                        delete worksObj[wk];
+                        changed = true;
+                    }
+                });
+                // works가 완전히 비었으면 날짜 키 자체도 제거
+                if (Object.keys(worksObj).length === 0) {
+                    delete writerDailyData[date];
+                }
+            });
+
+            return changed;
+        }
+
+        // 코지 테마: 큰 영문 월 이름 + 이번 달 목표 합계 + 다음 집필 일정 D-day (출간 일정·스케줄 관리와 같은 분위기)
+        function renderWriteCozyHero(monthGoalSum) {
+            const box = document.getElementById('write-cozy-hero');
+            if (!box) return;
+            if (!document.body.classList.contains('theme-cozy')) { box.innerHTML = ''; return; }
+            const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            const y = writeCalDate.getFullYear(), m = writeCalDate.getMonth();
+            const todayStr = getYYYYMMDD(new Date());
+            const upcoming = [];
+            Object.keys(writeSchedules || {}).forEach(ds => {
+                if (ds < todayStr) return;
+                (writeSchedules[ds] || []).forEach(t => { if (!t.isCompleted) upcoming.push({ ds, t }); });
+            });
+            upcoming.sort((a, b) => a.ds < b.ds ? -1 : a.ds > b.ds ? 1 : 0);
+            const nx = upcoming[0];
+            const t0 = new Date().setHours(0, 0, 0, 0);
+            const diff = nx ? Math.round((new Date(nx.ds).setHours(0, 0, 0, 0) - t0) / 86400000) : 0;
+            const short = t => { t = String(t || ''); return t.length > 16 ? t.slice(0, 15) + '…' : t; };
+            let nxLabel = '';
+            if (nx) {
+                const r = resolveWorkItem(nx.t.workId);
+                nxLabel = short((nx.t.category ? '[' + nx.t.category + '] ' : '') + (r.work ? r.displayTitle : ''));
+            }
+            box.innerHTML = `<div class="left"><div class="eyebrow">writing plan</div>
+                <div class="row"><span class="mname">${MN[m]}</span><span class="yr">${y}</span></div></div>
+                <div class="chips"><span class="chip">♥ 이번 달 목표 ${(monthGoalSum || 0).toLocaleString()}자</span>${nx ? `<span class="chip">다음 집필 · ${escapeHtml(nxLabel)} <b>${diff === 0 ? 'D-Day' : 'D-' + diff}</b></span>` : ''}</div>`;
+        }
+
+        function renderWriteCalendar() {
+            writerWrittenSinceCache = {}; writerPositionCache = {};   // 달력을 다시 그릴 때마다 진행률 캐시 초기화
+            document.getElementById('write-cal-title').innerText = `${writeCalDate.getFullYear()}년 ${writeCalDate.getMonth() + 1}월`;
+            const wbl = document.getElementById('write-month-big-label'); if (wbl) wbl.innerText = `${writeCalDate.getMonth() + 1}월`;
+            
+            const dragEvents = `ondragover="handleDragOver(event)" ondragenter="handleDragEnter(event)" ondragleave="handleDragLeave(event)" ondrop="handleWriteDrop(event, this)"`;
+
+            // [NEW] 누적 글자수 계산 (전체 일정 기준)
+            const cumulativeGoalMap = (() => {
+                let workStats = {};
+                // 전체 일정을 순회하여 작품별로 목표 분량을 모음
+                Object.entries(writeSchedules).forEach(([dateStr, schedules]) => {
+                    schedules.forEach(s => {
+                        if (!s.category) {
+                            if (!workStats[s.workId]) workStats[s.workId] = { total: 0, items: [] };
+                            const g = Number(s.goal) || 0;
+                            workStats[s.workId].total += g;
+                            workStats[s.workId].items.push({
+                                date: dateStr, id: s.id, goal: g, volumeId: s.volumeId || ''
+                            });
+                        }
+                    });
+                });
+
+                let map = {};
+                Object.keys(workStats).forEach(workId => {
+                    let stats = workStats[workId];
+                    // 날짜 순, 그리고 동일 날짜면 생성된 아이디 순서대로 정렬
+                    stats.items.sort((a, b) => {
+                        if (a.date !== b.date) return a.date.localeCompare(b.date);
+                        return a.id.localeCompare(b.id);
+                    });
+
+                    // [NEW] "지금부터 카운터" 리셋 시점이 있으면, 그 날짜 이전에 등록된 목표 블록은
+                    // 누적 계산에서 제외하고, 리셋일부터 등록된 블록만 0자부터 다시 누적한다.
+                    const resetDate = writeCounterResetDate[workId];
+                    let items = stats.items;
+                    let resetTotal = stats.total;
+                    if (resetDate) {
+                        items = stats.items.filter(item => item.date >= resetDate);
+                        resetTotal = items.reduce((sum, item) => sum + item.goal, 0);
+                    }
+
+                    // 권별로 따로 누적한다. 권을 안 나눈 카드들은 '' 키로 한 덩어리.
+                    // 나중에 1권 카드를 다시 만들어도 1권 누적이 이어진다.
+                    const volSums = {};
+                    const vols = writeVolumes[workId] || [];
+                    // 각 권이 시작되는 날짜 (items가 이미 날짜순이라 처음 나온 게 가장 이른 날)
+                    const volFirstDate = {};
+                    items.forEach(it => {
+                        const k = it.volumeId || '';
+                        if (k && !volFirstDate[k]) volFirstDate[k] = it.date;
+                    });
+
+                    let rawSum = 0;       // 실제 진행률 계산용 누적 (권과 무관하게 계속 쌓임)
+                    items.forEach(item => {
+                        const vKey = item.volumeId || '';
+                        if (volSums[vKey] === undefined) volSums[vKey] = 0;
+
+                        const start = volSums[vKey];   // 이 권 안에서의 시작점 (표시용)
+                        const rawStart = rawSum;       // 작품 전체 기준 시작점 (진행률용)
+                        volSums[vKey] += item.goal;
+                        rawSum += item.goal;
+
+                        const vol = vKey ? vols.find(v => v.id === vKey) : null;
+                        map[item.id] = {
+                            start: start, cumulative: volSums[vKey],
+                            rawStart: rawStart,          // 게이지는 이 값을 기준으로 채운다
+                            total: resetTotal, count: items.length,
+                            segLabel: vol ? vol.name : '', segGoal: vol ? (Number(vol.goal) || 0) : 0,
+                            volumeId: vKey,
+                            volStartDate: vKey ? (volFirstDate[vKey] || '') : ''
+                        };
+                    });
+                });
+                return map;
+            })();
+
+            const html = generateCalendarHTML(writeCalDate, writeSchedules, (s) => {
+                const resolved = resolveWorkItem(s.workId);
+                const work = resolved.work;
+                if(!work) return '';
+                if(writeGenreFilter !== '전체' && work.genre !== writeGenreFilter) return '';
+
+                const color = getGenreColor(work.genre);
+                const titleForDisplay = resolved.displayTitle;
+                let content = '';
+                
+                if (s.category) {
+                    const prefix = `[${s.category}]`;
+                    let opacity = s.isCompleted ? 'opacity-70' : '';
+                    if (s.category === WRITE_MEMO_CATEGORY) {
+                        // 메모 카드는 한 줄: 제목 왼쪽, 체크 진행(완료/전체) 오른쪽
+                        const cl = s.checklist || [];
+                        const countText = cl.length ? `${cl.filter(it => it.done).length}/${cl.length}` : '';
+                        content = `<div class="flex items-center justify-between gap-1 ${opacity}">
+                                       <span class="font-bold text-slate-700 min-w-0" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${prefix} ${titleForDisplay}</span>
+                                       ${countText ? `<span class="text-[10px] font-bold text-slate-500 shrink-0">${countText}</span>` : ''}
+                                   </div>`;
+                    } else {
+                        content = `<div class="font-bold text-slate-700 ${opacity}" style="white-space:normal; word-break:break-word;">${prefix} ${titleForDisplay}</div>
+                                   ${s.memo ? `<div class="text-[10px] text-slate-500 ${opacity}" style="white-space:normal; word-break:break-word;">${s.memo}</div>` : ''}`;
+                    }
+                } else {
+                    let opacity = s.isCompleted ? 'opacity-70' : '';
+                    let goalData = cumulativeGoalMap[s.id];
+                    let blockStart = 0, blockEnd = (s.goal || 0), rawStart = 0;
+                    
+                    if (goalData) {
+                        blockStart = goalData.start;
+                        blockEnd = goalData.cumulative;
+                        rawStart = goalData.rawStart;
+                    }
+                    const blockGoal = blockEnd - blockStart; // 이 블록 자기 분량
+
+                    // 작품의 전체 목표 (본편 또는 외전)
+                    const workTotalGoal = resolved.goalWithSpace;
+
+                    // 작품의 실제 누적 집필량 (workId가 외전 ID면 외전 기록만)
+                    const workTotal = writerGetWorkTotal(s.workId);
+                    
+                    let fillPct = 0;
+                    // 진행률 기준을 카드에 보이는 숫자와 똑같은 축으로 맞춘다.
+                    //  · 권이 지정된 카드 → 원고 위치 vs 권 안에서의 누적 (괄호 안 숫자와 같은 축)
+                    //  · 권이 없는 카드   → 예전처럼 작품 전체 기준
+                    let gaugeWritten = workTotal, gaugeStart = rawStart;
+                    if (goalData && goalData.volumeId) {
+                        // 그 권을 쓰던 날들의 마지막 원고 위치 (권을 오갔어도 각자 따라간다)
+                        gaugeWritten = writerGetVolumePositionCached(s.workId, goalData.volumeId);
+                        gaugeStart = blockStart;
+                    }
+                    if (blockGoal > 0) fillPct = Math.min(100, Math.round((Math.max(0, gaugeWritten - gaugeStart) / blockGoal) * 100));
+
+                    const ownGoalText = `${blockGoal.toLocaleString()}자`;
+                    // 구간(권) 목표를 정해뒀으면 그 값을 분모로 쓴다
+                    const denom = (goalData && goalData.segGoal > 0) ? goalData.segGoal : workTotalGoal;
+                    const cumulativeText = denom > 0
+                        ? `(${blockEnd.toLocaleString()} / ${denom.toLocaleString()})`
+                        : `(${blockEnd.toLocaleString()})`;
+                    // 권 이름 태그
+                    const segName = (goalData && goalData.segLabel) ? goalData.segLabel : '';
+                    const segTag = segName
+                        ? `<span class="text-[9px] font-bold text-amber-600 bg-amber-100 rounded px-1 py-px mr-1 align-middle">${segName}</span>` : '';
+                    // 지금 실제로 원고가 이 카드 구간 "안"에 걸쳐있을 때만(=한창 채워지고 있는 카드),
+                    // 제목 줄 오른쪽에 지금 실제 원고 위치를 테마색으로 보여준다
+                    const latestPosText = (fillPct > 0 && fillPct < 100 && !s.isCompleted)
+                        ? `<span class="text-[11px] font-medium shrink-0 rounded-full px-1.5 py-0.5" style="background:var(--primary-light);"><span style="color:var(--primary); filter:saturate(2.2) brightness(0.9);">${gaugeWritten.toLocaleString()}자</span></span>` : '';
+
+                    content = `<div class="font-bold text-slate-700 ${opacity} flex items-center justify-between gap-1" style="white-space:normal; word-break:break-word;"><span class="min-w-0">${segTag}${titleForDisplay}</span>${latestPosText}</div>
+                               <div class="flex items-baseline justify-between gap-2 ${opacity}" style="margin-top:3px;">
+                                   <span class="text-[11px] font-medium" style="color:${color}">${ownGoalText}</span>
+                                   <span class="text-[10px] font-medium text-slate-400">${cumulativeText}</span>
+                               </div>`;
+                    
+                    s._fillPct = fillPct;
+                    s._fillColor = color;
+                }
+
+                const bgClass = s.isCompleted ? 'bg-slate-100' : 'bg-white';
+                const fillPct = s._fillPct || 0;
+                const fillColor = s._fillColor || color;
+                const wcs = writeCardSettings;
+
+                // 분류가 있으면 해당 분류의 설정 색상으로 전체 채움 (분류별 색상은 WRITE_COLORS에서 관리)
+                let cardBg = '';
+                if (s.category) {
+                    cardBg = `background: ${WRITE_COLORS[s.category] || '#94a3b8'};`;
+                } else if (fillPct > 0) {
+                    cardBg = `background: linear-gradient(to right, ${hexToRgba(fillColor, wcs.fillOpacity)} ${fillPct}%, ${wcs.colorDefault} ${fillPct}%);`;
+                } else {
+                    cardBg = `background: ${wcs.colorDefault};`;
+                }
+
+                const cardFontStyle = `font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; font-size:${wcs.fontSize}px;`;
+                
+                let completeIcon = s.isCompleted 
+                    ? `<button type="button" onclick="event.stopPropagation(); toggleWriteComplete('${s.id}', '${s.date}')" class="text-emerald-500 hover:text-slate-400 transition-colors mt-0.5 shrink-0" title="완료 취소"><i class="fa-solid fa-circle-check"></i></button>`
+                    : `<button type="button" onclick="event.stopPropagation(); toggleWriteComplete('${s.id}', '${s.date}')" class="opacity-0 group-hover/block:opacity-100 text-slate-300 hover:text-emerald-500 transition-opacity mt-0.5 shrink-0" title="완료 처리"><i class="fa-regular fa-circle-check"></i></button>`;
+                    
+                // 카드 폭에서 자리를 차지하지 않게 절대 위치로 띄워서, 안 보일 때도 좌우 여백이 어긋나지 않게 한다
+                let deleteBtn = `<button type="button" onclick="event.stopPropagation(); quickDeleteWrite('${s.id}', '${s.date}')" class="absolute top-1 right-1 opacity-0 group-hover/block:opacity-100 text-slate-300 hover:text-rose-500 transition-opacity shrink-0 px-1" title="일정 삭제"><i class="fa-solid fa-trash-can"></i></button>`;
+                // 우클릭(오른쪽 마우스)으로 복제하는 기능은 터치 기기(아이패드 등)에선 아예 쓸 수 없어서,
+                // 같은 동작을 하는 복사 버튼을 눈에 보이게 추가 — 탭 한 번이면 되니 터치/마우스 둘 다 동일하게 동작
+                let copyBtn = `<button type="button" onclick="event.stopPropagation(); duplicateWriteSchedule(event, '${s.id}', '${s.date}')" class="absolute top-1 right-6 opacity-0 group-hover/block:opacity-100 text-slate-300 hover:text-indigo-500 transition-opacity shrink-0 px-1" title="이 일정 복사"><i class="fa-regular fa-copy"></i></button>`;
+
+                return `<div class="cal-selectable border border-slate-200 border-l-4 p-1 rounded-lg relative group/block shadow-sm hover:shadow-md transition-all cursor-move" data-cal="write" data-block-id="${s.id}" data-block-date="${s.date}" style="border-left-color: ${color}; ${cardBg} ${cardFontStyle}" draggable="true" ondragstart="handleWriteDragStart(event, '${s.id}', '${s.date}')" ondragover="handleCardDragOver(event, this)" ondragleave="handleCardDragLeave(event, this)" ondrop="handleWriteCardDrop(event, this, '${s.id}', '${s.date}')" onclick="event.stopPropagation(); openWriteEditModal('${s.id}', '${s.date}')" oncontextmenu="duplicateWriteSchedule(event, '${s.id}', '${s.date}')">
+                    <div class="flex items-start">
+                        <div class="flex-1 min-w-0">
+                            ${content}
+                        </div>
+                        ${copyBtn}
+                        ${deleteBtn}
+                    </div>
+                </div>`;
+            }, 'openWriteModal', dragEvents, (daySchedules, dateStr) => {
+                // 그날 등록된 집필 블록의 goal 합산만 (실제 기록 사용 안 함)
+                return daySchedules.reduce((total, s) => {
+                    if (s.category) return total;
+                    if (!isScheduleWorkValid(s.workId)) return total;   // 삭제된 작품의 글자수는 합산 제외
+                    return total + (Number(s.goal) || 0);
+                }, 0);
+            });
+
+            document.getElementById('write-calendar-body').innerHTML = html;
+            if (typeof window.clearCalSelection === 'function') window.clearCalSelection();
+            renderWriteSpans(); // 기간 일정 막대를 달력 위에 겹쳐 그림
+            watchWriteCalendarResize();
+
+            // 이번달 목표 합계 업데이트
+            try {
+                const cy = writeCalDate.getFullYear(), cm = writeCalDate.getMonth();
+                const moStr = `${cy}-${String(cm+1).padStart(2,'0')}`;
+                let monthGoalSum = 0;
+                Object.entries(writeSchedules).forEach(([dateStr, schedules]) => {
+                    if (!dateStr.startsWith(moStr)) return;
+                    schedules.forEach(s => {
+                        if (!s.category) {
+                            if (!isScheduleWorkValid(s.workId)) return;   // 삭제된 작품의 글자수는 합계 제외
+                            monthGoalSum += Number(s.goal) || 0;
+                        }
+                    });
+                });
+                const el = document.getElementById('write-month-goal-sum');
+                if (el) el.textContent = monthGoalSum.toLocaleString() + '자';
+                try { renderWriteCozyHero(monthGoalSum); } catch (e) { console.error(e); }
+
+                // [NEW] 아직 카드로 확정 안 된 '기간 일정'이 이 달에 걸쳐 있으면, 그만큼을 '예정'으로 따로 보여준다
+                // (달력에 카드가 하나도 없어서 확정 합계가 0으로 보여도, 사실 기간 일정으로는 이미 잡혀있는 경우가 있어서)
+                try {
+                    const confirmedSpanIds = new Set();
+                    Object.values(writeSchedules).forEach(list => (list || []).forEach(s => { if (s.spanId) confirmedSpanIds.add(s.spanId); }));
+                    const monthLastDay = new Date(cy, cm + 1, 0).getDate();
+                    const monthStartDate = `${moStr}-01`;
+                    const monthEndDate = `${moStr}-${String(monthLastDay).padStart(2, '0')}`;
+                    let pendingSum = 0;
+                    writeSpans.filter(s => (s.type || 'write') === 'write' && !confirmedSpanIds.has(s.id)).forEach(s => {
+                        const overlapStart = s.startDate < monthStartDate ? monthStartDate : s.startDate;
+                        const overlapEnd = s.endDate > monthEndDate ? monthEndDate : s.endDate;
+                        if (overlapStart > overlapEnd) return; // 이 달과 겹치지 않음
+                        const totalDays = spanDayDiff(s.startDate, s.endDate) + 1;
+                        const [sy, sm, sd] = s.startDate.split('-').map(Number);
+                        const restSet = s.restMode === 'days' ? new Set(s.restWeekdays || []) : null;
+                        const restPerWeek = Math.min(7, Math.max(0, Number(s.restPerWeek) || 0));
+                        const restEveryN = (!restSet && restPerWeek > 0) ? Math.round(7 / restPerWeek) : null;
+                        for (let i = 0; i < totalDays; i++) {
+                            const d = spanDateAdd(s.startDate, i);
+                            if (d < overlapStart || d > overlapEnd) continue;
+                            const dt = new Date(sy, sm - 1, sd + i);
+                            const isRest = restSet ? restSet.has(dt.getDay()) : (restEveryN ? ((i + 1) % restEveryN === 0) : false);
+                            if (!isRest) pendingSum += spanDailyCharsOn(s, d);
+                        }
+                    });
+                    const pendingEl = document.getElementById('write-month-pending-sum');
+                    if (pendingEl) pendingEl.textContent = pendingSum > 0 ? `(예정 ${pendingSum.toLocaleString()}자)` : '';
+                } catch (e) {}
+
+                // [NEW] 스케줄이 아예 없는 날 * 6000자 예상 가용 글자수 표시
+                const lastDate = new Date(cy, cm + 1, 0).getDate();
+                let emptyDaysCount = 0;
+                for (let d = 1; d <= lastDate; d++) {
+                    const dStr = `${cy}-${String(cm+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                    const daySchedules = writeSchedules[dStr];
+                    if (!daySchedules || daySchedules.length === 0) emptyDaysCount++;
+                }
+                const EMPTY_DAY_CHARS = Number(writeCardSettings.emptyDayChars) || 6000;
+                const emptyEl = document.getElementById('write-month-empty-sum');
+                if (emptyEl) {
+                    emptyEl.textContent = emptyDaysCount > 0
+                        ? `(빈 날 ${emptyDaysCount}일 × ${EMPTY_DAY_CHARS.toLocaleString()}자 = 총 ${(emptyDaysCount * EMPTY_DAY_CHARS).toLocaleString()}자)`
+                        : '';
+                }
+            } catch(e) {}
+        }
+
+        // -- 스케줄 캘린더 렌더 --
+        // 코지 테마: 큰 영문 월 이름 + 이번 달 스케줄 수 + 다음 스케줄 D-day (출간 일정 탭과 같은 분위기)
+        function renderTaskCozyHero() {
+            const box = document.getElementById('task-cozy-hero');
+            if (!box) return;
+            if (!document.body.classList.contains('theme-cozy')) { box.innerHTML = ''; return; }
+            const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            const y = taskCalDate.getFullYear(), m = taskCalDate.getMonth();
+            const prefix = `${y}-${String(m + 1).padStart(2, '0')}`;
+            const todayStr = getYYYYMMDD(new Date());
+            let total = 0, done = 0; const upcoming = [];
+            Object.keys(taskSchedules || {}).forEach(ds => {
+                (taskSchedules[ds] || []).forEach(t => {
+                    if (ds.startsWith(prefix)) { total++; if (t.isCompleted) done++; }
+                    if (!t.isCompleted && ds >= todayStr) upcoming.push({ ds, t });
+                });
+            });
+            upcoming.sort((a, b) => a.ds < b.ds ? -1 : a.ds > b.ds ? 1 : 0);
+            const nx = upcoming[0];
+            const t0 = new Date().setHours(0, 0, 0, 0);
+            const diff = nx ? Math.round((new Date(nx.ds).setHours(0, 0, 0, 0) - t0) / 86400000) : 0;
+            const short = t => { t = String(t || ''); return t.length > 16 ? t.slice(0, 15) + '…' : t; };
+            let nxLabel = '';
+            if (nx) {
+                const r = resolveWorkItem(nx.t.workId);
+                nxLabel = short('[' + nx.t.category + ']' + (r.work ? ' ' + r.displayTitle : ''));
+            }
+            box.innerHTML = `<div class="left"><div class="eyebrow">schedule &amp; tasks</div>
+                <div class="row"><span class="mname">${MN[m]}</span><span class="yr">${y}</span></div></div>
+                <div class="chips"><span class="chip">♥ 이번 달 스케줄 ${total}개 · 완료 ${done}</span>${nx ? `<span class="chip">다음 스케줄 · ${escapeHtml(nxLabel)} <b>${diff === 0 ? 'D-Day' : 'D-' + diff}</b></span>` : ''}</div>`;
+        }
+
+        function renderTaskCalendar() {
+            document.getElementById('task-cal-title').innerText = `${taskCalDate.getFullYear()}년 ${taskCalDate.getMonth() + 1}월`;
+            const tbl = document.getElementById('task-month-big-label'); if (tbl) tbl.innerText = `${taskCalDate.getMonth() + 1}월`;
+            try { renderTaskCozyHero(); } catch (e) { console.error(e); }
+            
+            const dragEvents = `ondragover="handleDragOver(event)" ondragenter="handleDragEnter(event)" ondragleave="handleDragLeave(event)" ondrop="handleTaskDrop(event, this)"`;
+
+            const html = generateCalendarHTML(taskCalDate, taskSchedules, (t) => {
+                const resolved = resolveWorkItem(t.workId);
+                const work = resolved.work;
+                if(t.workId && !work) return ''; // 작품이 삭제된 경우만 숨김 (작품 미지정 할 일은 항상 표시)
+                if(work && taskGenreFilter !== '전체' && work.genre !== taskGenreFilter) return '';
+
+                const catColor = ddayMute(TASK_COLORS[t.category] || "#64748b");
+                let opacity = t.isCompleted ? 'opacity-70' : '';
+                const titlePart = work ? ' ' + resolved.displayTitle : '';
+
+                let content = `
+                    <div class="font-bold text-slate-700 ${opacity}" style="white-space:normal; word-break:break-word;"><span style="color:${catColor}">[${t.category}]</span>${titlePart}</div>
+                    ${t.memo ? `<div class="text-[10px] text-slate-500 ${opacity}" style="white-space:normal; word-break:break-word;">${t.memo}</div>` : ''}
+                `;
+
+                const bgClass = t.isCompleted ? 'bg-slate-100' : 'bg-white';
+                
+                let completeIcon = t.isCompleted 
+                    ? `<button type="button" onclick="event.stopPropagation(); toggleTaskComplete('${t.id}', '${t.date}')" class="text-indigo-500 hover:text-slate-400 transition-colors mt-0.5 shrink-0" title="완료 취소"><i class="fa-solid fa-circle-check"></i></button>`
+                    : `<button type="button" onclick="event.stopPropagation(); toggleTaskComplete('${t.id}', '${t.date}')" class="opacity-0 group-hover/block:opacity-100 text-slate-300 hover:text-indigo-500 transition-opacity mt-0.5 shrink-0" title="완료 처리"><i class="fa-regular fa-circle-check"></i></button>`;
+                    
+                let deleteBtn = `<button type="button" onclick="event.stopPropagation(); quickDeleteTask('${t.id}', '${t.date}')" class="opacity-0 group-hover/block:opacity-100 text-slate-300 hover:text-rose-500 transition-opacity mt-0.5 ml-1 shrink-0 px-1" title="일정 삭제"><i class="fa-solid fa-trash-can"></i></button>`;
+                // 우클릭 복제는 터치 기기에선 쓸 수 없어서, 탭으로 되는 복사 버튼을 같이 노출
+                let copyBtn = `<button type="button" onclick="event.stopPropagation(); duplicateTaskSchedule(event, '${t.id}', '${t.date}')" class="opacity-0 group-hover/block:opacity-100 text-slate-300 hover:text-indigo-500 transition-opacity mt-0.5 ml-1 shrink-0 px-1" title="이 일정 복사"><i class="fa-regular fa-copy"></i></button>`;
+
+                const taskCardStyle = `font-family:'Pretendard','Apple SD Gothic Neo',sans-serif; font-size:${taskCardSettings.fontSize}px; background:${t.isCompleted ? '#f1f5f9' : taskCardSettings.colorDefault};`;
+
+                return `<div class="cal-selectable border border-slate-200 border-l-4 p-1 rounded-lg relative group/block shadow-sm hover:shadow-md transition-all cursor-move" data-cal="task" data-block-id="${t.id}" data-block-date="${t.date}" style="border-left-color: ${catColor}; ${taskCardStyle}" draggable="true" ondragstart="handleTaskDragStart(event, '${t.id}', '${t.date}')" ondragover="handleCardDragOver(event, this)" ondragleave="handleCardDragLeave(event, this)" ondrop="handleTaskCardDrop(event, this, '${t.id}', '${t.date}')" onclick="event.stopPropagation(); openTaskEditModal('${t.id}', '${t.date}')" oncontextmenu="duplicateTaskSchedule(event, '${t.id}', '${t.date}')">
+                    <div class="flex items-start">
+                        ${completeIcon}
+                        <div class="flex-1 min-w-0 ml-0.5">
+                            ${content}
+                        </div>
+                        ${copyBtn}
+                        ${deleteBtn}
+                    </div>
+                </div>`;
+            }, 'openTaskModal', dragEvents);
+
+            document.getElementById('task-calendar-body').innerHTML = html;
+            if (typeof window.clearCalSelection === 'function') window.clearCalSelection();
+            renderTaskDdayList();
+        }
+
+        // 🟢 [NEW] 우측 사이드바 — 출간 일정의 'D-Day 사이드바'와 같은 방식으로,
+        // 아직 완료 처리 안 된 스케줄(할 일)을 날짜 가까운 순으로 모아 보여준다
+        // ── 출간 예정·스케줄 목록 카드 디자인 (코지 테마 전용) ──
+        const DDAY_DESIGNS = [
+            { k: 'heart', n: '하트', d: '차분한 점선 카드' },
+            { k: 'label', n: '견출지', d: '파스텔 라벨 스티커' },
+            { k: 'polaroid', n: '폴라로이드 스티커', d: '테이프 + 스티커' },
+            { k: 'cozy', n: '코지', d: '크림 종이 카드' },
+            { k: 'postcard', n: '엽서', d: '에어메일 + 우표' },
+            { k: 'fountain', n: '만년필', d: '노트 줄 + 잉크' }
+        ];
+        const DDAY_FONTS = [
+            { k: 'auto', n: '디자인 기본', f: 'inherit' },
+            { k: 'sans', n: '고딕', f: "'Pretendard','Apple SD Gothic Neo',sans-serif" },
+            { k: 'serif', n: '세리프', f: "'Noto Serif KR','Gowun Batang',serif" },
+            { k: 'hand', n: '손글씨', f: "'Gaegu',sans-serif" },
+            { k: 'pen', n: '펜글씨', f: "'Nanum Pen Script',sans-serif" },
+            { k: 'ink', n: '만년필체', f: "'Hi Melody',sans-serif" }
+        ];
+        function ddayMute(c) { try { return document.body.classList.contains('theme-cozy') ? cozyMuteColor(c) : c; } catch (e) { return c; } }
+        // ── 팝업창(모달) 디자인: 코지 테마에서 모든 팝업의 겉모양을 한 번에 바꾼다 ──
+        function applyModalDesign() {
+            document.body.setAttribute('data-modal', modalDesign || 'cozy');
+            document.querySelectorAll('#modal-design-picker .modal-design-btn').forEach(b => {
+                const on = b.dataset.modal === (modalDesign || 'cozy');
+                b.style.borderColor = on ? '#C9AE7C' : '';
+                b.style.background = on ? '#F6F0E3' : '';
+            });
+        }
+        function setModalDesign(k) { modalDesign = k; applyModalDesign(); save(true); }
+        function applyDdayDesign() {
+            const a = document.getElementById('publish-dday-list'), b = document.getElementById('task-dday-list');
+            if (a) { a.setAttribute('data-design', ddayCardDesigns.pub || 'heart'); a.setAttribute('data-font', ddayCardFonts.pub || 'auto'); }
+            if (b) { b.setAttribute('data-design', ddayCardDesigns.task || 'heart'); b.setAttribute('data-font', ddayCardFonts.task || 'auto'); }
+        }
+        function closeDdayDesignMenu() { const m = document.getElementById('dday-design-menu'); if (m) m.remove(); document.removeEventListener('click', closeDdayDesignMenu); }
+        function fillDdayDesignMenu(m, which) {
+            const cur = ddayCardDesigns[which] || 'heart', curF = ddayCardFonts[which] || 'auto';
+            m.innerHTML = '<div style="font-size:11px; font-weight:700; color:#B09A78; padding:4px 8px 6px;">' + (which === 'task' ? '스케줄' : '출간 예정') + ' 카드 디자인</div>' + DDAY_DESIGNS.map(o =>
+                '<button type="button" onclick="setDdayDesign(\'' + which + '\', \'' + o.k + '\')" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:7px 8px; border-radius:12px; border:1px solid ' + (o.k === cur ? '#C9AE7C' : 'transparent') + '; background:' + (o.k === cur ? '#F6F0E3' : 'transparent') + ';">' +
+                '<span class="dday-swatch dday-swatch-' + o.k + '"></span><span><b style="display:block; font-size:12.5px; color:#3F3A33;">' + o.n + '</b><span style="font-size:10.5px; color:#A39A8C;">' + o.d + '</span></span></button>').join('') +
+                '<div style="font-size:11px; font-weight:700; color:#B09A78; padding:10px 8px 6px; border-top:1px dashed #E3D7BC; margin-top:6px;">글씨체</div>' +
+                '<div style="display:flex; flex-wrap:wrap; gap:6px; padding:0 6px 6px;">' + DDAY_FONTS.map(o =>
+                    '<button type="button" onclick="setDdayFont(\'' + which + '\', \'' + o.k + '\')" style="padding:4px 11px; border-radius:999px; font-size:13px; font-family:' + o.f + '; border:1px solid ' + (o.k === curF ? '#C9AE7C' : '#EBE2D1') + '; background:' + (o.k === curF ? '#F6F0E3' : '#FFFEFC') + '; color:#3F3A33;">' + o.n + '</button>').join('') + '</div>';
+        }
+        function setDdayDesign(which, k) { ddayCardDesigns[which] = k; applyDdayDesign(); save(true); const m = document.getElementById('dday-design-menu'); if (m) fillDdayDesignMenu(m, which); }
+        function setDdayFont(which, k) { ddayCardFonts[which] = k; applyDdayDesign(); save(true); const m = document.getElementById('dday-design-menu'); if (m) fillDdayDesignMenu(m, which); }
+        function toggleDdayDesignMenu(btn, ev, which) {
+            if (ev) ev.stopPropagation();
+            which = which || 'pub';
+            if (document.getElementById('dday-design-menu')) { closeDdayDesignMenu(); return; }
+            const r = btn.getBoundingClientRect();
+            const m = document.createElement('div');
+            m.id = 'dday-design-menu';
+            m.style.cssText = 'position:fixed; z-index:200; top:' + (r.bottom + 6) + 'px; width:236px; max-height:calc(100vh - ' + (r.bottom + 16) + 'px); overflow-y:auto; background:#FFFEFC; border:1px solid #EBE2D1; border-radius:16px; box-shadow:0 12px 30px rgba(60,45,25,.18); padding:8px;';
+            m.style.left = Math.max(8, Math.min(window.innerWidth - 244, r.right - 236)) + 'px';
+            m.onclick = e => e.stopPropagation();
+            fillDdayDesignMenu(m, which);
+            document.body.appendChild(m);
+            setTimeout(() => document.addEventListener('click', closeDdayDesignMenu), 0);
+        }
+
+        function renderTaskDdayList() {
+            const list = document.getElementById('task-dday-list');
+            if (!list) return;
+            const today = getYYYYMMDD(new Date());
+            const items = [];
+            Object.entries(taskSchedules).forEach(([dateStr, arr]) => {
+                (arr || []).forEach(t => {
+                    if (t.isCompleted) return;
+                    if (dateStr < today) return;
+                    const resolved = resolveWorkItem(t.workId);
+                    if (t.workId && !resolved.work) return; // 작품이 삭제된 경우만 숨김
+                    if (resolved.work && taskGenreFilter !== '전체' && resolved.work.genre !== taskGenreFilter) return;
+                    items.push({ ...t, date: dateStr, resolved });
+                });
+            });
+            items.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+
+            if (items.length === 0) {
+                list.innerHTML = `<div class="text-xs text-slate-400 text-center py-6">예정된 스케줄이 없습니다.</div>`;
+                return;
+            }
+
+            list.innerHTML = items.map(t => {
+                const diff = Math.round((new Date(t.date) - new Date(today)) / 86400000);
+                const dLabel = diff === 0 ? 'D-Day' : `D-${diff}`;
+                const dColor = diff === 0 ? '#ef4444' : diff <= 7 ? '#f97316' : diff <= 30 ? 'var(--primary)' : '#94a3b8';
+                const catColor = TASK_COLORS[t.category] || '#64748b';
+                const titlePart = t.resolved.work ? ` ${t.resolved.displayTitle}` : '';
+                return `<div class="flex items-start gap-2 p-2.5 bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all group cursor-pointer" style="--c:${ddayMute(catColor)}" onclick="openTaskEditModal('${t.id}', '${t.date}')">
+                    <div class="shrink-0 w-1 self-stretch rounded-full" style="background:${catColor}"></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between gap-1 mb-0.5">
+                            <span class="text-sm font-black" style="color:${dColor}">${dLabel}</span>
+                            <span class="text-[12px] font-semibold shrink-0" style="color:var(--primary); filter:saturate(1.9) brightness(0.85);">${t.date.slice(5)}</span>
+                        </div>
+                        <div class="text-slate-700 text-[12px]" style="font-weight:600; white-space:normal; word-break:break-word;"><span style="color:${catColor}">[${t.category}]</span>${titlePart}</div>
+                        ${t.memo ? `<div class="text-[10px] text-slate-400 mt-0.5" style="white-space:normal; word-break:break-word;">${t.memo}</div>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+
+        // 🟢 [NEW] 마우스 오버 & 우클릭 스피드 관리 기능 (집필/스케줄)
+        function duplicateWriteSchedule(e, id, dateStr) {
+            e.preventDefault(); e.stopPropagation();
+            const original = writeSchedules[dateStr]?.find(s => s.id === id);
+            if(original) {
+                const clone = { ...original, id: 'ws_' + Date.now() + Math.floor(Math.random()*1000) };
+                writeSchedules[dateStr].push(clone);
+                save(); renderWriteCalendar();
+            }
+        }
+        function toggleWriteComplete(id, dateStr) {
+            const item = writeSchedules[dateStr]?.find(s => s.id === id);
+            if(item) {
+                item.isCompleted = !item.isCompleted;
+                if (item.category === WRITE_MEMO_CATEGORY && item.checklist) item.checklist.forEach(it => { it.done = item.isCompleted; });
+                save(); renderWriteCalendar();
+            }
+        }
+        function quickDeleteWrite(id, dateStr) {
+            writeSchedules[dateStr] = writeSchedules[dateStr].filter(s => s.id !== id);
+            if(writeSchedules[dateStr].length === 0) delete writeSchedules[dateStr];
+            save(); renderWriteCalendar();
+        }
+
+        function duplicateTaskSchedule(e, id, dateStr) {
+            e.preventDefault(); e.stopPropagation();
+            const original = taskSchedules[dateStr]?.find(t => t.id === id);
+            if(original) {
+                const clone = { ...original, id: 'ts_' + Date.now() + Math.floor(Math.random()*1000) };
+                taskSchedules[dateStr].push(clone);
+                save(); renderTaskCalendar();
+            }
+        }
+        function toggleTaskComplete(id, dateStr) {
+            const item = taskSchedules[dateStr]?.find(t => t.id === id);
+            if(item) { item.isCompleted = !item.isCompleted; save(); renderTaskCalendar(); }
+        }
+        function quickDeleteTask(id, dateStr) {
+            taskSchedules[dateStr] = taskSchedules[dateStr].filter(t => t.id !== id);
+            if(taskSchedules[dateStr].length === 0) delete taskSchedules[dateStr];
+            save(); renderTaskCalendar();
+        }
+
+        // 🟢 [NEW] 빈 공간 드래그로 박스(러버밴드) 선택 → Del/Backspace로 일괄 삭제
+        // 집필 관리(write) / 스케줄 관리(task) 두 캘린더 모두 지원
+        const calSelection = { cal: null, ids: new Set() };
+        (function initCalBoxSelection() {
+            let active = false;        // 박스 드래그 중인지
+            let startX = 0, startY = 0;
+            let boxEl = null;
+            let containerEl = null;    // 드래그가 시작된 캘린더 body
+            let whichCal = null;       // 'write' | 'task'
+
+            function clearSelection() {
+                document.querySelectorAll('.cal-selected').forEach(el => el.classList.remove('cal-selected'));
+                calSelection.cal = null;
+                calSelection.ids.clear();
+            }
+            // 외부(렌더 등)에서 선택 해제할 수 있게 노출
+            window.clearCalSelection = clearSelection;
+
+            function getContainerInfo(target) {
+                const writeBody = document.getElementById('write-calendar-body');
+                const taskBody = document.getElementById('task-calendar-body');
+                if (writeBody && writeBody.contains(target)) return { el: writeBody, cal: 'write' };
+                if (taskBody && taskBody.contains(target)) return { el: taskBody, cal: 'task' };
+                return null;
+            }
+
+            document.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;                          // 좌클릭만
+                // 카드/버튼 위에서 시작하면 무시 → 기존 날짜이동 드래그/클릭 유지
+                if (e.target.closest('.cal-selectable')) return;
+                if (e.target.closest('button, a, input, select, textarea')) return;
+
+                const info = getContainerInfo(e.target);
+                if (!info) return;                                   // 캘린더 밖이면 무시
+
+                containerEl = info.el;
+                whichCal = info.cal;
+                startX = e.clientX; startY = e.clientY;
+                active = true;
+                // 다른 캘린더에서 하던 선택은 비움
+                clearSelection();
+
+                boxEl = document.createElement('div');
+                boxEl.className = 'cal-select-box';
+                document.body.appendChild(boxEl);
+                updateBox(e.clientX, e.clientY);
+                e.preventDefault();
+            });
+
+            function updateBox(curX, curY) {
+                const left = Math.min(startX, curX), top = Math.min(startY, curY);
+                const w = Math.abs(curX - startX), h = Math.abs(curY - startY);
+                boxEl.style.left = left + 'px';
+                boxEl.style.top = top + 'px';
+                boxEl.style.width = w + 'px';
