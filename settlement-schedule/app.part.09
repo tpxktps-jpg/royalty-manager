@@ -1,3 +1,14 @@
+                fragment.appendChild(div);
+                if (w.coverImage) deferred.push({ el: div.querySelector('.lib-cover-container'), src: w.coverImage });
+                else if (hasRemoteCover(w.id)) deferred.push({ el: div.querySelector('.lib-cover-container'), remoteId: w.id });
+            });
+
+            container.appendChild(fragment);
+
+            // 이미지를 작은 배치로 나눠서 로딩 (5개씩, 50ms 간격)
+            const BATCH = 5;
+            function loadBatch(i) {
+                const end = Math.min(i + BATCH, deferred.length);
                 for (let j = i; j < end; j++) {
                     const { el, src, remoteId } = deferred[j];
                     const img = new Image();
@@ -2610,13 +2621,3 @@
                     el.value = val;
                     changed.push(label);
                 };
-                // 비율은 계약서마다 적는 기준이 달라서(웹툰 7% vs 출판 70%) 자동으로 바꾸지 않는다.
-                // 메모에만 적어두고, 칸은 직접 확인해서 넣도록 남겨둔다.
-                if (mode === 'webtoon') {
-                    setVal('wtm-contract-date', info.contractDate, '계약일');
-                    if (info.mgManwon) setVal('wtm-mg', info.mgManwon, 'MG');
-                } else {
-                    setVal('wmm-contract-date', info.contractDate, '계약일');
-                    setVal('wmm-mg', info.mgManwon, '선인세');      // 만원 단위
-                }
-

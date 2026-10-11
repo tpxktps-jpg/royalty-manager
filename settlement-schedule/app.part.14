@@ -1,3 +1,16 @@
+   - 기존 로컬 저장은 그대로 유지합니다.
+   - 로그인한 사용자의 데이터만 users/{uid}/apps/settlement 아래에 저장합니다.
+   - Firestore 문서 용량 제한을 피하기 위해 JSON을 여러 조각으로 나눕니다. */
+(function () {
+  var config = {
+    apiKey: "AIzaSyBu5_PGGU0aTpLaepg_rdAaQtHObH3CkAY",
+    authDomain: "royalty-manager-ef557.firebaseapp.com",
+    projectId: "royalty-manager-ef557",
+    storageBucket: "royalty-manager-ef557.firebasestorage.app",
+    messagingSenderId: "173517723825",
+    appId: "1:173517723825:web:7632244372bc2bea962a90",
+    measurementId: "G-EFZRZYDN0Y"
+  };
   var auth = null, db = null, currentUser = null, saveTimer = null;
   var CHUNK_SIZE = 450000, lastAppliedVersion = 0, lastUploadedVersion = 0, liveUnsub = null;
 
@@ -77,6 +90,10 @@
     if (!currentUser) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { writeCloudObject(obj).catch(function (e) { console.error('클라우드 저장 실패', e); pill('☁️ 동기화 오류', 'error'); }); }, 1800);
+  };
+  window.cloudSaveNow = function (obj) {
+    clearTimeout(saveTimer);
+    return currentUser ? writeCloudObject(obj) : Promise.resolve();
   };
   function applyUiFromCloud(parsed) {
     var u = parsed && parsed.__cloudUi; if (!u) return;

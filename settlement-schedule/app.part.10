@@ -1,3 +1,13 @@
+                // 비율은 계약서마다 적는 기준이 달라서(웹툰 7% vs 출판 70%) 자동으로 바꾸지 않는다.
+                // 메모에만 적어두고, 칸은 직접 확인해서 넣도록 남겨둔다.
+                if (mode === 'webtoon') {
+                    setVal('wtm-contract-date', info.contractDate, '계약일');
+                    if (info.mgManwon) setVal('wtm-mg', info.mgManwon, 'MG');
+                } else {
+                    setVal('wmm-contract-date', info.contractDate, '계약일');
+                    setVal('wmm-mg', info.mgManwon, '선인세');      // 만원 단위
+                }
+
                 // 원본 PDF는 구글드라이브 폴더에 보관하고, 데이터에는 파일 이름만 남긴다
                 let savedNote = '';
                 if (window.electronAPI?.saveContractFile) {
@@ -2503,15 +2513,3 @@
         // 연말 결산에 필요한 데이터 일괄 수집
         function buildYearSummaryData(year){
             const prefix = String(year) + '-';
-            // 장르별 수입 + 작품별 수입 (해당 연도에 정산이 발생한 작품 기준)
-            const genreTotals = {};
-            const workTotals = {};
-            let totalNet = 0;
-            Object.entries(monthlyData).forEach(([mKey, d]) => {
-                if (mKey.split('-')[0] !== String(year)) return;
-                Object.entries(d).forEach(([wId, v]) => {
-                    const w = masterWorks.find(x => x.id === wId);
-                    if (!w) return;
-                    const amt = Number(v) || 0;
-                    totalNet += amt;
-                    const g = w.genre || '기타';

@@ -1,3 +1,15 @@
+            // 장르별 수입 + 작품별 수입 (해당 연도에 정산이 발생한 작품 기준)
+            const genreTotals = {};
+            const workTotals = {};
+            let totalNet = 0;
+            Object.entries(monthlyData).forEach(([mKey, d]) => {
+                if (mKey.split('-')[0] !== String(year)) return;
+                Object.entries(d).forEach(([wId, v]) => {
+                    const w = masterWorks.find(x => x.id === wId);
+                    if (!w) return;
+                    const amt = Number(v) || 0;
+                    totalNet += amt;
+                    const g = w.genre || '기타';
                     genreTotals[g] = (genreTotals[g] || 0) + amt;
                     workTotals[wId] = (workTotals[wId] || 0) + amt;
                 });
@@ -2276,18 +2288,3 @@
                 startX = e.clientX; startY = e.clientY;
                 active = true;
                 // 다른 캘린더에서 하던 선택은 비움
-                clearSelection();
-
-                boxEl = document.createElement('div');
-                boxEl.className = 'cal-select-box';
-                document.body.appendChild(boxEl);
-                updateBox(e.clientX, e.clientY);
-                e.preventDefault();
-            });
-
-            function updateBox(curX, curY) {
-                const left = Math.min(startX, curX), top = Math.min(startY, curY);
-                const w = Math.abs(curX - startX), h = Math.abs(curY - startY);
-                boxEl.style.left = left + 'px';
-                boxEl.style.top = top + 'px';
-                boxEl.style.width = w + 'px';

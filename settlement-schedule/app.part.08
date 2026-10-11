@@ -2193,7 +2193,13 @@
                     if (!data.masterWorks) { alert('이 앱에서 받은 백업 파일이 아니에요.'); return; }
                     if (!confirm('지금 화면의 내용이 백업 파일 내용으로 바뀌어요. 계속할까요?')) return;
                     hydrateFromParsed(data);
-                    window.__liteSave(JSON.stringify(data), true).then(() => { alert('백업을 불러왔어요.'); location.reload(); }).catch(() => alert('저장 중 문제가 생겼어요.'));
+                    try { localStorage.setItem('lastModified_v6', new Date().toISOString()); } catch(e) {}
+                    window.__liteSave(JSON.stringify(data), true).then(async () => {
+                        // 로그인 상태라면 클라우드 저장이 실제로 끝난 뒤 새로고침한다.
+                        // 예전에는 저장 예약만 걸고 즉시 새로고침되어 빈 클라우드 자료가 다시 덮을 수 있었다.
+                        if (typeof window.cloudSaveNow === 'function') await window.cloudSaveNow(data);
+                        alert('백업을 불러오고 클라우드에도 저장했어요.'); location.reload();
+                    }).catch((err) => { console.error(err); alert('저장 중 문제가 생겼어요.'); });
                 } catch (err) { alert('백업 파일을 읽지 못했어요.'); }
             };
             reader.readAsText(file);
@@ -2320,14 +2326,3 @@
                 const cropBtn = w.coverImage ? `<button onclick="event.stopPropagation(); openCoverCropForWork('${w.id}');" class="absolute bottom-2 right-2 w-7 h-7 bg-white/90 hover:bg-white text-slate-600 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 z-30 shadow-sm" title="표지 자르기"><i class="fa-solid fa-crop text-xs"></i></button>` : '';
                 div.innerHTML = `<div class="lib-cover-container rounded-t-xl" onclick="triggerCoverUpload('${w.id}')">${coverPlaceholder}<div class="lib-cover-overlay"><i class="fa-solid fa-camera"></i></div>${showWebtoonBadge ? '<span class="absolute top-2 left-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-sm z-20">WEBTOON</span>' : ''}${deleteBtn}${cropBtn}</div><div class="p-4 flex flex-col justify-between cursor-pointer hover:bg-slate-50 transition-colors" onclick="openWorkMemo('${w.id}')"><div class="mb-3"><div class="flex items-center gap-2 mb-1"><span class="w-2 h-2 rounded-full" style="background:${genreColor}"></span><span class="text-[10px] text-slate-400 font-bold">${w.genre}</span></div><h4 class="font-bold text-slate-700 text-sm line-clamp-1 mb-1" title="${w.title}">${w.title}</h4>${publisherHtml}</div><div class="pt-2 border-t border-slate-50 flex justify-between items-end"><span class="text-[10px] font-medium text-slate-400">${dateDisplay}</span><span class="text-xs font-bold text-emerald-600">₩ ${formatCurrency(totalProfit)}</span></div></div>`;
 
-                fragment.appendChild(div);
-                if (w.coverImage) deferred.push({ el: div.querySelector('.lib-cover-container'), src: w.coverImage });
-                else if (hasRemoteCover(w.id)) deferred.push({ el: div.querySelector('.lib-cover-container'), remoteId: w.id });
-            });
-
-            container.appendChild(fragment);
-
-            // 이미지를 작은 배치로 나눠서 로딩 (5개씩, 50ms 간격)
-            const BATCH = 5;
-            function loadBatch(i) {
-                const end = Math.min(i + BATCH, deferred.length);

@@ -1,3 +1,11 @@
+            rest:     { label: '휴식',      icon: '☕', hint: '쉬는 기간으로만 표시합니다.', rest: false, chars: false },
+            trip:     { label: '여행',      icon: '✈️', hint: '기간만 표시합니다.', rest: false, chars: false },
+            synopsis: { label: '시놉/기획', icon: '📓', hint: '기간만 표시합니다. (시놉시스·기획 작업 등)', rest: false, chars: false },
+            etc:      { label: '기타',      icon: '💗', hint: '기간만 표시합니다. (자료조사·미팅 등)', rest: false, chars: false }
+        };
+        let currentSpanType = 'write';
+
+        function renderSpanTypeGroup() {
             const g = document.getElementById('span-type-group');
             if (!g) return;
             g.innerHTML = Object.entries(SPAN_TYPES).map(([key, t]) => {
@@ -3031,16 +3039,3 @@
         </script>
     <script>
 /* Firebase 클라우드 동기화
-   - 기존 로컬 저장은 그대로 유지합니다.
-   - 로그인한 사용자의 데이터만 users/{uid}/apps/settlement 아래에 저장합니다.
-   - Firestore 문서 용량 제한을 피하기 위해 JSON을 여러 조각으로 나눕니다. */
-(function () {
-  var config = {
-    apiKey: "AIzaSyBu5_PGGU0aTpLaepg_rdAaQtHObH3CkAY",
-    authDomain: "royalty-manager-ef557.firebaseapp.com",
-    projectId: "royalty-manager-ef557",
-    storageBucket: "royalty-manager-ef557.firebasestorage.app",
-    messagingSenderId: "173517723825",
-    appId: "1:173517723825:web:7632244372bc2bea962a90",
-    measurementId: "G-EFZRZYDN0Y"
-  };
