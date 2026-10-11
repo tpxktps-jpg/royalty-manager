@@ -74,11 +74,14 @@
     return { json: text, version: Number(meta.version || 0), legacyFinanceVersion: Number(meta.legacyFinanceVersion || 0), updatedAt: meta.updatedAt && meta.updatedAt.toDate ? meta.updatedAt.toDate() : null };
   }
   async function readLegacyFinance(uid) {
-    var snap = await db.collection('users').doc(uid).collection('royalty').get();
     var result = {}, version = 0, found = 0;
-    snap.forEach(function (doc) {
-      var prop = LEGACY_FINANCE_KEYS[doc.id];
-      if (!prop) return;
+    var keys = Object.keys(LEGACY_FINANCE_KEYS);
+    var docs = await Promise.all(keys.map(function (key) {
+      return db.collection('users').doc(uid).collection('royalty').doc(key).get();
+    }));
+    docs.forEach(function (doc, index) {
+      if (!doc.exists) return;
+      var key = keys[index], prop = LEGACY_FINANCE_KEYS[key];
       var raw = (doc.data() || {}).value;
       if (raw === null || typeof raw === 'undefined' || raw === '') return;
       try {
@@ -87,7 +90,7 @@
         var stamp = Number(data.clientUpdatedAt || 0);
         if (!stamp && data.serverUpdatedAt && data.serverUpdatedAt.toMillis) stamp = data.serverUpdatedAt.toMillis();
         version = Math.max(version, stamp || 1);
-      } catch (e) { console.warn('기존 정산 데이터 읽기 실패:', doc.id, e); }
+      } catch (e) { console.warn('기존 정산 데이터 읽기 실패:', key, e); }
     });
     return found ? { data: result, version: version || 1 } : null;
   }
@@ -166,7 +169,9 @@
     if (!user || !db) return localJson || null;
     try {
       pill('☁️ 클라우드 확인 중', 'busy');
-      var cloud = await readCloud(user.uid), legacy = await readLegacyFinance(user.uid), localTs = Date.parse(localStorage.getItem('lastModified_v6') || '') || 0;
+      var cloud = await readCloud(user.uid), legacy = null, localTs = Date.parse(localStorage.getItem('lastModified_v6') || '') || 0;
+      try { legacy = await readLegacyFinance(user.uid); }
+      catch (legacyError) { console.warn('기존 정산금 확인 실패', legacyError); }
       if (!cloud) {
         var firstObj = legacy ? mergeLegacyFinance(localJson, legacy) : (localJson ? JSON.parse(localJson) : null);
         if (firstObj) {
