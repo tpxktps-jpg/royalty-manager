@@ -919,14 +919,8 @@ input:focus,select:focus,textarea:focus{border-color:#B97D7B!important}
       <button class="tab" data-tab="settings" data-menu="settings"><span class="menu-icon-wrapper">⚙️</span> 작품 설정</button>
     </nav>
     <div class="sidebar-footer">
-        <div class="theme-palette">
-            <div class="theme-btn" onclick="setTheme('green')" style="background:#4d7c77;" title="Green"></div>
-            <div class="theme-btn" onclick="setTheme('cream')" style="background:#F5E6D3;" title="Cream Paper"></div>
-            <div class="theme-btn" onclick="setTheme('mint')" style="background:#6890A3;" title="Dirty Mint"></div>
-            <div class="theme-btn" onclick="setTheme('rose')" style="background:#B55A6C;" title="Dirty Rose"></div>
-            <div class="theme-btn" id="customThemeBtn" style="background:#486581;" title="Click to Pick Custom Color"></div>
-            <div id="custom-theme-pickr-container"></div>
-        </div>
+        <div id="custom-theme-pickr-container" style="display:none"></div>
+
         <button id="exportData">백업</button>
         <button id="importBtn">복원</button>
         <button id="resetData" style="color: #feb2b2;">전체 초기화</button>
